@@ -1,0 +1,33 @@
+{
+  "name": "podfinder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Find local Magic: The Gathering pods. Mobile-first, built to scale to desktop.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "mobile": "yarn workspace @podfinder/mobile start",
+    "mobile:ios": "yarn workspace @podfinder/mobile ios",
+    "mobile:android": "yarn workspace @podfinder/mobile android",
+    "typecheck": "tsc --build",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "clean": "find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "yarn": ">=1.22.0"
+  }
+}
