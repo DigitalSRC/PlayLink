@@ -1,136 +1,56 @@
-# PodFinder
+# Welcome to your Expo app 👋
 
-Find local Magic: The Gathering pods. Players build a profile once — pods find them.
+This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
-iOS + Android app built with Expo. Web companion page planned for a later phase.
+## Get started
 
----
+1. Install dependencies
 
-## What this is
+   ```bash
+   npm install
+   ```
 
-A matchmaking app for MTG players. You set your bracket, formats, and availability. Pods that have open seats appear in your feed. You request to join; the pod messages you back.
+2. Start the app
 
----
+   ```bash
+   npx expo start
+   ```
 
-## Monorepo structure
+In the output, you'll find options to open the app in a
 
-```
-podfinder/
-├── apps/
-│   ├── mobile/          # Expo (React Native) — iOS + Android
-│   └── web/             # Future: marketing / info page only
-│
-├── packages/
-│   ├── types/           # Shared TypeScript types — single source of truth
-│   ├── core/            # Shared business logic, API client, hooks
-│   ├── ui/              # Shared component library
-│   └── config/          # Shared constants, env handling, feature flags
-│
-└── docs/                # Architecture decisions, onboarding notes
-```
+- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
+- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-### Why this structure
+You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
-Every platform (`apps/*`) is a thin consumer of shared logic (`packages/*`). When a web companion page comes, it installs the shared packages and only writes what's web-specific. No copy-pasting types, no diverging business logic.
+## Get a fresh project
 
----
-
-## File extensions
-
-| Extension | What goes there |
-|-----------|----------------|
-| `.ts`     | Pure logic, types, utilities — no JSX |
-| `.tsx`    | Any file with JSX (components, screens) |
-| `.json`   | Config, package manifests |
-| `.md`     | Documentation |
-
-No `.js` or `.jsx` — TypeScript strict mode throughout.
-
----
-
-## Getting started
-
-### Prerequisites
-
-- Node.js >= 20
-- Yarn >= 1.22
-- Expo CLI: `npm install -g expo-cli`
-- For iOS: Xcode 15+ (macOS only)
-- For Android: Android Studio + emulator
-
-### Install
+When you're ready, run:
 
 ```bash
-git clone https://github.com/your-org/podfinder.git
-cd podfinder
-yarn install
+npm run reset-project
 ```
 
-### Run the mobile app
+This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
-```bash
-yarn mobile            # Start Expo dev server
-yarn mobile:ios        # Open in iOS simulator
-yarn mobile:android    # Open in Android emulator
-```
+### Other setup steps
 
-### Type checking + linting
+- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
+- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
+- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
 
-```bash
-yarn typecheck
-yarn lint
-yarn format
-```
+## Learn more
 
----
+To learn more about developing your project with Expo, look at the following resources:
 
-## Key decisions
+- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
+- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
-**React Native + Expo** — one codebase, both stores. Expo handles OTA updates, push notifications, and native module wrappers without ejecting.
+## Join the community
 
-**TypeScript strict mode** — `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride` all on. Verbose upfront, saves hours of runtime debugging.
+Join our community of developers creating universal apps.
 
-**Yarn workspaces monorepo** — packages stay co-located without publishing to npm. Each package can be owned independently as the team grows.
-
-**`@podfinder/types` is the foundation** — every model (`UserProfile`, `Pod`, `Message`, `Session`) lives here. Never re-define a type in a feature file.
-
-**Bracket as the primary signal** — WotC's official 1–5 bracket system is the core compatibility filter. First tag on every pod card, first field on every profile.
-
----
-
-## Bracket system reference
-
-| Bracket | Name | Description |
-|---------|------|-------------|
-| 1 | Precon | Unmodified or very lightly changed precons |
-| 2 | Casual | Modified precons and budget brews |
-| 3 | Optimized | Tuned, synergy-focused lists |
-| 4 | High power | Near-cEDH, strong engines and interaction |
-| 5 | cEDH | Competitive, maximally optimized |
-
----
-
-## Roadmap
-
-```
-v1.0  iOS + Android (Expo) — core pod browsing, profiles, messaging
-v1.1  Push notifications, pod management for hosts
-v1.2  Session scheduling
-v2.0  Web companion / info page
-```
-
----
-
-## Environment variables
-
-```bash
-cp .env.example .env
-```
-
-Never commit `.env`.
-
----
-
-## Contributing
-
-Branch naming: `feat/`, `fix/`, `chore/` prefixes. PRs require passing typecheck + lint.
+- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
+- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.

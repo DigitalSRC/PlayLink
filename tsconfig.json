@@ -1,27 +1,20 @@
 {
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "lib": ["ES2022"],
-    "allowJs": false,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "exactOptionalPropertyTypes": true,
-    "baseUrl": ".",
     "paths": {
-      "@playlink/types": ["packages/types/src/index.ts"],
-      "@playlink/core": ["packages/core/src/index.ts"],
-      "@playlink/ui": ["packages/ui/src/index.ts"],
-      "@playlink/config": ["packages/config/src/index.ts"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@/assets/*": [
+        "./assets/*"
+      ]
     }
   },
-  "exclude": ["node_modules", "**/node_modules", "**/.expo", "**/dist", "**/build"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }

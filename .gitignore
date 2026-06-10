@@ -1,18 +1,43 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# Other files and folders
-.settings/
+# dependencies
+node_modules/
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+example
+
+# generated native folders
+/ios
+/android
