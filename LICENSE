@@ -1,21 +1,205 @@
-The MIT License (MIT)
+PLAYLINK SOURCE-AVAILABLE LICENSE
+Version 1.0, 2026
 
-Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+Copyright (c) 2026 PlayLink. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+===============================================================================
+PREAMBLE
+===============================================================================
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This license governs use of the accompanying software, the PlayLink application
+and all associated source code, assets, documentation, and configuration files
+(collectively, the "Software").
+
+The intent of this license is to make the Software publicly visible and open to
+community contribution while preventing any person or organization from using
+the Software, or any substantial portion of it, to create a competing product,
+service, or business without the explicit written consent of the copyright
+holder.
+
+Read this license carefully before using, copying, modifying, or contributing
+to the Software.
+
+===============================================================================
+SECTION 1 — DEFINITIONS
+===============================================================================
+
+"Software" means the PlayLink source code, documentation, assets, and all
+files contained in the official PlayLink repository at
+https://github.com/[DigitalSRC]/playlink, including any modifications,
+additions, or derivative works.
+
+"Copyright Holder" means the original author(s) of the Software.
+
+"You" means the individual or legal entity exercising rights under this license.
+
+"Commercial Use" means any use of the Software, or any derivative work based
+on the Software, that is intended for or directed toward commercial advantage,
+monetary compensation, or business operation — including but not limited to:
+  (a) offering the Software or a derivative as a paid product or service;
+  (b) using the Software internally as part of a revenue-generating business;
+  (c) incorporating the Software into a product that is sold or licensed to
+      third parties;
+  (d) operating a competing application, platform, or service that replicates
+      the core functionality of PlayLink.
+
+"Contribution" means any modification, addition, bug fix, translation, or
+other change to the Software submitted to the Copyright Holder for inclusion
+in the official repository.
+
+"Competing Product" means any application, platform, website, or service whose
+primary purpose is to connect Magic: The Gathering players locally for the
+purpose of forming play groups (pods), scheduling games, or matchmaking based
+on play preferences — substantially similar in function to PlayLink.
+
+===============================================================================
+SECTION 2 — GRANT OF RIGHTS
+===============================================================================
+
+Subject to the terms and conditions of this license, the Copyright Holder
+hereby grants You a limited, non-exclusive, non-transferable, non-sublicensable
+license to:
+
+  (a) VIEW the Software source code for personal, educational, or
+      non-commercial research purposes;
+
+  (b) FORK and MODIFY the Software solely for the purpose of submitting
+      Contributions back to the official PlayLink repository;
+
+  (c) RUN a local instance of the Software on your personal device strictly
+      for personal, non-commercial use and for the purpose of testing
+      Contributions;
+
+  (d) CONTRIBUTE to the Software under the terms described in Section 5.
+
+===============================================================================
+SECTION 3 — RESTRICTIONS
+===============================================================================
+
+You may NOT, without prior explicit written permission from the Copyright
+Holder:
+
+  (a) Use the Software, in whole or in part, for any Commercial Use;
+
+  (b) Distribute, publish, sublicense, sell, rent, lease, or otherwise transfer
+      the Software or any derivative work to any third party;
+
+  (c) Deploy, host, or operate the Software or any derivative work as a
+      publicly accessible service or application — whether free or paid;
+
+  (d) Create a Competing Product using the Software, its architecture, its
+      design, or any substantial portion of its code as a foundation;
+
+  (e) Remove, alter, or obscure any copyright notice, license notice, or
+      attribution present in the Software;
+
+  (f) Use the name "PlayLink", its logo, or any associated branding in any
+      product, service, or publication without written permission;
+
+  (g) Use the Software in any way that violates applicable law.
+
+The restrictions in this section apply regardless of whether You have modified
+the Software. A modified version of PlayLink is still PlayLink for the purposes
+of this license.
+
+===============================================================================
+SECTION 4 — COMMERCIAL LICENSING
+===============================================================================
+
+If You wish to use the Software for any purpose not permitted under Section 2,
+including but not limited to Commercial Use, deployment, or distribution, You
+must obtain a separate commercial license from the Copyright Holder.
+
+To inquire about commercial licensing, contact:
+
+  [digitalsrcgames@gmail.com]
+
+The Copyright Holder reserves the right to grant or deny commercial licenses
+at their sole discretion and to set terms on a case-by-case basis.
+
+===============================================================================
+SECTION 5 — CONTRIBUTIONS
+===============================================================================
+
+By submitting a Contribution to the official PlayLink repository — whether via
+pull request, patch, issue, or any other means — You agree to the following:
+
+  (a) You grant the Copyright Holder a perpetual, worldwide, irrevocable,
+      royalty-free license to use, reproduce, modify, distribute, and
+      sublicense Your Contribution as part of the Software under any license
+      the Copyright Holder chooses, including future versions of this license
+      or a commercial license;
+
+  (b) You represent that You have the legal right to make the Contribution and
+      that it does not infringe on the intellectual property rights of any
+      third party;
+
+  (c) You understand that Your Contribution does not grant You any additional
+      rights to the Software beyond those described in Section 2;
+
+  (d) Contributions become the intellectual property of the Copyright Holder
+      upon acceptance, unless a separate written agreement states otherwise.
+
+If You do not agree to these terms, do not submit Contributions.
+
+===============================================================================
+SECTION 6 — NO WARRANTY
+===============================================================================
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. THE ENTIRE RISK AS TO
+THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY — WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE —
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+===============================================================================
+SECTION 7 — TERMINATION
+===============================================================================
+
+Your rights under this license terminate automatically and immediately if You
+fail to comply with any of its terms.
+
+Upon termination You must:
+  (a) cease all use of the Software;
+  (b) delete all copies of the Software in Your possession or control.
+
+Sections 3, 4, 6, and 8 survive termination of this license.
+
+===============================================================================
+SECTION 8 — GOVERNING LAW
+===============================================================================
+
+This license shall be governed by and construed in accordance with the laws of
+the State of Nevada, United States, without regard to its conflict of law
+provisions. Any dispute arising under this license shall be subject to the
+exclusive jurisdiction of the courts located in Washoe County, Nevada.
+
+===============================================================================
+SECTION 9 — FUTURE LICENSE VERSIONS
+===============================================================================
+
+The Copyright Holder reserves the right to publish revised versions of this
+license. A revised version will apply only to versions of the Software
+explicitly marked as being governed by that revised version. The version of the
+Software You received is governed by the version of this license included with
+it, unless the Copyright Holder explicitly states otherwise.
+
+===============================================================================
+SECTION 10 — ENTIRE AGREEMENT
+===============================================================================
+
+This license constitutes the entire agreement between You and the Copyright
+Holder regarding the Software and supersedes all prior agreements,
+understandings, and representations of any kind relating to the Software.
+
+===============================================================================
+
+For permissions beyond the scope of this license, contact:
+[digitalsrcgames@gmail.com]
+
+PlayLink — https://github.com/[DigitalSRC]/playlink
+Copyright (c) 2026 PlayLink. All rights reserved.

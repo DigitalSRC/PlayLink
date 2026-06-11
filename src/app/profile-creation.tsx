@@ -1,13 +1,19 @@
-import { Text, View, StyleSheet, TextInput, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
+// ProfileCreation: Form screen for users to enter profile information (username, location, bracket).
+// Inputs: None. Outputs: JSX element with three text input fields and a save button that returns to previous screen.
+// State: username, location, bracket (all strings, updated via state setters on text input changes).
 export default function ProfileCreation() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [location, setLocation] = useState("");
   const [bracket, setBracket] = useState("");
 
+  // Renders form with three input fields bound to state (username, location, bracket).
+  // Each TextInput updates its corresponding state variable via onChangeText handler.
+  // Save button calls router.back() to return to previous screen (does not persist data).
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Create Your Profile</Text>

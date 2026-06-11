@@ -1,9 +1,13 @@
-import { Text, View, StyleSheet, Pressable } from "react-native";
 import { useRouter } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
+// Index: Home/welcome screen displayed when app launches. Shows branding and navigation button.
+// Inputs: None. Outputs: JSX element with centered welcome message and "Create Profile" button that navigates to profile-creation screen.
 export default function Index() {
   const router = useRouter();
 
+  // Renders welcome screen with title, subtitle, and navigation button.
+  // Button triggers router.push() to navigate to /profile-creation route when pressed.
   return (
     <View style={styles.container}>
       <Text style={styles.mainTitle}>Welcome to PlayLink</Text>
