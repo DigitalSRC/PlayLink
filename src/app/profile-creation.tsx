@@ -13,7 +13,18 @@ export default function ProfileCreation() {
 
   // Renders form with three input fields bound to state (username, location, bracket).
   // Each TextInput updates its corresponding state variable via onChangeText handler.
-  // Save button calls router.back() to return to previous screen (does not persist data).
+  // Save button navigates to browse-games page, passing username as a parameter.
+  const handleSaveProfile = () => {
+    if (username.trim()) {
+      router.push({
+        pathname: "/browse-games",
+        params: { username: username },
+      });
+    } else {
+      alert("Please enter a username");
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Create Your Profile</Text>
@@ -51,7 +62,7 @@ export default function ProfileCreation() {
         />
       </View>
 
-      <Pressable style={styles.button} onPress={() => router.back()}>
+      <Pressable style={styles.button} onPress={handleSaveProfile}>
         <Text style={styles.buttonText}>Save Profile</Text>
       </Pressable>
     </View>
