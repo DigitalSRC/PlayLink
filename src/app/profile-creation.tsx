@@ -2,18 +2,27 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
-// ProfileCreation: Form screen for users to enter profile information (username, location, bracket).
-// Inputs: None. Outputs: JSX element with three text input fields and a save button that returns to previous screen.
-// State: username, location, bracket (all strings, updated via state setters on text input changes).
+/**
+ * Renders the user profile setup form for the app.
+ * The screen collects a username, location, and bracket so the user can continue into the group browsing flow.
+ * It is designed to keep the form inputs visible and easy to edit on a phone screen.
+ * Parameters: none.
+ * Returns: a React Native screen element containing the input fields and save button.
+ * Edge cases: the layout does not validate values until the save action runs.
+ */
 export default function ProfileCreation() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [location, setLocation] = useState("");
   const [bracket, setBracket] = useState("");
 
-  // Renders form with three input fields bound to state (username, location, bracket).
-  // Each TextInput updates its corresponding state variable via onChangeText handler.
-  // Save button navigates to browse-games page, passing username as a parameter.
+  /**
+   * Saves the profile information and navigates to the browse screen when a username exists.
+   * The username is passed as a route parameter so the browsing screen can personalize the view.
+   * Parameters: none; uses the current component state values.
+   * Returns: nothing directly; it may call router.push or show an alert.
+   * Edge cases: if the username is blank, the function shows an alert and does not navigate.
+   */
   const handleSaveProfile = () => {
     if (username.trim()) {
       router.push({

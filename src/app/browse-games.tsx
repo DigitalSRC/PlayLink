@@ -11,6 +11,14 @@ import {
 } from "react-native";
 import { Group, HARDCODED_GROUPS } from "../data/groups";
 
+/**
+ * Displays the browse screen where users can view groups, join or leave them, and create or edit groups.
+ * The screen adapts its behavior based on the current user and the selected group details.
+ * It also handles navigation back to the home screen and role changes for hosts.
+ * Parameters: none; it reads the username from the route params.
+ * Returns: a React Native screen with the group list, action buttons, and editing controls.
+ * Edge cases: invalid or missing usernames fall back to the label "Player", and missing groups are ignored safely.
+ */
 export default function BrowseGames() {
   const router = useRouter();
   const { username } = useLocalSearchParams();
@@ -32,9 +40,21 @@ export default function BrowseGames() {
     (player) => player.username === displayUsername && player.role === "Host"
   );
 
+  /**
+   * Looks up a group by its identifier.
+   * Parameters: groupId (the numeric ID to search for).
+   * Returns: the matching group object or undefined if no group uses that ID.
+   * Edge cases: returns undefined when the ID does not match any current group.
+   */
   const getGroupById = (groupId: number) =>
     groups.find((group) => group.id === groupId);
 
+  /**
+   * Clears the group creation form fields and restores default values.
+   * Parameters: none.
+   * Returns: nothing; it updates several state values.
+   * Edge cases: none beyond the current input state being reset.
+   */
   const resetCreateForm = () => {
     setGroupName("");
     setGroupLocation("");
@@ -43,6 +63,12 @@ export default function BrowseGames() {
     setBracket("1");
   };
 
+  /**
+   * Adds the current user to a selected group when the group is valid and has space.
+   * Parameters: groupId (the group to join).
+   * Returns: nothing directly; it updates the group list and shows alerts.
+   * Edge cases: refuses to join if the user is already in another group, the group does not exist, or the group is full.
+   */
   const handleJoin = (groupId: number) => {
     const targetGroup = getGroupById(groupId);
 
@@ -86,6 +112,12 @@ export default function BrowseGames() {
     Alert.alert("Success", `You have joined ${targetGroup.name}.`);
   };
 
+  /**
+   * Removes the current user from a group and handles host transfer or group deletion.
+   * Parameters: groupId (the group the user wants to leave).
+   * Returns: nothing directly; it updates state and shows alerts.
+   * Edge cases: does nothing if the group is missing or the username is not found in the roster.
+   */
   const handleLeaveGroup = (groupId: number) => {
     const targetGroup = getGroupById(groupId);
 
@@ -144,10 +176,22 @@ export default function BrowseGames() {
     );
   };
 
+  /**
+   * Returns the user to the home screen.
+   * Parameters: none.
+   * Returns: nothing directly; it triggers navigation.
+   * Edge cases: if the router state is unavailable, the navigation action cannot complete.
+   */
   const handleBackToHome = () => {
     router.replace("/");
   };
 
+  /**
+   * Creates a new group using the form inputs and the current user as the host.
+   * Parameters: none; it uses the current form state values.
+   * Returns: nothing directly; it updates the groups state and shows alerts.
+   * Edge cases: refuses to create a group when the user already belongs to one, or when the name/location fields are blank.
+   */
   const handleCreateGroup = () => {
     if (currentUserGroup) {
       Alert.alert(
@@ -193,6 +237,12 @@ export default function BrowseGames() {
     );
   };
 
+  /**
+   * Fills the edit form with the selected group's current values.
+   * Parameters: group (the group to edit).
+   * Returns: nothing directly; it updates several state fields.
+   * Edge cases: no validation happens here, so the user may edit to incomplete values.
+   */
   const startEditingGroup = (group: Group) => {
     setEditingGroupId(group.id);
     setGroupName(group.name);
@@ -202,6 +252,12 @@ export default function BrowseGames() {
     setBracket(String(group.bracket));
   };
 
+  /**
+   * Saves changes made to a group's details when the current user is the host.
+   * Parameters: groupId (the group being updated).
+   * Returns: nothing directly; it updates the groups state and shows alerts.
+   * Edge cases: blocks the edit if the group is missing or the user is not allowed to edit.
+   */
   const handleSaveGroupEdit = (groupId: number) => {
     const targetGroup = getGroupById(groupId);
 
@@ -236,6 +292,12 @@ export default function BrowseGames() {
     Alert.alert("Group updated", "Your group details have been updated.");
   };
 
+  /**
+   * Transfers host privileges from the current host to another member.
+   * Parameters: groupId (the relevant group), playerId (the player who should become host).
+   * Returns: nothing directly; it updates the roster and shows an alert.
+   * Edge cases: ignores the action when the group is missing or the current user is not the host.
+   */
   const handleMakeHost = (groupId: number, playerId: number) => {
     const targetGroup = getGroupById(groupId);
 

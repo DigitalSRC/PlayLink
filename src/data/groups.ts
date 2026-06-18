@@ -1,8 +1,8 @@
 import {
-    GROUP_NAME_POOL,
-    LOCATION_POOL,
-    PLAYER_NAME_POOL,
-    TIME_POOL,
+  GROUP_NAME_POOL,
+  LOCATION_POOL,
+  PLAYER_NAME_POOL,
+  TIME_POOL,
 } from "./random-data";
 
 export interface PlayerProfile {
@@ -23,6 +23,13 @@ export interface Group {
   time: string;
 }
 
+/**
+ * Returns a shuffled copy of the provided array.
+ * This helps randomize seeded data without mutating the original collection.
+ * Parameters: items (the array to shuffle).
+ * Returns: a new array containing the same elements in a randomized order.
+ * Edge cases: if items is empty, the function simply returns an empty array.
+ */
 const shuffle = <T,>(items: T[]): T[] => {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -32,8 +39,22 @@ const shuffle = <T,>(items: T[]): T[] => {
   return copy;
 };
 
+/**
+ * Picks one random item from an array.
+ * This is used to select names, locations, and times from the predefined pools.
+ * Parameters: items (the source array to choose from).
+ * Returns: one randomly selected item from the array.
+ * Edge cases: if the array is empty, the function will attempt to read an undefined value.
+ */
 const pick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
 
+/**
+ * Builds a single random player profile for a group.
+ * The function chooses a username, bracket, and location, then combines them with an ID and role.
+ * Parameters: id (player identifier), role (the player's role in the group).
+ * Returns: a PlayerProfile object with randomized display data.
+ * Edge cases: the function assumes the random pools are non-empty; empty pools would produce undefined values.
+ */
 const createRandomPlayer = (id: number, role: string): PlayerProfile => {
   const username = pick(PLAYER_NAME_POOL);
   return {
@@ -45,6 +66,13 @@ const createRandomPlayer = (id: number, role: string): PlayerProfile => {
   };
 };
 
+/**
+ * Builds a complete random group object for the app.
+ * The function creates a small roster, chooses a name and time, and calculates a valid target player count.
+ * Parameters: id (group identifier).
+ * Returns: a Group object with players, schedule details, and capacity metadata.
+ * Edge cases: if the random pools are empty or the roster logic produces an invalid count, the output may not represent a realistic group.
+ */
 const createRandomGroup = (id: number): Group => {
   const groupPlayers = shuffle(PLAYER_NAME_POOL).slice(0, Math.floor(Math.random() * 3) + 2);
   const memberCount = Math.min(groupPlayers.length, Math.floor(Math.random() * 3) + 2);

@@ -1,0 +1,12 @@
+When creating code documentation, follow this exact format for every function or exported helper:
+
+1. Write at least 3 human-readable lines that explain what the function does.
+2. Add a separate line that starts with "Parameters:" and lists each input and its meaning.
+3. Add a separate line that starts with "Returns:" and explains exactly what the function returns.
+4. If the function can fail, throw, or return an edge-case result, add a separate line that starts with "Edge cases:" and describe the conditions.
+5. Keep explanations concise, plain English, and specific to the code's behavior.
+6. Use the same order for every documentation block: summary lines, Parameters, Returns, Edge cases.
+7. If a function has no meaningful edge cases, say "Edge cases: none beyond normal invalid input handling."
+8. Preserve the original function name and avoid changing code behavior while documenting it.
+9. For React components, describe what the component renders and which props or router state it depends on.
+10. For helper utilities, describe the transformation logic and the expected output shape.
