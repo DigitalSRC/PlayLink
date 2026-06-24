@@ -1,13 +1,16 @@
-import { Stack } from "expo-router";
+import { Stack } from 'expo-router';
+import { AppProvider } from '../context/AppContext';
 
 /**
- * Serves as the root navigation container for the application.
- * This component wires Expo Router so the screens inside the app folder can be discovered and navigated correctly.
- * It keeps the navigation setup centralized and minimal.
+ * Root navigation shell that wraps all screens in global app state.
  * Parameters: none.
- * Returns: a Stack navigator element that renders the current route.
- * Edge cases: if route configuration is missing, the app will still render a blank stack shell.
+ * Returns: a Stack navigator with headers hidden globally; each screen manages its own header.
+ * Edge cases: none — the provider always initialises with default null user state.
  */
 export default function RootLayout() {
-  return <Stack />;
+  return (
+    <AppProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </AppProvider>
+  );
 }

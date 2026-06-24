@@ -1,19 +1,26 @@
 import { describe, expect, it } from "@jest/globals";
 import { Group } from "../data/groups";
 import {
-    buildNewPlayer,
-    canJoinGroup,
-    findGroupByUsername,
-    isGroupFull,
-    isHostForUser,
-    normalizePositiveInt,
-    removePlayerFromGroup,
-    setPlayerAsHost,
+  buildNewPlayer,
+  canJoinGroup,
+  findGroupByUsername,
+  isGroupFull,
+  isHostForUser,
+  normalizePositiveInt,
+  removePlayerFromGroup,
+  setPlayerAsHost,
 } from "./group-utils";
 
 const makeGroup = (overrides: Partial<Group> = {}): Group => ({
   id: 1,
   name: "Test Group",
+  gameType: "mtg",
+  format: "Commander",
+  bracket: 2,
+  location: "Downtown",
+  time: "Tonight",
+  noGo: [],
+  confirmed: false,
   players: [
     {
       id: 1,
@@ -24,9 +31,6 @@ const makeGroup = (overrides: Partial<Group> = {}): Group => ({
     },
   ],
   targetPlayers: 3,
-  bracket: 2,
-  location: "Downtown",
-  time: "Tonight",
   ...overrides,
 });
 

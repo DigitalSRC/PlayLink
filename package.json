@@ -9,6 +9,7 @@
     "expo-device": "~56.0.4",
     "expo-font": "~56.0.5",
     "expo-glass-effect": "~56.0.4",
+    "expo-haptics": "~56.0.3",
     "expo-image": "~56.0.11",
     "expo-linking": "~56.0.14",
     "expo-router": "~56.2.11",
@@ -47,6 +48,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest --runInBand"
+  },
+  "jest": {
+    "preset": "jest-expo"
   },
   "private": true
 }
