@@ -119,7 +119,7 @@ export default function GroupDetail() {
                 {
                   id: Date.now(),
                   username: displayUser,
-                  bracket: currentUser.bracket,
+                  bracket: currentUser.brackets[0] ?? 2,
                   location: currentUser.location,
                   role: 'Member',
                 },

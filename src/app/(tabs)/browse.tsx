@@ -36,7 +36,7 @@ const ALL_GAMES: (GameType | 'all')[] = ['all', 'mtg', 'pokemon', 'lorcana', 'on
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, setGroups, awardXP } = useApp();
+  const { currentUser, groups, setGroups, awardXP, rivals } = useApp();
 
   const [filter, setFilter] = useState<GameType | 'all'>('all');
   const [showCreate, setShowCreate] = useState(false);
@@ -102,7 +102,7 @@ export default function BrowseScreen() {
                 {
                   id: Date.now(),
                   username: displayUser,
-                  bracket: currentUser.bracket,
+                  bracket: currentUser.brackets[0] ?? 2,
                   location: currentUser.location,
                   role: 'Member',
                 },
@@ -139,7 +139,7 @@ export default function BrowseScreen() {
         {
           id: Date.now() + 1,
           username: displayUser,
-          bracket: currentUser.bracket,
+          bracket: currentUser.brackets[0] ?? 2,
           location: currentUser.location,
           role: 'Host',
         },
@@ -291,10 +291,13 @@ export default function BrowseScreen() {
         {filtered.map((group) => {
           const inThisGroup = group.players.some((p) => p.username === displayUser);
           const isFull = group.players.length >= group.targetPlayers;
+          const rivalInGroup = rivals.some((r) =>
+            group.players.some((p) => p.username === r.username)
+          );
           return (
             <Pressable
               key={group.id}
-              style={styles.groupCard}
+              style={[styles.groupCard, rivalInGroup && styles.groupCardRival]}
               onPress={() => router.push({ pathname: '/group-detail', params: { id: group.id } })}
             >
               <View style={styles.cardTop}>
@@ -303,7 +306,14 @@ export default function BrowseScreen() {
                     {GAME_EMOJI[group.gameType]} {group.format}
                   </Text>
                 </View>
-                {isFull && <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>FULL</Text></View>}
+                {rivalInGroup && (
+                  <View style={styles.rivalGroupBadge}>
+                    <Text style={styles.rivalGroupBadgeText}>⚔️ RIVAL HERE</Text>
+                  </View>
+                )}
+                {isFull && !rivalInGroup && (
+                  <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>FULL</Text></View>
+                )}
               </View>
 
               <Text style={styles.groupName}>{group.name}</Text>
@@ -535,6 +545,23 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#2C2C38',
+  },
+  groupCardRival: {
+    borderColor: '#FF3B30',
+    borderWidth: 2,
+    backgroundColor: '#1E1214',
+  },
+  rivalGroupBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#FF3B30',
+  },
+  rivalGroupBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 0.5,
   },
   cardTop: {
     flexDirection: 'row',

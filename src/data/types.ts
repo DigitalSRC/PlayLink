@@ -14,7 +14,7 @@ export interface UserProfile {
   location: string;
   games: GameType[];
   preferredFormats: Partial<Record<GameType, string[]>>;
-  bracket: number;
+  brackets: number[];
   noGo: NoGoRule[];
   wins: number;
   losses: number;
@@ -57,3 +57,11 @@ export const NO_GO_OPTIONS: NoGoRule[] = [
   'Stax',
   'Land Destruction',
 ];
+
+export const BRACKET_INFO: Record<number, { label: string; desc: string }> = {
+  1: { label: 'Exhibition', desc: 'Precons only' },
+  2: { label: 'Casual', desc: 'Minor upgrades' },
+  3: { label: 'Upgraded', desc: 'Significant upgrades' },
+  4: { label: 'Optimized', desc: 'Powerful synergies' },
+  5: { label: 'cEDH', desc: 'Competitive' },
+};

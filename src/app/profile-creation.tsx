@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useApp } from "../context/AppContext";
 import {
+  BRACKET_INFO,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -43,7 +44,7 @@ export default function ProfileCreation() {
   const [location, setLocation] = useState("");
   const [selectedGames, setSelectedGames] = useState<GameType[]>([]);
   const [selectedFormats, setSelectedFormats] = useState<Partial<Record<GameType, string[]>>>({});
-  const [bracket, setBracket] = useState(2);
+  const [selectedBrackets, setSelectedBrackets] = useState<number[]>([2]);
   const [selectedNoGo, setSelectedNoGo] = useState<NoGoRule[]>([]);
   const [computedRivals, setComputedRivals] = useState<UserProfile[]>([]);
 
@@ -74,7 +75,7 @@ export default function ProfileCreation() {
         location: location.trim() || "Nearby",
         games: selectedGames,
         preferredFormats: selectedFormats,
-        bracket,
+        brackets: selectedBrackets.length > 0 ? selectedBrackets : [2],
         noGo: selectedNoGo,
         wins: 0,
         losses: 0,
@@ -124,6 +125,13 @@ export default function ProfileCreation() {
         : [...current, format];
       return { ...prev, [game]: updated };
     });
+  };
+
+  const toggleBracket = (b: number) => {
+    Haptics.selectionAsync();
+    setSelectedBrackets((prev) =>
+      prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
+    );
   };
 
   const toggleNoGo = (rule: NoGoRule) => {
@@ -242,36 +250,23 @@ export default function ProfileCreation() {
       {selectedGames.includes("mtg") && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>⚔️ Commander Bracket</Text>
-          <Text style={styles.sectionHint}>Wizards 1–4 power scale</Text>
+          <Text style={styles.sectionHint}>Wizards 1–5 power scale — select all you play</Text>
           <View style={styles.bracketRow}>
-            {[1, 2, 3, 4].map((b) => (
-              <Pressable
-                key={b}
-                style={[styles.bracketBtn, bracket === b && styles.bracketBtnActive]}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setBracket(b);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.bracketLabel,
-                    bracket === b && styles.bracketLabelActive,
-                  ]}
+            {[1, 2, 3, 4, 5].map((b) => {
+              const active = selectedBrackets.includes(b);
+              return (
+                <Pressable
+                  key={b}
+                  style={[styles.bracketBtn, active && styles.bracketBtnActive]}
+                  onPress={() => toggleBracket(b)}
                 >
-                  {b}
-                </Text>
-                <Text style={styles.bracketDesc}>
-                  {b === 1
-                    ? "Casual"
-                    : b === 2
-                    ? "Upgraded"
-                    : b === 3
-                    ? "Optimized"
-                    : "Competitive"}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text style={[styles.bracketLabel, active && styles.bracketLabelActive]}>
+                    {b}
+                  </Text>
+                  <Text style={styles.bracketDesc}>{BRACKET_INFO[b].label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
       )}

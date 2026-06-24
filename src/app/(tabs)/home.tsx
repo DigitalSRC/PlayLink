@@ -31,9 +31,17 @@ export default function HomeScreen() {
           <Text style={styles.username}>{currentUser.username}</Text>
           <Text style={styles.location}>{currentUser.location}</Text>
         </View>
-        <View style={styles.xpBadge}>
-          <Text style={styles.xpLabel}>XP</Text>
-          <Text style={styles.xpValue}>{currentUser.xp}</Text>
+        <View style={styles.headerRight}>
+          <Pressable
+            style={styles.gearBtn}
+            onPress={() => router.push('/(tabs)/profile')}
+          >
+            <Text style={styles.gearIcon}>⚙️</Text>
+          </Pressable>
+          <View style={styles.xpBadge}>
+            <Text style={styles.xpLabel}>XP</Text>
+            <Text style={styles.xpValue}>{currentUser.xp}</Text>
+          </View>
         </View>
       </View>
 
@@ -172,6 +180,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#555',
     marginTop: 4,
+  },
+  headerRight: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  gearBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gearIcon: {
+    fontSize: 24,
   },
   xpBadge: {
     alignItems: 'center',

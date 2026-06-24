@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useApp } from '../../context/AppContext';
 import {
+  BRACKET_INFO,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -36,7 +37,7 @@ export default function ProfileScreen() {
   if (!currentUser) return null;
 
   const [editLocation, setEditLocation] = useState(currentUser.location);
-  const [editBracket, setEditBracket] = useState(currentUser.bracket);
+  const [editBrackets, setEditBrackets] = useState<number[]>(currentUser.brackets);
   const [editFormats, setEditFormats] = useState(currentUser.preferredFormats);
   const [editNoGo, setEditNoGo] = useState<NoGoRule[]>(currentUser.noGo);
 
@@ -47,7 +48,7 @@ export default function ProfileScreen() {
     setCurrentUser({
       ...currentUser,
       location: editLocation.trim() || currentUser.location,
-      bracket: editBracket,
+      brackets: editBrackets.length > 0 ? editBrackets : currentUser.brackets,
       preferredFormats: editFormats,
       noGo: editNoGo,
     });
@@ -174,32 +175,28 @@ export default function ProfileScreen() {
       {currentUser.games.includes('mtg') && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Commander Bracket</Text>
-          {editing ? (
-            <View style={styles.bracketRow}>
-              {[1, 2, 3, 4].map((b) => (
+          <Text style={styles.sectionHintText}>Wizards 1–5 · select all you play</Text>
+          <View style={styles.bracketRow}>
+            {[1, 2, 3, 4, 5].map((b) => {
+              const active = (editing ? editBrackets : currentUser.brackets).includes(b);
+              return (
                 <Pressable
                   key={b}
-                  style={[styles.bracketBtn, editBracket === b && styles.bracketBtnActive]}
-                  onPress={() => { Haptics.selectionAsync(); setEditBracket(b); }}
+                  disabled={!editing}
+                  style={[styles.bracketBtn, active && styles.bracketBtnActive]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setEditBrackets((prev) =>
+                      prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
+                    );
+                  }}
                 >
-                  <Text style={[styles.bracketNum, editBracket === b && styles.bracketNumActive]}>{b}</Text>
-                  <Text style={styles.bracketLabel}>
-                    {b === 1 ? 'Casual' : b === 2 ? 'Upgraded' : b === 3 ? 'Optimized' : 'Competitive'}
-                  </Text>
+                  <Text style={[styles.bracketNum, active && styles.bracketNumActive]}>{b}</Text>
+                  <Text style={styles.bracketLabel}>{BRACKET_INFO[b].label}</Text>
                 </Pressable>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.bracketDisplay}>
-              <Text style={styles.bracketDisplayNum}>{currentUser.bracket}</Text>
-              <Text style={styles.bracketDisplayLabel}>
-                {currentUser.bracket === 1 ? 'Casual'
-                  : currentUser.bracket === 2 ? 'Upgraded'
-                  : currentUser.bracket === 3 ? 'Optimized'
-                  : 'Competitive'}
-              </Text>
-            </View>
-          )}
+              );
+            })}
+          </View>
         </View>
       )}
 
@@ -457,20 +454,11 @@ const styles = StyleSheet.create({
     color: '#555',
     marginTop: 2,
   },
-  bracketDisplay: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
-  bracketDisplayNum: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#007AFF',
-  },
-  bracketDisplayLabel: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+  sectionHintText: {
+    fontSize: 11,
+    color: '#555',
+    marginBottom: 10,
+    marginTop: -8,
   },
   rivalCard: {
     flexDirection: 'row',
