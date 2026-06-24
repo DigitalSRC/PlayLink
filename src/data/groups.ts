@@ -1,9 +1,4 @@
-import {
-    GROUP_NAME_POOL,
-    LOCATION_POOL,
-    PLAYER_NAME_POOL,
-    TIME_POOL,
-} from "./random-data";
+import { GameType, NoGoRule } from './types';
 
 export interface PlayerProfile {
   id: number;
@@ -21,58 +16,143 @@ export interface Group {
   bracket: number;
   location: string;
   time: string;
+  gameType: GameType;
+  format: string;
+  noGo: NoGoRule[];
+  confirmed: boolean;
 }
 
-const shuffle = <T,>(items: T[]): T[] => {
-  const copy = [...items];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
-  }
-  return copy;
-};
-
-const pick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
-
-const createRandomPlayer = (id: number, role: string): PlayerProfile => {
-  const username = pick(PLAYER_NAME_POOL);
-  return {
-    id,
-    username,
-    bracket: Math.floor(Math.random() * 6) + 1,
-    location: pick(LOCATION_POOL),
-    role,
-  };
-};
-
-const createRandomGroup = (id: number): Group => {
-  const groupPlayers = shuffle(PLAYER_NAME_POOL).slice(0, Math.floor(Math.random() * 3) + 2);
-  const memberCount = Math.min(groupPlayers.length, Math.floor(Math.random() * 3) + 2);
-  const players: PlayerProfile[] = [];
-
-  for (let index = 0; index < memberCount; index += 1) {
-    players.push(
-      createRandomPlayer(
-        id * 100 + index + 1,
-        index === 0 ? "Host" : "Member"
-      )
-    );
-  }
-
-  const targetPlayers = Math.max(memberCount + 1, Math.floor(Math.random() * 3) + memberCount);
-
-  return {
-    id,
-    name: pick(GROUP_NAME_POOL),
-    players,
-    targetPlayers,
-    bracket: Math.floor(Math.random() * 6) + 1,
-    location: pick(LOCATION_POOL),
-    time: pick(TIME_POOL),
-  };
-};
-
-export const HARDCODED_GROUPS: Group[] = Array.from(
-  { length: Math.floor(Math.random() * 5) + 1 },
-  (_, index) => createRandomGroup(index + 1)
-);
+export const HARDCODED_GROUPS: Group[] = [
+  {
+    id: 1,
+    name: 'Friday Night Commander',
+    gameType: 'mtg',
+    format: 'Commander',
+    bracket: 2,
+    location: 'Riverside Park',
+    time: 'Friday · 7:00 PM',
+    players: [
+      { id: 1001, username: 'Lucas Webb', bracket: 2, location: 'Riverside Park', role: 'Host' },
+      { id: 1002, username: 'Kai Torres', bracket: 2, location: 'Northside Rec Center', role: 'Member' },
+      { id: 1003, username: 'Elena Voss', bracket: 2, location: 'Eastside Brewery', role: 'Member' },
+    ],
+    targetPlayers: 4,
+    noGo: ['Infinites', 'Extra Turns'],
+    confirmed: false,
+  },
+  {
+    id: 2,
+    name: 'Saturday Draft Night',
+    gameType: 'mtg',
+    format: 'Draft',
+    bracket: 3,
+    location: 'Downtown Library',
+    time: 'Saturday · 2:00 PM',
+    players: [
+      { id: 2001, username: 'Sarah Chen', bracket: 3, location: 'Downtown Library', role: 'Host' },
+      { id: 2002, username: 'Marcus Bell', bracket: 3, location: 'University Union', role: 'Member' },
+      { id: 2003, username: 'Cole Westbrook', bracket: 3, location: 'Highland Hall', role: 'Member' },
+      { id: 2004, username: 'Priya Sharma', bracket: 2, location: 'Brookside Commons', role: 'Member' },
+      { id: 2005, username: 'Aria Mendez', bracket: 1, location: 'Bluebird Plaza', role: 'Member' },
+    ],
+    targetPlayers: 8,
+    noGo: [],
+    confirmed: false,
+  },
+  {
+    id: 3,
+    name: 'Pokémon Standard Showdown',
+    gameType: 'pokemon',
+    format: 'Standard',
+    bracket: 2,
+    location: 'Maple Street Café',
+    time: 'Sunday · 12:30 PM',
+    players: [
+      { id: 3001, username: 'Zoe Nakamura', bracket: 2, location: 'Willow Creek Cafe', role: 'Host' },
+      { id: 3002, username: 'Maya Patel', bracket: 1, location: 'Maple Street Café', role: 'Member' },
+    ],
+    targetPlayers: 4,
+    noGo: ['Infinites'],
+    confirmed: false,
+  },
+  {
+    id: 4,
+    name: 'Pioneer Monday Grind',
+    gameType: 'mtg',
+    format: 'Pioneer',
+    bracket: 3,
+    location: 'University Union',
+    time: 'Monday · 6:00 PM',
+    players: [
+      { id: 4001, username: 'Jake Rivers', bracket: 4, location: 'Main Street Arcade', role: 'Host' },
+      { id: 4002, username: 'Cole Westbrook', bracket: 3, location: 'Highland Hall', role: 'Member' },
+      { id: 4003, username: 'Sarah Chen', bracket: 3, location: 'Downtown Library', role: 'Member' },
+    ],
+    targetPlayers: 5,
+    noGo: [],
+    confirmed: false,
+  },
+  {
+    id: 5,
+    name: 'Lorcana League Night',
+    gameType: 'lorcana',
+    format: 'Constructed',
+    bracket: 1,
+    location: 'Bluebird Plaza',
+    time: 'Wednesday · 7:00 PM',
+    players: [
+      { id: 5001, username: 'Aria Mendez', bracket: 1, location: 'Bluebird Plaza', role: 'Host' },
+      { id: 5002, username: 'Maya Patel', bracket: 1, location: 'Maple Street Café', role: 'Member' },
+    ],
+    targetPlayers: 4,
+    noGo: [],
+    confirmed: false,
+  },
+  {
+    id: 6,
+    name: 'One Piece Grand Line Duel',
+    gameType: 'onepiece',
+    format: 'OP',
+    bracket: 2,
+    location: 'Harbor Market',
+    time: 'Saturday · 5:30 PM',
+    players: [
+      { id: 6001, username: 'Ryan Okafor', bracket: 1, location: 'Harbor Market', role: 'Host' },
+      { id: 6002, username: 'Elena Voss', bracket: 2, location: 'Eastside Brewery', role: 'Member' },
+    ],
+    targetPlayers: 4,
+    noGo: [],
+    confirmed: false,
+  },
+  {
+    id: 7,
+    name: 'Casual Commander Hangout',
+    gameType: 'mtg',
+    format: 'Commander',
+    bracket: 1,
+    location: 'Brookside Commons',
+    time: 'Sunday · 3:00 PM',
+    players: [
+      { id: 7001, username: 'Priya Sharma', bracket: 2, location: 'Brookside Commons', role: 'Host' },
+    ],
+    targetPlayers: 4,
+    noGo: ['Infinites', 'Extra Turns', 'Game Changers'],
+    confirmed: false,
+  },
+  {
+    id: 8,
+    name: 'Pokémon Draft League',
+    gameType: 'pokemon',
+    format: 'Limited',
+    bracket: 1,
+    location: 'Northside Rec Center',
+    time: 'Thursday · 6:30 PM',
+    players: [
+      { id: 8001, username: 'Zoe Nakamura', bracket: 2, location: 'Willow Creek Cafe', role: 'Host' },
+      { id: 8002, username: 'Lucas Webb', bracket: 2, location: 'Riverside Park', role: 'Member' },
+    ],
+    targetPlayers: 6,
+    noGo: [],
+    confirmed: false,
+  },
+];

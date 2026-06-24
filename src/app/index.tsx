@@ -1,51 +1,18 @@
-import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Redirect } from 'expo-router';
+import { useApp } from '../context/AppContext';
 
-// Index: Home/welcome screen displayed when app launches. Shows branding and navigation button.
-// Inputs: None. Outputs: JSX element with centered welcome message and "Create Profile" button that navigates to profile-creation screen.
+/**
+ * Entry point that routes new and returning users to the correct screen.
+ * Checks whether a profile exists in context and redirects accordingly.
+ * Parameters: none.
+ * Returns: a Redirect element — never renders visible UI itself.
+ * Edge cases: always redirects; the targeted screens handle their own loading states.
+ */
 export default function Index() {
-  const router = useRouter();
+  const { currentUser } = useApp();
 
-  // Renders welcome screen with title, subtitle, and navigation button.
-  // Button triggers router.push() to navigate to /profile-creation route when pressed.
-  return (
-    <View style={styles.container}>
-      <Text style={styles.mainTitle}>Welcome to PlayLink</Text>
-      <Text style={styles.subtitle}>Silvenari.Co</Text>
-      <Pressable style={styles.button} onPress={() => router.push("/profile-creation")}>
-        <Text style={styles.buttonText}>Create Profile</Text>
-      </Pressable>
-    </View>
-  );
+  if (currentUser) {
+    return <Redirect href="/(tabs)/home" />;
+  }
+  return <Redirect href="/profile-creation" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  mainTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 14,
-    marginBottom: 40,
-    opacity: 0.7,
-  },
-  button: {
-    backgroundColor: "#007AFF",
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-});
