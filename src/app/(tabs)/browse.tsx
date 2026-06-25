@@ -14,6 +14,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
+  BRACKET_INFO,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -22,6 +23,7 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
+import { formatBrackets } from '../../utils/group-utils';
 
 const ALL_GAMES: (GameType | 'all')[] = ['all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
 
@@ -47,7 +49,7 @@ export default function BrowseScreen() {
   const [newLocation, setNewLocation] = useState('');
   const [newTime, setNewTime] = useState('');
   const [newTarget, setNewTarget] = useState('4');
-  const [newBracket, setNewBracket] = useState('2');
+  const [newBrackets, setNewBrackets] = useState<number[]>([2]);
   const [newNoGo, setNewNoGo] = useState<NoGoRule[]>([]);
 
   const [feedbackMsg, setFeedbackMsg] = useState('');
@@ -132,7 +134,7 @@ export default function BrowseScreen() {
       name: newName.trim(),
       gameType: newGame,
       format: newFormat || FORMAT_OPTIONS[newGame][0],
-      bracket: Number(newBracket) || 2,
+      brackets: newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
       time: newTime.trim() || 'This week',
       players: [
@@ -158,9 +160,20 @@ export default function BrowseScreen() {
     setNewLocation('');
     setNewTime('');
     setNewTarget('4');
-    setNewBracket('2');
+    setNewBrackets([2]);
     setNewNoGo([]);
     showFeedback(`Group created! +10 XP`);
+  };
+
+  const toggleBracket = (b: number) => {
+    Haptics.selectionAsync();
+    if (newFormat === 'Commander') {
+      setNewBrackets((prev) =>
+        prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
+      );
+    } else {
+      setNewBrackets([b]);
+    }
   };
 
   const toggleNoGo = (rule: NoGoRule) => {
@@ -219,7 +232,7 @@ export default function BrowseScreen() {
                 <Pressable
                   key={g}
                   style={[styles.gamePicker, newGame === g && { borderColor: GAME_COLOR[g], backgroundColor: GAME_COLOR[g] + '22' }]}
-                  onPress={() => { setNewGame(g); setNewFormat(''); }}
+                  onPress={() => { setNewGame(g); setNewFormat(''); setNewBrackets([2]); }}
                 >
                   <Text style={styles.gamePickerEmoji}>{GAME_EMOJI[g]}</Text>
                   <Text style={[styles.gamePickerLabel, newGame === g && { color: GAME_COLOR[g] }]}>
@@ -251,15 +264,29 @@ export default function BrowseScreen() {
             <Text style={styles.fieldLabel}>When</Text>
             <TextInput style={styles.input} value={newTime} onChangeText={setNewTime} placeholder="e.g. Saturday · 6:00 PM" placeholderTextColor="#555" />
 
-            <View style={styles.rowInputs}>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>Players Needed</Text>
-                <TextInput style={styles.input} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
-              </View>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>Bracket</Text>
-                <TextInput style={styles.input} value={newBracket} onChangeText={setNewBracket} keyboardType="numeric" placeholderTextColor="#555" />
-              </View>
+            <View style={styles.halfField}>
+              <Text style={styles.fieldLabel}>Players Needed</Text>
+              <TextInput style={styles.input} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
+            </View>
+
+            <Text style={styles.fieldLabel}>
+              Bracket{newFormat === 'Commander' ? ' (select all that apply)' : ''}
+            </Text>
+            <View style={styles.chipRow}>
+              {([1, 2, 3, 4, 5] as number[]).map((b) => {
+                const active = newBrackets.includes(b);
+                return (
+                  <Pressable
+                    key={b}
+                    style={[styles.chip, active && styles.chipBracketActive]}
+                    onPress={() => toggleBracket(b)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      {BRACKET_INFO[b].label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
             <Text style={styles.fieldLabel}>No-Go Rules</Text>
@@ -318,7 +345,7 @@ export default function BrowseScreen() {
 
               <Text style={styles.groupName}>{group.name}</Text>
               <Text style={styles.groupMeta}>
-                {group.players.length}/{group.targetPlayers} players · Bracket {group.bracket}
+                {group.players.length}/{group.targetPlayers} players · {formatBrackets(group.brackets)}
               </Text>
               <Text style={styles.groupMeta}>{group.location} · {group.time}</Text>
 
@@ -502,6 +529,10 @@ const styles = StyleSheet.create({
   chipNoGo: {
     backgroundColor: '#3D1215',
     borderColor: '#C0392B',
+  },
+  chipBracketActive: {
+    backgroundColor: '#001A33',
+    borderColor: '#007AFF',
   },
   input: {
     backgroundColor: '#0F0F14',
