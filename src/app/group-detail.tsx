@@ -12,7 +12,8 @@ import {
   View,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
-import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
+import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS, TIME_SLOTS } from '../data/types';
+import { formatBrackets } from '../utils/group-utils';
 
 /**
  * Group detail screen showing the full roster, group settings, and host controls.
@@ -33,9 +34,11 @@ export default function GroupDetail() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group?.name ?? '');
   const [editLocation, setEditLocation] = useState(group?.location ?? '');
-  const [editTime, setEditTime] = useState(group?.time ?? '');
   const [editTarget, setEditTarget] = useState(String(group?.targetPlayers ?? 4));
-  const [editBracket, setEditBracket] = useState(String(group?.bracket ?? 2));
+  const [editBrackets, setEditBrackets] = useState<number[]>(group?.brackets ?? [2]);
+  const timeParts = (group?.time ?? '').split(' · ');
+  const [editDay, setEditDay] = useState(timeParts[0] ?? '');
+  const [editTimeSlot, setEditTimeSlot] = useState(timeParts[1] ?? '');
   const [showConfirmOverlay, setShowConfirmOverlay] = useState(false);
 
   const celebScale = useRef(new Animated.Value(0)).current;
@@ -196,9 +199,9 @@ export default function GroupDetail() {
               ...g,
               name: editName.trim(),
               location: editLocation.trim(),
-              time: editTime.trim() || g.time,
+              time: editDay && editTimeSlot ? `${editDay} · ${editTimeSlot}` : g.time,
               targetPlayers: Math.max(g.players.length, Number(editTarget) || g.targetPlayers),
-              bracket: Number(editBracket) || g.bracket,
+              brackets: editBrackets.length > 0 ? editBrackets : g.brackets,
             }
           : g
       )
@@ -264,16 +267,62 @@ export default function GroupDetail() {
           {editing ? (
             <>
               <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
-              <TextInput style={styles.editInput} value={editTime} onChangeText={setEditTime} placeholder="Time" placeholderTextColor="#555" />
-              <View style={styles.editRow}>
-                <View style={styles.editHalf}>
-                  <Text style={styles.editLabel}>Players Needed</Text>
-                  <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
-                </View>
-                <View style={styles.editHalf}>
-                  <Text style={styles.editLabel}>Bracket</Text>
-                  <TextInput style={styles.editInput} value={editBracket} onChangeText={setEditBracket} keyboardType="numeric" />
-                </View>
+
+              <Text style={styles.editLabel}>Day</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                {DAYS_OF_WEEK.map((day) => (
+                  <Pressable
+                    key={day}
+                    style={[styles.editChip, editDay === day && styles.editChipActive]}
+                    onPress={() => setEditDay(day)}
+                  >
+                    <Text style={[styles.editChipText, editDay === day && styles.editChipTextActive]}>{day}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.editLabel}>Time</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                {TIME_SLOTS.map((slot) => (
+                  <Pressable
+                    key={slot}
+                    style={[styles.editChip, editTimeSlot === slot && styles.editChipActive]}
+                    onPress={() => setEditTimeSlot(slot)}
+                  >
+                    <Text style={[styles.editChipText, editTimeSlot === slot && styles.editChipTextActive]}>{slot}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.editLabel}>Players Needed</Text>
+              <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
+
+              <Text style={styles.editLabel}>
+                Bracket{group.format === 'Commander' ? ' (select all that apply)' : ''}
+              </Text>
+              <View style={styles.chipRowWrap}>
+                {([1, 2, 3, 4, 5] as number[]).map((b) => {
+                  const active = editBrackets.includes(b);
+                  return (
+                    <Pressable
+                      key={b}
+                      style={[styles.editChip, active && styles.editChipActive]}
+                      onPress={() => {
+                        if (group.format === 'Commander') {
+                          setEditBrackets((prev) =>
+                            prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
+                          );
+                        } else {
+                          setEditBrackets([b]);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.editChipText, active && styles.editChipTextActive]}>
+                        {BRACKET_INFO[b].label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </>
           ) : (
@@ -281,7 +330,7 @@ export default function GroupDetail() {
               <Text style={styles.metaRow}>📍 {group.location}</Text>
               <Text style={styles.metaRow}>🕐 {group.time}</Text>
               <Text style={styles.metaRow}>👥 {group.players.length} / {group.targetPlayers} players</Text>
-              <Text style={styles.metaRow}>⚔️ Bracket {group.bracket}</Text>
+              <Text style={styles.metaRow}>⚔️ {formatBrackets(group.brackets)}</Text>
               {group.noGo.length > 0 && (
                 <Text style={[styles.metaRow, styles.noGoRow]}>🚫 No {group.noGo.join(', ')}</Text>
               )}
@@ -681,5 +730,35 @@ const styles = StyleSheet.create({
     color: '#C0392B',
     fontWeight: '700',
     fontSize: 16,
+  },
+  chipRow: {
+    gap: 6,
+    paddingBottom: 4,
+  },
+  chipRowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  editChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#333',
+    backgroundColor: '#0F0F14',
+  },
+  editChipActive: {
+    backgroundColor: '#001A33',
+    borderColor: '#007AFF',
+  },
+  editChipText: {
+    fontSize: 12,
+    color: '#888',
+    fontWeight: '600',
+  },
+  editChipTextActive: {
+    color: '#FFF',
   },
 });
