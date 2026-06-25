@@ -141,6 +141,8 @@ export const removePlayerFromGroup = (
   };
 };
 
+export const formatBrackets = (brackets: number[]): string => '';
+
 /**
  * Updates a group so another player becomes the host.
  * Parameters: group (the group to edit), playerId (the player who should become host).
