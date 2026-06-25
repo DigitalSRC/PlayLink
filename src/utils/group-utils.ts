@@ -141,7 +141,21 @@ export const removePlayerFromGroup = (
   };
 };
 
-export const formatBrackets = (brackets: number[]): string => '';
+/**
+ * Formats a brackets array into a readable label for display in group cards and detail views.
+ * Returns "Bracket N" when only one bracket is present, or "Brackets N, M, ..." sorted ascending for multiple.
+ * Handles the Commander multi-bracket case without requiring callers to know the array length.
+ * Parameters: brackets (array of bracket numbers on a group).
+ * Returns: a display string such as "Bracket 2" or "Brackets 1, 2, 3".
+ * Edge cases: returns an empty string when given an empty array; callers should ensure at least one bracket is set.
+ */
+export const formatBrackets = (brackets: number[]): string => {
+  if (brackets.length === 0) return '';
+  const sorted = [...brackets].sort((a, b) => a - b);
+  return sorted.length === 1
+    ? `Bracket ${sorted[0]}`
+    : `Brackets ${sorted.join(', ')}`;
+};
 
 /**
  * Updates a group so another player becomes the host.
