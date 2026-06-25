@@ -15,6 +15,7 @@ import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
   BRACKET_INFO,
+  DAYS_OF_WEEK,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -22,6 +23,7 @@ import {
   GameType,
   NO_GO_OPTIONS,
   NoGoRule,
+  TIME_SLOTS,
 } from '../../data/types';
 import { formatBrackets } from '../../utils/group-utils';
 
@@ -47,7 +49,8 @@ export default function BrowseScreen() {
   const [newGame, setNewGame] = useState<GameType>('mtg');
   const [newFormat, setNewFormat] = useState('');
   const [newLocation, setNewLocation] = useState('');
-  const [newTime, setNewTime] = useState('');
+  const [newDay, setNewDay] = useState('');
+  const [newTimeSlot, setNewTimeSlot] = useState('');
   const [newTarget, setNewTarget] = useState('4');
   const [newBrackets, setNewBrackets] = useState<number[]>([2]);
   const [newNoGo, setNewNoGo] = useState<NoGoRule[]>([]);
@@ -136,7 +139,7 @@ export default function BrowseScreen() {
       format: newFormat || FORMAT_OPTIONS[newGame][0],
       brackets: newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
-      time: newTime.trim() || 'This week',
+      time: newDay && newTimeSlot ? `${newDay} · ${newTimeSlot}` : 'TBD',
       players: [
         {
           id: Date.now() + 1,
@@ -158,7 +161,8 @@ export default function BrowseScreen() {
     setShowCreate(false);
     setNewName('');
     setNewLocation('');
-    setNewTime('');
+    setNewDay('');
+    setNewTimeSlot('');
     setNewTarget('4');
     setNewBrackets([2]);
     setNewNoGo([]);
@@ -261,8 +265,31 @@ export default function BrowseScreen() {
             <Text style={styles.fieldLabel}>Location</Text>
             <TextInput style={styles.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
 
-            <Text style={styles.fieldLabel}>When</Text>
-            <TextInput style={styles.input} value={newTime} onChangeText={setNewTime} placeholder="e.g. Saturday · 6:00 PM" placeholderTextColor="#555" />
+            <Text style={styles.fieldLabel}>Day</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
+              {DAYS_OF_WEEK.map((day) => (
+                <Pressable
+                  key={day}
+                  style={[styles.chip, newDay === day && styles.chipTimeActive]}
+                  onPress={() => { setNewDay(day); Haptics.selectionAsync(); }}
+                >
+                  <Text style={[styles.chipText, newDay === day && styles.chipTextActive]}>{day}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.fieldLabel}>Time</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
+              {TIME_SLOTS.map((slot) => (
+                <Pressable
+                  key={slot}
+                  style={[styles.chip, newTimeSlot === slot && styles.chipTimeActive]}
+                  onPress={() => { setNewTimeSlot(slot); Haptics.selectionAsync(); }}
+                >
+                  <Text style={[styles.chipText, newTimeSlot === slot && styles.chipTextActive]}>{slot}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
 
             <View style={styles.halfField}>
               <Text style={styles.fieldLabel}>Players Needed</Text>
@@ -533,6 +560,14 @@ const styles = StyleSheet.create({
   chipBracketActive: {
     backgroundColor: '#001A33',
     borderColor: '#007AFF',
+  },
+  chipTimeActive: {
+    backgroundColor: '#001A33',
+    borderColor: '#007AFF',
+  },
+  timePickerContent: {
+    gap: 6,
+    paddingBottom: 4,
   },
   input: {
     backgroundColor: '#0F0F14',
