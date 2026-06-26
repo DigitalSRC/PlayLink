@@ -107,6 +107,9 @@ export default function GroupDetail() {
   };
 
   const handleEndSession = () => {
+    if (group.roundsPlayed > 0) {
+      awardPoints(10);
+    }
     setGroups((prev) => prev.filter((g) => g.id !== groupId));
     setShowConfirmOverlay(false);
     router.replace('/(tabs)/browse');

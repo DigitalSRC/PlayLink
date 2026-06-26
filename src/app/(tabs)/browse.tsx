@@ -207,7 +207,6 @@ export default function BrowseScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     setGroups((prev) => [group, ...prev]);
-    awardPoints(10);
     setShowCreate(false);
     setNewName('');
     setNewDay('');
@@ -215,7 +214,7 @@ export default function BrowseScreen() {
     setNewMinute(0);
     setNewPeriod('PM');
     setNewTarget('4');
-    showFeedback(`Group created! +10 Points`);
+    showFeedback('Group created!');
   };
 
   const toggleBracket = (b: number) => {
