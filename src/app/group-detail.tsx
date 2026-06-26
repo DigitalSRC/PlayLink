@@ -532,6 +532,19 @@ export default function GroupDetail() {
           </Pressable>
         ))}
 
+        {/* Life Counter — MTG groups only, visible to all members */}
+        {isInGroup && group.gameType === 'mtg' && (
+          <Pressable
+            style={styles.lifeCounterBtn}
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.push({ pathname: '/life-counter', params: { groupId: group.id } });
+            }}
+          >
+            <Text style={styles.lifeCounterBtnText}>⚔️  Life Counter</Text>
+          </Pressable>
+        )}
+
         {/* Join / Leave */}
         <View style={styles.actionSection}>
           {isInGroup ? (
@@ -1100,5 +1113,20 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#FFF',
+  },
+  lifeCounterBtn: {
+    backgroundColor: '#1A0A00',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#8B3A3A',
+    marginBottom: 12,
+  },
+  lifeCounterBtnText: {
+    color: '#C0605A',
+    fontWeight: '700',
+    fontSize: 15,
+    letterSpacing: 0.5,
   },
 });
