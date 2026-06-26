@@ -15,10 +15,15 @@ import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
 
+const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can confirm
+const MIN_PLAYERS_COMMANDER = 3;        // minimum attendees for a Commander session
+const MIN_PLAYERS_OTHER = 2;            // minimum attendees for all other formats
+
 /**
  * Group detail screen showing the full roster, group settings, and host controls.
  * Handles join, leave, host transfer, and group edits — with haptic and visual feedback on each action.
- * Hosts can confirm a meetup happened which awards XP to all members and triggers a celebration overlay.
+ * Hosts can confirm a meetup happened which awards Points to all members and triggers a celebration overlay.
+ * Confirmation is blocked until the group is 30 min old (prevents instant farm) and has enough players.
  * Parameters: none; reads id from route search params, finds the group in global context.
  * Returns: a scrollable detail screen or null when the group ID does not match any group.
  * Edge cases: back-navigates silently when the group is not found or has been deleted.
@@ -61,6 +66,13 @@ export default function GroupDetail() {
   const isHost = group.players.some((p) => p.username === displayUser && p.role === 'Host');
   const isFull = group.players.length >= group.targetPlayers;
 
+  const minPlayers = group.format === 'Commander' ? MIN_PLAYERS_COMMANDER : MIN_PLAYERS_OTHER;
+  const msRemaining = Math.max(0, CONFIRM_LOCK_MS - (Date.now() - group.createdAt));
+  const minutesRemaining = Math.ceil(msRemaining / 60000);
+  const timeLocked = msRemaining > 0;
+  const headcountLocked = group.players.length < minPlayers;
+  const confirmBlocked = timeLocked || headcountLocked;
+
   const currentUserGroup = groups.find((g) =>
     g.players.some((p) => p.username === displayUser)
   );
@@ -88,6 +100,20 @@ export default function GroupDetail() {
 
   const handleConfirmMeetup = () => {
     if (!isHost) return;
+    if (timeLocked) {
+      Alert.alert(
+        'Too Soon',
+        `Groups must exist for at least 30 minutes before they can be confirmed. ${minutesRemaining} min remaining.`
+      );
+      return;
+    }
+    if (headcountLocked) {
+      Alert.alert(
+        'Not Enough Players',
+        `A ${group.format === 'Commander' ? 'Commander' : ''} session needs at least ${minPlayers} players to confirm. You currently have ${group.players.length}.`
+      );
+      return;
+    }
     Alert.alert(
       'Confirm Meetup',
       'Did this group meet up? This will award Points to everyone.',
@@ -385,11 +411,24 @@ export default function GroupDetail() {
                   <Text style={styles.editBtnText}>Edit Group</Text>
                 </Pressable>
                 {!group.confirmed && (
-                  <Pressable style={styles.confirmBtn} onPress={handleConfirmMeetup}>
-                    <Text style={styles.confirmBtnText}>Confirm Meetup</Text>
+                  <Pressable
+                    style={[styles.confirmBtn, confirmBlocked && styles.confirmBtnLocked]}
+                    onPress={handleConfirmMeetup}
+                  >
+                    <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
+                      Confirm Meetup
+                    </Text>
                   </Pressable>
                 )}
               </View>
+              {!group.confirmed && confirmBlocked && (
+                <Text style={styles.confirmLockNote}>
+                  {[
+                    timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
+                    headcountLocked ? `👥 Need ${minPlayers - group.players.length} more player${minPlayers - group.players.length > 1 ? 's' : ''}` : null,
+                  ].filter(Boolean).join('  ·  ')}
+                </Text>
+              )}
             )}
           </View>
         )}
@@ -651,10 +690,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#34C759',
   },
+  confirmBtnLocked: {
+    backgroundColor: '#1C1C24',
+    borderColor: '#333',
+  },
   confirmBtnText: {
     color: '#34C759',
     fontWeight: '700',
     fontSize: 14,
+  },
+  confirmBtnTextLocked: {
+    color: '#555',
+  },
+  confirmLockNote: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   saveBtn: {
     flex: 1,
