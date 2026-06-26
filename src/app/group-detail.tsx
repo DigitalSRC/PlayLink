@@ -20,13 +20,13 @@ const MIN_PLAYERS_COMMANDER = 3;        // minimum attendees for a Commander ses
 const MIN_PLAYERS_OTHER = 2;            // minimum attendees for all other formats
 
 /**
- * Group detail screen showing the full roster, group settings, and host controls.
- * Handles join, leave, host transfer, and group edits — with haptic and visual feedback on each action.
- * Hosts can confirm a meetup happened which awards Points to all members and triggers a celebration overlay.
- * Confirmation is blocked until the group is 30 min old (prevents instant farm) and has enough players.
- * Parameters: none; reads id from route search params, finds the group in global context.
- * Returns: a scrollable detail screen or null when the group ID does not match any group.
- * Edge cases: back-navigates silently when the group is not found or has been deleted.
+ * Group detail screen showing the full roster, settings, and host controls for a single group.
+ * Handles join, leave, host transfer, and group edits with haptic and visual feedback on each action.
+ * Multi-round session flow: host confirms a round, selects the winner (winner earns +30 Points), then chooses Another Round or End Session (+10 consolation Points to current user).
+ * Anti-cheat guards block confirmation until the group is at least 30 minutes old and has reached the minimum player count (3 for Commander, 2 for others).
+ * Parameters: none; reads id from route search params and locates the matching group in global context.
+ * Returns: a scrollable detail screen or null when the group ID does not match any active group.
+ * Edge cases: renders null and back-navigates silently when the group is not found or has been disbanded.
  */
 export default function GroupDetail() {
   const router = useRouter();

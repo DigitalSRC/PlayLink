@@ -1,7 +1,15 @@
 import { UserProfile } from '../data/types';
 
+// Seed-profile id for Dillon Carroll, the always-present rival whose preferences are mirrored from the current user.
 const DILLON_ID = 113;
 
+/**
+ * Computes a player's win rate as a fraction between 0 and 1.
+ * Used internally to rank rival candidates by closeness of skill level to the current user.
+ * Parameters: p (any UserProfile with wins and losses fields).
+ * Returns: wins / (wins + losses), or 0.5 when the player has no recorded games.
+ * Edge cases: returns 0.5 for a brand-new profile with zero games to avoid skewing the ranking.
+ */
 const winRate = (p: UserProfile): number => {
   const total = p.wins + p.losses;
   return total === 0 ? 0.5 : p.wins / total;

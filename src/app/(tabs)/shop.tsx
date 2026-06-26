@@ -60,6 +60,9 @@ export default function ShopScreen() {
   );
 }
 
+// Placeholder shop items shown in a greyed-out grid to illustrate what the rewards store will offer.
+// Each entry has an icon emoji, display name, short description, and point cost.
+// Prices and availability are not final; items are rendered at 0.6 opacity to signal coming-soon status.
 const PREVIEW_ITEMS = [
   { icon: '🖼️', name: 'Foil Border', desc: 'Shimmering border for your profile card', cost: 500 },
   { icon: '🏆', name: 'Gold Frame', desc: 'Golden frame unlocked by top performers', cost: 1200 },

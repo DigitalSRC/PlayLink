@@ -30,12 +30,12 @@ type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
 
 /**
- * Browse tab showing open groups filterable by game type.
- * Hosts a create-group form that collects game type, format, bracket, and no-go rules.
- * Triggers haptic feedback and an animated banner when a player joins or creates a group.
- * Parameters: none; reads groups and currentUser from global context.
- * Returns: a scrollable list screen with filter chips, group cards, and an inline create form.
- * Edge cases: join is blocked if user is already in a group or the group is full.
+ * Browse tab showing open groups filterable by game type, defaulting to the user's preferred games.
+ * Supports joining groups via a 6-character join code entered through the # Code toggle in the top bar.
+ * The create-group form auto-fills game, format, bracket, no-go rules, and location from the current user's preferences.
+ * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load.
+ * Returns: a scrollable list of group cards with filter chips, an inline create form, and a code-entry bar.
+ * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty.
  */
 export default function BrowseScreen() {
   const router = useRouter();

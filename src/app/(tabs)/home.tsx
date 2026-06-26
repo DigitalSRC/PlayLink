@@ -5,10 +5,11 @@ import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
 
 /**
  * Home tab — the player's personal dashboard after logging in.
- * Shows their XP and win/loss record, their active group (if any), rivals, and quick-action buttons.
- * Parameters: none; reads currentUser, groups, and rivals from global context.
- * Returns: a scrollable dashboard screen.
- * Edge cases: gracefully hides sections that have no data (no active group, no rivals yet).
+ * Shows the player's Points balance, win/loss record, active group, and rival hierarchy.
+ * Rival section distinguishes between one chosen Rival (red), up to two Contenders (gold), and an optional Familiar Foe slot for the most-played-against player.
+ * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
+ * Returns: a scrollable dashboard screen with quick-action buttons for Find and Create Group.
+ * Edge cases: hides the active group section when the user is in no group; hides the rivals section entirely when the rivals array is empty.
  */
 export default function HomeScreen() {
   const router = useRouter();

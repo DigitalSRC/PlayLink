@@ -2,6 +2,8 @@ import { Redirect, Tabs } from 'expo-router';
 import { Text } from 'react-native';
 import { useApp } from '../../context/AppContext';
 
+// Maps each tab route name to its emoji icon pair so the tabBarIcon callback stays declarative.
+// Active and inactive values are identical for now; split into separate keys to allow distinct focused styles later.
 const TAB_ICON: Record<string, { active: string; inactive: string }> = {
   home: { active: '🏠', inactive: '🏠' },
   browse: { active: '🔍', inactive: '🔍' },

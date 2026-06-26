@@ -25,6 +25,9 @@ import {
 import { SEED_PROFILES } from "../data/seed-profiles";
 import { findRivals } from "../utils/rival-utils";
 
+// Ordered labels for the four-step onboarding flow displayed in the progress indicator.
+// Index corresponds to the currentStep state value; length determines total step count for the progress bar.
+// Changing this array requires updating all step-index comparisons throughout ProfileCreation.
 const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
 
 /**
