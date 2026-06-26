@@ -436,29 +436,31 @@ export default function GroupDetail() {
                 </Pressable>
               </View>
             ) : (
-              <View style={styles.editBtnRow}>
-                <Pressable style={styles.editBtn} onPress={() => setEditing(true)}>
-                  <Text style={styles.editBtnText}>Edit Group</Text>
-                </Pressable>
-                {!group.confirmed && (
-                  <Pressable
-                    style={[styles.confirmBtn, confirmBlocked && styles.confirmBtnLocked]}
-                    onPress={handleConfirmMeetup}
-                  >
-                    <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
-                      {group.roundsPlayed > 0 ? `Confirm Round ${group.roundsPlayed + 1}` : 'Confirm Meetup'}
-                    </Text>
+              <>
+                <View style={styles.editBtnRow}>
+                  <Pressable style={styles.editBtn} onPress={() => setEditing(true)}>
+                    <Text style={styles.editBtnText}>Edit Group</Text>
                   </Pressable>
+                  {!group.confirmed && (
+                    <Pressable
+                      style={[styles.confirmBtn, confirmBlocked && styles.confirmBtnLocked]}
+                      onPress={handleConfirmMeetup}
+                    >
+                      <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
+                        {group.roundsPlayed > 0 ? `Confirm Round ${group.roundsPlayed + 1}` : 'Confirm Meetup'}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+                {!group.confirmed && confirmBlocked && (
+                  <Text style={styles.confirmLockNote}>
+                    {[
+                      timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
+                      headcountLocked ? `👥 Need ${minPlayers - group.players.length} more player${minPlayers - group.players.length > 1 ? 's' : ''}` : null,
+                    ].filter(Boolean).join('  ·  ')}
+                  </Text>
                 )}
-              </View>
-              {!group.confirmed && confirmBlocked && (
-                <Text style={styles.confirmLockNote}>
-                  {[
-                    timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
-                    headcountLocked ? `👥 Need ${minPlayers - group.players.length} more player${minPlayers - group.players.length > 1 ? 's' : ''}` : null,
-                  ].filter(Boolean).join('  ·  ')}
-                </Text>
-              )}
+              </>
             )}
           </View>
         )}
@@ -525,7 +527,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F0F14',
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
