@@ -1,0 +1,41 @@
+# CLAUDE.local.md — Developer Machine Setup
+
+This file is a template. Copy it to `CLAUDE.local.md` (which is gitignored) and fill in
+the values for your environment. Do NOT commit `CLAUDE.local.md` — it contains paths and
+settings that are specific to your machine and will break other developers' setups.
+
+---
+
+## Git binary
+
+If `git` is already in your system PATH (standard on Mac, Linux, and most Windows installs),
+you can run git commands directly and skip this section.
+
+If git is NOT in your PATH (common when using GitHub Desktop on Windows without a standalone
+Git install), set the path to the git executable before running any git commands in PowerShell:
+
+```powershell
+$git = "<absolute-path-to-git.exe>"
+& $git <command>
+```
+
+### Where to find git.exe on Windows
+
+| Setup | Typical path |
+|---|---|
+| Standalone Git install | `C:\Program Files\Git\cmd\git.exe` |
+| GitHub Desktop (Windows) | `C:\Users\<YourUsername>\AppData\Local\GitHubDesktop\app-<version>\resources\app\git\cmd\git.exe` |
+| Scoop | `C:\Users\<YourUsername>\scoop\apps\git\current\bin\git.exe` |
+| Winget / Microsoft Store Git | `C:\Program Files\Git\cmd\git.exe` |
+
+To find it yourself, run this in PowerShell:
+```powershell
+Get-ChildItem "C:\Users\$env:USERNAME\AppData\Local\GitHubDesktop" -Recurse -Filter "git.exe" | Select-Object -First 1 FullName
+```
+
+---
+
+## Other machine-specific settings
+
+Add any other local overrides here — emulator paths, local API keys for testing, etc.
+None of this should ever be committed to the repository.

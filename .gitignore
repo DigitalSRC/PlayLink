@@ -1,5 +1,8 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+# Developer-local machine config (paths, keys, personal tooling) — never commit this
+CLAUDE.local.md
+
 # dependencies
 node_modules/
 

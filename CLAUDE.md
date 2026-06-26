@@ -17,12 +17,9 @@ PlayLink is an Expo Router app (v56) built with React Native and TypeScript. Use
 
 ### Git binary location
 
-`git` is not in the system PATH. Use the GitHub Desktop bundled binary for all git commands:
-
-```
-$git = "C:\Users\DigitalSRC\AppData\Local\GitHubDesktop\app-3.5.12\resources\app\git\cmd\git.exe"
-& $git <command>
-```
+If `git` is not in your system PATH, your machine-specific path to the git executable is
+stored in `CLAUDE.local.md` (gitignored — never committed). If you have not created that
+file yet, copy `CLAUDE.local.md.example` and fill in the path for your environment.
 
 Before changing Expo or routing behavior, read the versioned docs at https://docs.expo.dev/versions/v56.0.0/.
 

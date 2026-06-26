@@ -1,56 +1,123 @@
-# Welcome to your Expo app 👋
+# PlayLink
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native / Expo Router app for finding and organizing tabletop card game play groups. Users create a profile, select the games they play, get matched with rivals, and browse or create local play groups.
 
-## Get started
+Built with **Expo SDK 56**, **React Native**, and **TypeScript**.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## Getting started
 
-2. Start the app
+### Prerequisites
 
-   ```bash
-   npx expo start
-   ```
+- Node.js 18+
+- npm 9+
+- [Expo Go](https://expo.dev/go) on your phone, or an Android/iOS simulator
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### Install and run
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Then press `a` for Android, `i` for iOS, or `w` for web. Scan the QR code with Expo Go to run on a physical device.
 
-### Other setup steps
+---
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Machine-specific setup (required for all developers)
 
-## Learn more
+Some tooling paths differ between machines and must not be committed to the repository.
+These are stored in a gitignored file that each developer creates locally.
 
-To learn more about developing your project with Expo, look at the following resources:
+**Steps:**
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+1. Copy the template:
+   ```bash
+   cp CLAUDE.local.md.example CLAUDE.local.md
+   ```
 
-## Join the community
+2. Open `CLAUDE.local.md` and fill in any values that apply to your machine. The most
+   common one is the git binary path if `git` is not in your system PATH — see the
+   template for instructions and common locations per OS/tooling.
 
-Join our community of developers creating universal apps.
+3. `CLAUDE.local.md` is listed in `.gitignore`. Never commit it.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+## Branch and workflow setup
+
+This project uses a three-tier branch model. When you clone the repo, make sure all three
+branches are available locally:
+
+```bash
+git checkout main
+git checkout unitTests
+git checkout -b feature/your-first-feature unitTests
+```
+
+| Branch | Purpose |
+|---|---|
+| `main` | Production only. Never commit here directly. |
+| `unitTests` | Staging. All feature branches merge here; tests run here before anything hits main. |
+| `feature/*` | One branch per feature, branched off `unitTests`. Never deleted. |
+
+See `CLAUDE.md` for the full step-by-step workflow Claude Code follows on every session.
+
+---
+
+## Project commands
+
+| Command | What it does |
+|---|---|
+| `npm install` | Install dependencies |
+| `npx expo start` | Start the dev server |
+| `npx expo start --android` | Target Android specifically |
+| `npx expo start --ios` | Target iOS specifically |
+| `npm test` | Run all Jest unit tests |
+| `npx jest --testPathPattern=group-utils` | Run a single test file by path fragment |
+| `npm run lint` | Run ESLint |
+
+---
+
+## Project structure
+
+```
+src/
+  app/                  Expo Router screens
+    (tabs)/             Tab navigator screens (home, browse, profile)
+    index.tsx           Entry point — redirects based on auth state
+    profile-creation.tsx  Multi-step onboarding flow
+    group-detail.tsx    Group detail / management screen
+  context/
+    AppContext.tsx       Global state (current user, groups, rivals)
+  data/
+    types.ts            Core TypeScript interfaces and constants
+    groups.ts           Group type + hardcoded seed groups
+    seed-profiles.ts    Seed player profiles used for rival matching
+    random-data.ts      String pools for random group generation
+  utils/
+    group-utils.ts      Pure business logic for group operations
+    rival-utils.ts      Rival matching algorithm
+    group-utils.test.ts Unit tests
+docs/
+  documentation-prompt.txt  Function documentation standard
+```
+
+---
+
+## For AI assistants (Claude Code)
+
+This project ships with `CLAUDE.md` which Claude Code reads automatically. It contains the
+architecture overview, git workflow rules, and documentation requirements.
+
+Machine-specific instructions (git binary path, etc.) live in `CLAUDE.local.md`, which is
+gitignored. Claude Code will reference that file for environment-specific commands.
+
+---
+
+## Expo documentation
+
+- [Expo Router docs](https://docs.expo.dev/versions/v56.0.0/) (v56)
+- [React Native docs](https://reactnative.dev/docs/getting-started)
+- [Expo Go](https://expo.dev/go)
