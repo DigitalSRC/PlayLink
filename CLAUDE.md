@@ -15,6 +15,15 @@ PlayLink is an Expo Router app (v56) built with React Native and TypeScript. Use
 - `npx jest -t "normalizes invalid"` — run tests matching a name pattern
 - `npm run lint` — run ESLint via expo lint
 
+### Git binary location
+
+`git` is not in the system PATH. Use the GitHub Desktop bundled binary for all git commands:
+
+```
+$git = "C:\Users\DigitalSRC\AppData\Local\GitHubDesktop\app-3.5.12\resources\app\git\cmd\git.exe"
+& $git <command>
+```
+
 Before changing Expo or routing behavior, read the versioned docs at https://docs.expo.dev/versions/v56.0.0/.
 
 ## Architecture
