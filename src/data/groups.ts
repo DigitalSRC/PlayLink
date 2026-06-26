@@ -13,7 +13,7 @@ export interface Group {
   name: string;
   players: PlayerProfile[];
   targetPlayers: number;
-  bracket: number;
+  brackets: number[];
   location: string;
   time: string;
   gameType: GameType;
@@ -28,7 +28,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Friday Night Commander',
     gameType: 'mtg',
     format: 'Commander',
-    bracket: 2,
+    brackets: [2],
     location: 'Riverside Park',
     time: 'Friday · 7:00 PM',
     players: [
@@ -45,7 +45,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Saturday Draft Night',
     gameType: 'mtg',
     format: 'Draft',
-    bracket: 3,
+    brackets: [3],
     location: 'Downtown Library',
     time: 'Saturday · 2:00 PM',
     players: [
@@ -64,7 +64,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Pokémon Standard Showdown',
     gameType: 'pokemon',
     format: 'Standard',
-    bracket: 2,
+    brackets: [2],
     location: 'Maple Street Café',
     time: 'Sunday · 12:30 PM',
     players: [
@@ -80,7 +80,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Pioneer Monday Grind',
     gameType: 'mtg',
     format: 'Pioneer',
-    bracket: 3,
+    brackets: [3],
     location: 'University Union',
     time: 'Monday · 6:00 PM',
     players: [
@@ -97,7 +97,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Lorcana League Night',
     gameType: 'lorcana',
     format: 'Constructed',
-    bracket: 1,
+    brackets: [1],
     location: 'Bluebird Plaza',
     time: 'Wednesday · 7:00 PM',
     players: [
@@ -113,7 +113,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'One Piece Grand Line Duel',
     gameType: 'onepiece',
     format: 'OP',
-    bracket: 2,
+    brackets: [2],
     location: 'Harbor Market',
     time: 'Saturday · 5:30 PM',
     players: [
@@ -129,7 +129,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Casual Commander Hangout',
     gameType: 'mtg',
     format: 'Commander',
-    bracket: 1,
+    brackets: [1],
     location: 'Brookside Commons',
     time: 'Sunday · 3:00 PM',
     players: [
@@ -144,7 +144,7 @@ export const HARDCODED_GROUPS: Group[] = [
     name: 'Pokémon Draft League',
     gameType: 'pokemon',
     format: 'Limited',
-    bracket: 1,
+    brackets: [1],
     location: 'Northside Rec Center',
     time: 'Thursday · 6:30 PM',
     players: [

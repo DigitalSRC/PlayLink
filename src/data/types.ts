@@ -58,6 +58,26 @@ export const NO_GO_OPTIONS: NoGoRule[] = [
   'Land Destruction',
 ];
 
+export const DAYS_OF_WEEK = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+] as const;
+
+export type DayOfWeek = typeof DAYS_OF_WEEK[number];
+
+// Generates all 96 legal time slots in 15-minute increments using a 12-hour AM/PM clock.
+export const TIME_SLOTS: string[] = (() => {
+  const slots: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const period = h < 12 ? 'AM' : 'PM';
+      const hour = h % 12 === 0 ? 12 : h % 12;
+      const minute = m === 0 ? '00' : String(m);
+      slots.push(`${hour}:${minute} ${period}`);
+    }
+  }
+  return slots;
+})();
+
 export const BRACKET_INFO: Record<number, { label: string; desc: string }> = {
   1: { label: 'Exhibition', desc: 'Precons only' },
   2: { label: 'Casual', desc: 'Minor upgrades' },

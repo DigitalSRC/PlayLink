@@ -4,6 +4,7 @@ import {
   buildNewPlayer,
   canJoinGroup,
   findGroupByUsername,
+  formatBrackets,
   isGroupFull,
   isHostForUser,
   normalizePositiveInt,
@@ -16,7 +17,7 @@ const makeGroup = (overrides: Partial<Group> = {}): Group => ({
   name: "Test Group",
   gameType: "mtg",
   format: "Commander",
-  bracket: 2,
+  brackets: [2],
   location: "Downtown",
   time: "Tonight",
   noGo: [],
@@ -115,6 +116,18 @@ describe("group-utils", () => {
   it("returns the same group when trying to set a non-existent host", () => {
     const group = makeGroup();
     expect(setPlayerAsHost(group, 999)).toBe(group);
+  });
+
+  it("formats a single bracket as 'Bracket N'", () => {
+    expect(formatBrackets([2])).toBe('Bracket 2');
+  });
+
+  it("formats multiple brackets sorted ascending as 'Brackets N, M, ...'", () => {
+    expect(formatBrackets([3, 1, 2])).toBe('Brackets 1, 2, 3');
+  });
+
+  it("returns an empty string for an empty brackets array", () => {
+    expect(formatBrackets([])).toBe('');
   });
 
   it("changes the host to the requested player", () => {
