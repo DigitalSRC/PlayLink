@@ -163,8 +163,7 @@ export default function BrowseScreen() {
       )
     );
 
-    awardPoints(10);
-    showFeedback(`Joined ${group.name}! +10 Points`);
+    showFeedback(`Joined ${group.name}!`);
   };
 
   const handleCreate = () => {

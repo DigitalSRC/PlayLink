@@ -52,10 +52,11 @@ export default function GroupDetail() {
   const [editMinute, setEditMinute] = useState(parsedTime.min);
   const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
   const [showConfirmOverlay, setShowConfirmOverlay] = useState(false);
+  const [pickerPhase, setPickerPhase] = useState<'winner' | 'celebrate'>('winner');
+  const [roundWinner, setRoundWinner] = useState<string | null>(null);
 
   const celebScale = useRef(new Animated.Value(0)).current;
   const celebOpacity = useRef(new Animated.Value(0)).current;
-  const xpAnim = useRef(new Animated.Value(0)).current;
 
   if (!group || !currentUser) {
     return null;
@@ -77,29 +78,30 @@ export default function GroupDetail() {
     g.players.some((p) => p.username === displayUser)
   );
 
-  const triggerCelebration = () => {
-    setShowConfirmOverlay(true);
+  const animateCelebration = () => {
     celebScale.setValue(0.5);
     celebOpacity.setValue(0);
-
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 300);
     setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success), 600);
-
     Animated.parallel([
       Animated.spring(celebScale, { toValue: 1, useNativeDriver: true, bounciness: 15 }),
       Animated.timing(celebOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
+  };
 
-    Animated.timing(xpAnim, {
-      toValue: 1,
-      duration: 1200,
-      useNativeDriver: false,
-    }).start();
+  const handleSelectWinner = (winnerUsername: string) => {
+    setRoundWinner(winnerUsername);
+    if (winnerUsername === displayUser) {
+      awardPoints(30);
+    }
+    setPickerPhase('celebrate');
+    animateCelebration();
   };
 
   const handlePlayAnotherRound = () => {
-    xpAnim.setValue(0);
+    setRoundWinner(null);
+    setPickerPhase('winner');
     setGroups((prev) =>
       prev.map((g) => (g.id === groupId ? { ...g, confirmed: false } : g))
     );
@@ -132,12 +134,12 @@ export default function GroupDetail() {
       return;
     }
     Alert.alert(
-      'Confirm Meetup',
-      'Did this group meet up? This will award Points to everyone.',
+      'Confirm Round',
+      'Did your pod finish a game?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
+          text: 'Yes',
           onPress: () => {
             setGroups((prev) =>
               prev.map((g) =>
@@ -146,8 +148,9 @@ export default function GroupDetail() {
                   : g
               )
             );
-            awardPoints(50);
-            triggerCelebration();
+            setPickerPhase('winner');
+            setShowConfirmOverlay(true);
+            Haptics.selectionAsync();
           },
         },
       ]
@@ -185,7 +188,6 @@ export default function GroupDetail() {
           : g
       )
     );
-    awardPoints(10);
   };
 
   const handleLeave = () => {
@@ -263,30 +265,59 @@ export default function GroupDetail() {
     setEditing(false);
   };
 
-  const xpDisplay = xpAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 50] });
-
   return (
     <View style={styles.container}>
-      {/* Meetup confirmed overlay */}
+      {/* Confirm overlay — winner picker then celebration */}
       {showConfirmOverlay && (
-        <Animated.View style={[styles.overlay, { opacity: celebOpacity }]}>
-          <Animated.View style={[styles.celebCard, { transform: [{ scale: celebScale }] }]}>
-            <Text style={styles.celebEmoji}>🎉</Text>
-            <Text style={styles.celebTitle}>Round {group.roundsPlayed} Complete!</Text>
-            <Animated.Text style={styles.celebXP}>
-              +50 Points
-            </Animated.Text>
-            <Text style={styles.celebSub}>You showed up. That's what it's about.</Text>
-            <View style={styles.celebBtnRow}>
-              <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
-                <Text style={styles.celebBtnSecondaryText}>End Session</Text>
-              </Pressable>
-              <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
-                <Text style={styles.celebBtnText}>▶ Another Round</Text>
-              </Pressable>
+        <View style={styles.overlay}>
+          {pickerPhase === 'winner' ? (
+            <View style={styles.celebCard}>
+              <Text style={styles.celebEmoji}>🏆</Text>
+              <Text style={styles.celebTitle}>Who Won Round {group.roundsPlayed}?</Text>
+              <Text style={styles.celebSub}>Select the winner of this game</Text>
+              {group.players.map((player) => (
+                <Pressable
+                  key={player.id}
+                  style={styles.winnerOption}
+                  onPress={() => handleSelectWinner(player.username)}
+                >
+                  <View style={styles.winnerAvatar}>
+                    <Text style={styles.winnerInitial}>{player.username[0]}</Text>
+                  </View>
+                  <Text style={styles.winnerName}>{player.username}</Text>
+                  {player.username === displayUser && (
+                    <View style={styles.winnerYouTag}>
+                      <Text style={styles.winnerYouText}>You</Text>
+                    </View>
+                  )}
+                </Pressable>
+              ))}
             </View>
-          </Animated.View>
-        </Animated.View>
+          ) : (
+            <Animated.View style={[styles.celebCard, { transform: [{ scale: celebScale }], opacity: celebOpacity }]}>
+              <Text style={styles.celebEmoji}>🎉</Text>
+              <Text style={styles.celebTitle}>Round {group.roundsPlayed} Complete!</Text>
+              <View style={styles.winnerAnnounce}>
+                <Text style={styles.winnerAnnounceLabel}>WINNER</Text>
+                <Text style={styles.winnerAnnounceName}>{roundWinner}</Text>
+              </View>
+              {roundWinner === displayUser && (
+                <Text style={styles.celebXP}>+30 Points</Text>
+              )}
+              <Text style={styles.celebSub}>
+                {roundWinner === displayUser ? 'You took it down!' : 'Good game. End the session or run it back.'}
+              </Text>
+              <View style={styles.celebBtnRow}>
+                <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
+                  <Text style={styles.celebBtnSecondaryText}>End Session</Text>
+                </Pressable>
+                <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
+                  <Text style={styles.celebBtnText}>▶ Another Round</Text>
+                </Pressable>
+              </View>
+            </Animated.View>
+          )}
+        </View>
       )}
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -1005,5 +1036,69 @@ const styles = StyleSheet.create({
   },
   periodTextActive: {
     color: '#007AFF',
+  },
+  winnerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F0F14',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+    width: '100%',
+  },
+  winnerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#2C2C38',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  winnerInitial: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  winnerName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  winnerYouTag: {
+    backgroundColor: '#007AFF',
+    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  winnerYouText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  winnerAnnounce: {
+    alignItems: 'center',
+    backgroundColor: '#0F0F14',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E6A817',
+  },
+  winnerAnnounceLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#E6A817',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  winnerAnnounceName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFF',
   },
 });
