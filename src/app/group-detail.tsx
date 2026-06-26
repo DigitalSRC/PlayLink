@@ -297,43 +297,47 @@ export default function GroupDetail() {
               <Text style={styles.editLabel}>Players Needed</Text>
               <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
 
-              <Text style={styles.editLabel}>
-                Bracket{group.format === 'Commander' ? ' (select all that apply)' : ''}
-              </Text>
-              <View style={styles.chipRowWrap}>
-                {([1, 2, 3, 4, 5] as number[]).map((b) => {
-                  const active = editBrackets.includes(b);
-                  return (
-                    <Pressable
-                      key={b}
-                      style={[styles.editChip, active && styles.editChipActive]}
-                      onPress={() => {
-                        if (group.format === 'Commander') {
-                          setEditBrackets((prev) =>
-                            prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
-                          );
-                        } else {
-                          setEditBrackets([b]);
-                        }
-                      }}
-                    >
-                      <Text style={[styles.editChipText, active && styles.editChipTextActive]}>
-                        {BRACKET_INFO[b].label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {group.format === 'Commander' && (
+                <>
+                  <Text style={styles.editLabel}>Bracket (select all that apply)</Text>
+                  <View style={styles.chipRowWrap}>
+                    {([1, 2, 3, 4, 5] as number[]).map((b) => {
+                      const active = editBrackets.includes(b);
+                      return (
+                        <Pressable
+                          key={b}
+                          style={[styles.editChip, active && styles.editChipActive]}
+                          onPress={() =>
+                            setEditBrackets((prev) =>
+                              prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
+                            )
+                          }
+                        >
+                          <Text style={[styles.editChipText, active && styles.editChipTextActive]}>
+                            {BRACKET_INFO[b].label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
             </>
           ) : (
             <>
               <Text style={styles.metaRow}>📍 {group.location}</Text>
               <Text style={styles.metaRow}>🕐 {group.time}</Text>
               <Text style={styles.metaRow}>👥 {group.players.length} / {group.targetPlayers} players</Text>
-              <Text style={styles.metaRow}>⚔️ {formatBrackets(group.brackets)}</Text>
+              {group.format === 'Commander' && (
+                <Text style={styles.metaRow}>⚔️ {formatBrackets(group.brackets)}</Text>
+              )}
               {group.noGo.length > 0 && (
                 <Text style={[styles.metaRow, styles.noGoRow]}>🚫 No {group.noGo.join(', ')}</Text>
               )}
+              <View style={styles.joinCodeRow}>
+                <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
+                <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
+              </View>
             </>
           )}
         </View>
@@ -542,6 +546,26 @@ const styles = StyleSheet.create({
   },
   noGoRow: {
     color: '#C0392B',
+  },
+  joinCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 8,
+  },
+  joinCodeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#555',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  joinCodeValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#E6A817',
+    letterSpacing: 3,
+    fontVariant: ['tabular-nums'],
   },
   editInput: {
     backgroundColor: '#0F0F14',

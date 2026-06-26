@@ -25,7 +25,7 @@ import {
   NoGoRule,
   TIME_SLOTS,
 } from '../../data/types';
-import { formatBrackets } from '../../utils/group-utils';
+import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
 
 const ALL_GAMES: (GameType | 'all')[] = ['all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
 
@@ -132,12 +132,14 @@ export default function BrowseScreen() {
       return;
     }
 
+    const resolvedFormat = newFormat || FORMAT_OPTIONS[newGame][0];
     const group: Group = {
       id: Date.now(),
       name: newName.trim(),
+      joinCode: generateJoinCode(groups),
       gameType: newGame,
-      format: newFormat || FORMAT_OPTIONS[newGame][0],
-      brackets: newBrackets.length > 0 ? newBrackets : [2],
+      format: resolvedFormat,
+      brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
       time: newDay && newTimeSlot ? `${newDay} · ${newTimeSlot}` : 'TBD',
       players: [
@@ -296,25 +298,38 @@ export default function BrowseScreen() {
               <TextInput style={styles.input} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
             </View>
 
-            <Text style={styles.fieldLabel}>
-              Bracket{newFormat === 'Commander' ? ' (select all that apply)' : ''}
-            </Text>
-            <View style={styles.chipRow}>
-              {([1, 2, 3, 4, 5] as number[]).map((b) => {
-                const active = newBrackets.includes(b);
-                return (
-                  <Pressable
-                    key={b}
-                    style={[styles.chip, active && styles.chipBracketActive]}
-                    onPress={() => toggleBracket(b)}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                      {BRACKET_INFO[b].label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            {newGame !== 'mtg' && (
+              <Text style={styles.comingSoonNote}>
+                ⏳ PlayLink is currently focused on MTG Commander. Full {GAME_LABELS[newGame]} support is planned — basic grouping and rivals available now.
+              </Text>
+            )}
+            {newGame === 'mtg' && newFormat !== '' && newFormat !== 'Commander' && (
+              <Text style={styles.comingSoonNote}>
+                ⏳ Bracket preferences are available for Commander groups. Other MTG formats support basic grouping and rivals.
+              </Text>
+            )}
+
+            {newGame === 'mtg' && newFormat === 'Commander' && (
+              <>
+                <Text style={styles.fieldLabel}>Bracket (select all that apply)</Text>
+                <View style={styles.chipRow}>
+                  {([1, 2, 3, 4, 5] as number[]).map((b) => {
+                    const active = newBrackets.includes(b);
+                    return (
+                      <Pressable
+                        key={b}
+                        style={[styles.chip, active && styles.chipBracketActive]}
+                        onPress={() => toggleBracket(b)}
+                      >
+                        <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                          {BRACKET_INFO[b].label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             <Text style={styles.fieldLabel}>No-Go Rules</Text>
             <View style={styles.chipRow}>
@@ -585,6 +600,14 @@ const styles = StyleSheet.create({
   },
   halfField: {
     flex: 1,
+  },
+  comingSoonNote: {
+    fontSize: 11,
+    color: '#555',
+    fontStyle: 'italic',
+    marginTop: 10,
+    marginBottom: 4,
+    lineHeight: 16,
   },
   postBtn: {
     backgroundColor: '#007AFF',

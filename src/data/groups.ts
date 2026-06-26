@@ -11,6 +11,7 @@ export interface PlayerProfile {
 export interface Group {
   id: number;
   name: string;
+  joinCode: string;
   players: PlayerProfile[];
   targetPlayers: number;
   brackets: number[];
@@ -26,6 +27,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 1,
     name: 'Friday Night Commander',
+    joinCode: 'FNC742',
     gameType: 'mtg',
     format: 'Commander',
     brackets: [2],
@@ -43,6 +45,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 2,
     name: 'Saturday Draft Night',
+    joinCode: 'SDN385',
     gameType: 'mtg',
     format: 'Draft',
     brackets: [3],
@@ -62,6 +65,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 3,
     name: 'Pokémon Standard Showdown',
+    joinCode: 'PSG629',
     gameType: 'pokemon',
     format: 'Standard',
     brackets: [2],
@@ -78,6 +82,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 4,
     name: 'Pioneer Monday Grind',
+    joinCode: 'PMG473',
     gameType: 'mtg',
     format: 'Pioneer',
     brackets: [3],
@@ -95,6 +100,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 5,
     name: 'Lorcana League Night',
+    joinCode: 'JGN857',
     gameType: 'lorcana',
     format: 'Constructed',
     brackets: [1],
@@ -111,6 +117,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 6,
     name: 'One Piece Grand Line Duel',
+    joinCode: 'GPD326',
     gameType: 'onepiece',
     format: 'OP',
     brackets: [2],
@@ -127,6 +134,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 7,
     name: 'Casual Commander Hangout',
+    joinCode: 'CCH594',
     gameType: 'mtg',
     format: 'Commander',
     brackets: [1],
@@ -142,6 +150,7 @@ export const HARDCODED_GROUPS: Group[] = [
   {
     id: 8,
     name: 'Pokémon Draft League',
+    joinCode: 'PDK738',
     gameType: 'pokemon',
     format: 'Limited',
     brackets: [1],

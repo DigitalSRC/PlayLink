@@ -1,5 +1,25 @@
 import { Group, PlayerProfile } from "../data/groups";
 
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+/**
+ * Generates a unique 6-character join code for a new group using Overwatch-style alphanumeric codes.
+ * Omits visually ambiguous characters (I, L, O, 0, 1) to minimize read errors.
+ * Parameters: existingGroups (all current groups used to avoid collisions).
+ * Returns: a 6-character uppercase code guaranteed not to match any existing group's joinCode.
+ * Edge cases: retries on collision until a unique code is found; statistically rare with 31^6 > 887M combinations.
+ */
+export const generateJoinCode = (existingGroups: Group[]): string => {
+  const used = new Set(existingGroups.map((g) => g.joinCode));
+  let code: string;
+  do {
+    code = Array.from({ length: 6 }, () =>
+      CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+    ).join('');
+  } while (used.has(code));
+  return code;
+};
+
 /**
  * Finds the group that currently contains a username.
  * Parameters: groups (all available groups), username (player name to search for).

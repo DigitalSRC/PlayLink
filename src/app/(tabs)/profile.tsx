@@ -24,22 +24,25 @@ import {
 
 /**
  * Profile tab showing the player's stats, game preferences, no-go rules, and rivals.
- * Supports inline editing of location, formats, bracket, and no-go list.
- * Parameters: none; reads and writes currentUser from global context.
- * Returns: a scrollable profile screen with a toggle between view and edit modes.
- * Edge cases: edit mode shows only fields relevant to the player's selected games.
+ * All fields are always editable; a Save Changes button and unsaved-changes banner appear only when changes are pending.
+ * Rivals are tappable — tapping a contender promotes them to your chosen rival.
+ * Parameters: none; reads and writes currentUser, chosenRivalId, and rivals from global context.
+ * Returns: a scrollable profile screen with inline editing and rival management.
+ * Edge cases: shows bracket section only when Commander is among the user's selected MTG formats.
  */
 export default function ProfileScreen() {
   const router = useRouter();
-  const { currentUser, rivals, chosenRivalId, setCurrentUser, clearCurrentUser } = useApp();
-  const [editing, setEditing] = useState(false);
+  const { currentUser, rivals, chosenRivalId, mostPlayedAgainst, setCurrentUser, clearCurrentUser, setChosenRivalId } = useApp();
 
   if (!currentUser) return null;
 
-  const [editLocation, setEditLocation] = useState(currentUser.location);
+  const [editLocation, setEditLocationState] = useState(currentUser.location);
   const [editBrackets, setEditBrackets] = useState<number[]>(currentUser.brackets);
   const [editFormats, setEditFormats] = useState(currentUser.preferredFormats);
   const [editNoGo, setEditNoGo] = useState<NoGoRule[]>(currentUser.noGo);
+  const [dirty, setDirty] = useState(false);
+
+  const setEditLocation = (val: string) => { setEditLocationState(val); setDirty(true); };
 
   const totalGames = currentUser.wins + currentUser.losses;
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
@@ -53,10 +56,19 @@ export default function ProfileScreen() {
       noGo: editNoGo,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setEditing(false);
+    setDirty(false);
+  };
+
+  const discardChanges = () => {
+    setEditLocationState(currentUser.location);
+    setEditBrackets(currentUser.brackets);
+    setEditFormats(currentUser.preferredFormats);
+    setEditNoGo(currentUser.noGo);
+    setDirty(false);
   };
 
   const toggleFormat = (game: GameType, fmt: string) => {
+    setDirty(true);
     setEditFormats((prev) => {
       const current = prev[game] ?? [];
       const updated = current.includes(fmt)
@@ -68,6 +80,7 @@ export default function ProfileScreen() {
 
   const toggleNoGo = (rule: NoGoRule) => {
     Haptics.selectionAsync();
+    setDirty(true);
     setEditNoGo((prev) =>
       prev.includes(rule) ? prev.filter((r) => r !== rule) : [...prev, rule]
     );
@@ -80,25 +93,37 @@ export default function ProfileScreen() {
     .toUpperCase()
     .slice(0, 2);
 
+  const commanderSelected = (editFormats?.mtg ?? []).includes('Commander');
+
+  const allRivalsInSection = [
+    ...rivals,
+    ...(mostPlayedAgainst && !rivals.some((r) => r.id === mostPlayedAgainst.id)
+      ? [mostPlayedAgainst]
+      : []),
+  ];
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Unsaved changes banner */}
+      {dirty && (
+        <View style={styles.unsavedBanner}>
+          <Text style={styles.unsavedBannerText}>⚠️ You have unsaved changes</Text>
+        </View>
+      )}
+
       {/* Avatar + name */}
       <View style={styles.avatarSection}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
         <Text style={styles.username}>{currentUser.username}</Text>
-        {editing ? (
-          <TextInput
-            style={styles.locationInput}
-            value={editLocation}
-            onChangeText={setEditLocation}
-            placeholder="Your area"
-            placeholderTextColor="#555"
-          />
-        ) : (
-          <Text style={styles.location}>{currentUser.location}</Text>
-        )}
+        <TextInput
+          style={styles.locationInput}
+          value={editLocation}
+          onChangeText={setEditLocation}
+          placeholder="Your area"
+          placeholderTextColor="#555"
+        />
       </View>
 
       {/* Stats */}
@@ -151,11 +176,10 @@ export default function ProfileScreen() {
             </Text>
             <View style={styles.chipRow}>
               {FORMAT_OPTIONS[game].map((fmt) => {
-                const active = (editing ? editFormats[game] : currentUser.preferredFormats[game] ?? []).includes(fmt);
+                const active = (editFormats[game] ?? []).includes(fmt);
                 return (
                   <Pressable
                     key={fmt}
-                    disabled={!editing}
                     style={[
                       styles.chip,
                       active && { backgroundColor: GAME_COLOR[game], borderColor: GAME_COLOR[game] },
@@ -167,25 +191,35 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
+            {game !== 'mtg' && (
+              <Text style={styles.comingSoonNote}>
+                ⏳ Full support coming soon — basic grouping and rivals available now.
+              </Text>
+            )}
+            {game === 'mtg' && !(editFormats['mtg'] ?? []).includes('Commander') && (
+              <Text style={styles.comingSoonNote}>
+                ⏳ Select Commander to unlock bracket preferences and advanced rival matching.
+              </Text>
+            )}
           </View>
         ))}
       </View>
 
-      {/* Bracket (MTG only) */}
-      {currentUser.games.includes('mtg') && (
+      {/* Bracket (Commander only) */}
+      {commanderSelected && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Commander Bracket</Text>
           <Text style={styles.sectionHintText}>Wizards 1–5 · select all you play</Text>
           <View style={styles.bracketRow}>
             {[1, 2, 3, 4, 5].map((b) => {
-              const active = (editing ? editBrackets : currentUser.brackets).includes(b);
+              const active = editBrackets.includes(b);
               return (
                 <Pressable
                   key={b}
-                  disabled={!editing}
                   style={[styles.bracketBtn, active && styles.bracketBtnActive]}
                   onPress={() => {
                     Haptics.selectionAsync();
+                    setDirty(true);
                     setEditBrackets((prev) =>
                       prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]
                     );
@@ -204,12 +238,11 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Won't Play Against</Text>
         <View style={styles.chipRow}>
-          {(editing ? NO_GO_OPTIONS : currentUser.noGo.length > 0 ? currentUser.noGo : NO_GO_OPTIONS).map((rule) => {
-            const active = (editing ? editNoGo : currentUser.noGo).includes(rule);
+          {NO_GO_OPTIONS.map((rule) => {
+            const active = editNoGo.includes(rule);
             return (
               <Pressable
                 key={rule}
-                disabled={!editing}
                 style={[styles.chip, active && styles.chipNoGo]}
                 onPress={() => toggleNoGo(rule)}
               >
@@ -217,22 +250,29 @@ export default function ProfileScreen() {
               </Pressable>
             );
           })}
-          {!editing && currentUser.noGo.length === 0 && (
-            <Text style={styles.emptyText}>None set — plays against anything</Text>
-          )}
         </View>
       </View>
 
-      {/* Rivals */}
-      {rivals.length > 0 && (
+      {/* Rivals & Contenders */}
+      {allRivalsInSection.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Rivals & Contenders</Text>
-          {rivals.map((rival) => {
+          <Text style={styles.sectionHintText}>Tap a card to set as your rival</Text>
+          {allRivalsInSection.map((rival) => {
             const isChosen = rival.id === chosenRivalId;
+            const isFamiliarFoe = mostPlayedAgainst?.id === rival.id && !rivals.some((r) => r.id === rival.id);
             return (
-              <View
+              <Pressable
                 key={rival.id}
-                style={[styles.rivalCard, isChosen && styles.rivalCardChosen]}
+                style={[
+                  styles.rivalCard,
+                  isChosen && styles.rivalCardChosen,
+                  isFamiliarFoe && styles.rivalCardFamiliarFoe,
+                ]}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setChosenRivalId(rival.id);
+                }}
               >
                 <View style={[styles.rivalAvatar, isChosen && styles.rivalAvatarChosen]}>
                   <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
@@ -248,32 +288,32 @@ export default function ProfileScreen() {
                   <View style={styles.rivalBadge}>
                     <Text style={styles.rivalBadgeText}>RIVAL</Text>
                   </View>
+                ) : isFamiliarFoe ? (
+                  <View style={[styles.rivalBadge, styles.familiarFoeBadge]}>
+                    <Text style={[styles.rivalBadgeText, styles.familiarFoeBadgeText]}>FAMILIAR FOE</Text>
+                  </View>
                 ) : (
                   <View style={[styles.rivalBadge, styles.contenderBadge]}>
                     <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
                   </View>
                 )}
-              </View>
+              </Pressable>
             );
           })}
         </View>
       )}
 
-      {/* Edit actions */}
+      {/* Save / Discard / Restart */}
       <View style={styles.editActions}>
-        {editing ? (
+        {dirty && (
           <>
             <Pressable style={styles.saveBtn} onPress={saveEdit}>
               <Text style={styles.saveBtnText}>Save Changes</Text>
             </Pressable>
-            <Pressable style={styles.cancelBtn} onPress={() => { setEditing(false); }}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+            <Pressable style={styles.cancelBtn} onPress={discardChanges}>
+              <Text style={styles.cancelBtnText}>Discard Changes</Text>
             </Pressable>
           </>
-        ) : (
-          <Pressable style={styles.editBtn} onPress={() => { Haptics.selectionAsync(); setEditing(true); }}>
-            <Text style={styles.editBtnText}>Edit Profile</Text>
-          </Pressable>
         )}
         <Pressable
           style={styles.restartBtn}
@@ -312,6 +352,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 50,
   },
+  unsavedBanner: {
+    backgroundColor: '#2A1F00',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E6A817',
+    alignItems: 'center',
+  },
+  unsavedBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E6A817',
+  },
   avatarSection: {
     alignItems: 'center',
     marginBottom: 24,
@@ -334,11 +389,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '800',
     color: '#FFF',
-    marginBottom: 4,
-  },
-  location: {
-    fontSize: 14,
-    color: '#666',
+    marginBottom: 8,
   },
   locationInput: {
     backgroundColor: '#1C1C24',
@@ -349,7 +400,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 14,
     color: '#FFF',
-    marginTop: 4,
     minWidth: 200,
     textAlign: 'center',
   },
@@ -453,10 +503,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#3D1215',
     borderColor: '#C0392B',
   },
-  emptyText: {
-    fontSize: 13,
+  comingSoonNote: {
+    fontSize: 11,
     color: '#555',
+    marginTop: 8,
     fontStyle: 'italic',
+    lineHeight: 16,
   },
   bracketRow: {
     flexDirection: 'row',
@@ -507,6 +559,10 @@ const styles = StyleSheet.create({
   rivalCardChosen: {
     borderColor: '#FF3B30',
     backgroundColor: '#1F1012',
+  },
+  rivalCardFamiliarFoe: {
+    borderColor: '#5B3FCF',
+    backgroundColor: '#12101F',
   },
   rivalAvatar: {
     width: 44,
@@ -563,22 +619,17 @@ const styles = StyleSheet.create({
   contenderBadgeText: {
     color: '#C9952A',
   },
+  familiarFoeBadge: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#5B3FCF',
+  },
+  familiarFoeBadgeText: {
+    color: '#8B7FEF',
+  },
   editActions: {
     gap: 10,
     marginTop: 8,
-  },
-  editBtn: {
-    backgroundColor: '#1C1C24',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2C2C38',
-  },
-  editBtnText: {
-    color: '#007AFF',
-    fontWeight: '700',
-    fontSize: 15,
   },
   saveBtn: {
     backgroundColor: '#007AFF',

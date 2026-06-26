@@ -7,11 +7,13 @@ interface AppState {
   groups: Group[];
   rivals: UserProfile[];
   chosenRivalId: number | null;
+  mostPlayedAgainst: UserProfile | null;
   setCurrentUser: (profile: UserProfile) => void;
   clearCurrentUser: () => void;
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   setRivals: (rivals: UserProfile[]) => void;
   setChosenRivalId: (id: number) => void;
+  setMostPlayedAgainst: (profile: UserProfile | null) => void;
   awardXP: (amount: number) => void;
 }
 
@@ -29,6 +31,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [groups, setGroups] = useState<Group[]>(HARDCODED_GROUPS);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<number | null>(null);
+  const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
 
   const setCurrentUser = (profile: UserProfile) => {
     setCurrentUserState(profile);
@@ -38,6 +41,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setCurrentUserState(null);
     setRivals([]);
     setChosenRivalId(null);
+    setMostPlayedAgainst(null);
   };
 
   const awardXP = (amount: number) => {
@@ -48,7 +52,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AppContext.Provider
-      value={{ currentUser, groups, rivals, chosenRivalId, setCurrentUser, clearCurrentUser, setGroups, setRivals, setChosenRivalId, awardXP }}
+      value={{ currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, setCurrentUser, clearCurrentUser, setGroups, setRivals, setChosenRivalId, setMostPlayedAgainst, awardXP }}
     >
       {children}
     </AppContext.Provider>

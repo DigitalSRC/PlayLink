@@ -285,10 +285,20 @@ export default function ProfileCreation() {
               );
             })}
           </View>
+          {game !== 'mtg' && (
+            <Text style={styles.comingSoonNote}>
+              ⏳ PlayLink is currently focused on MTG Commander. Full {GAME_LABELS[game]} support is planned — basic grouping and rival features are available now.
+            </Text>
+          )}
+          {game === 'mtg' && !(selectedFormats['mtg'] ?? []).includes('Commander') && (
+            <Text style={styles.comingSoonNote}>
+              ⏳ Select Commander to unlock bracket preferences and advanced rival matching. Other MTG formats support basic grouping and rivals.
+            </Text>
+          )}
         </View>
       ))}
 
-      {selectedGames.includes("mtg") && (
+      {selectedGames.includes("mtg") && (selectedFormats["mtg"] ?? []).includes("Commander") && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>⚔️ Commander Bracket</Text>
           <Text style={styles.sectionHint}>Wizards 1–5 power scale — select all you play</Text>
@@ -563,6 +573,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     marginBottom: 10,
+  },
+  comingSoonNote: {
+    fontSize: 11,
+    color: "#555",
+    marginTop: 10,
+    fontStyle: 'italic',
+    lineHeight: 16,
   },
   chipRow: {
     flexDirection: "row",

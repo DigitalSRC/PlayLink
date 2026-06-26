@@ -12,7 +12,7 @@ import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
  */
 export default function HomeScreen() {
   const router = useRouter();
-  const { currentUser, groups, rivals } = useApp();
+  const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst } = useApp();
 
   if (!currentUser) return null;
 
@@ -109,10 +109,12 @@ export default function HomeScreen() {
       {/* Rivals */}
       {rivals.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Rivals</Text>
-          {rivals.map((rival) => (
-            <View key={rival.id} style={styles.rivalCard}>
-              <View style={styles.rivalAvatar}>
+          <Text style={styles.sectionTitle}>Your Rival</Text>
+
+          {/* Chosen rival */}
+          {rivals.filter((r) => r.id === chosenRivalId).map((rival) => (
+            <View key={rival.id} style={[styles.rivalCard, styles.rivalCardMain]}>
+              <View style={[styles.rivalAvatar, styles.rivalAvatarMain]}>
                 <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
               </View>
               <View style={styles.rivalInfo}>
@@ -126,6 +128,50 @@ export default function HomeScreen() {
               </View>
             </View>
           ))}
+
+          {/* Contenders */}
+          {rivals.filter((r) => r.id !== chosenRivalId).length > 0 && (
+            <>
+              <Text style={styles.contendersLabel}>CONTENDERS</Text>
+              {rivals.filter((r) => r.id !== chosenRivalId).map((rival) => (
+                <View key={rival.id} style={[styles.rivalCard, styles.rivalCardContender]}>
+                  <View style={[styles.rivalAvatar, styles.rivalAvatarContender]}>
+                    <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+                  </View>
+                  <View style={styles.rivalInfo}>
+                    <Text style={styles.rivalName}>{rival.username}</Text>
+                    <Text style={styles.rivalMeta}>
+                      {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                    </Text>
+                  </View>
+                  <View style={[styles.rivalBadge, styles.contenderBadge]}>
+                    <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+
+          {/* Familiar Foe — most played against (exception, shown only when set) */}
+          {mostPlayedAgainst && !rivals.some((r) => r.id === mostPlayedAgainst.id) && (
+            <>
+              <Text style={styles.contendersLabel}>FAMILIAR FOE</Text>
+              <View style={[styles.rivalCard, styles.rivalCardFamiliarFoe]}>
+                <View style={[styles.rivalAvatar, styles.rivalAvatarFamiliarFoe]}>
+                  <Text style={styles.rivalInitial}>{mostPlayedAgainst.username[0]}</Text>
+                </View>
+                <View style={styles.rivalInfo}>
+                  <Text style={styles.rivalName}>{mostPlayedAgainst.username}</Text>
+                  <Text style={styles.rivalMeta}>
+                    {mostPlayedAgainst.wins}W – {mostPlayedAgainst.losses}L · {mostPlayedAgainst.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                  </Text>
+                </View>
+                <View style={[styles.rivalBadge, styles.familiarFoeBadge]}>
+                  <Text style={[styles.rivalBadgeText, styles.familiarFoeBadgeText]}>MOST PLAYED</Text>
+                </View>
+              </View>
+            </>
+          )}
         </View>
       )}
 
@@ -338,14 +384,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2C2C38',
   },
+  rivalCardMain: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#1F1012',
+    borderWidth: 1.5,
+  },
+  rivalCardContender: {
+    opacity: 0.75,
+  },
+  rivalCardFamiliarFoe: {
+    borderColor: '#5B3FCF',
+    backgroundColor: '#12101F',
+    borderWidth: 1.5,
+  },
   rivalAvatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#444',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+  },
+  rivalAvatarMain: {
+    backgroundColor: '#FF3B30',
+  },
+  rivalAvatarContender: {
+    backgroundColor: '#555',
+  },
+  rivalAvatarFamiliarFoe: {
+    backgroundColor: '#5B3FCF',
   },
   rivalInitial: {
     fontSize: 18,
@@ -376,6 +444,31 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFF',
     letterSpacing: 0.8,
+  },
+  contendersLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#555',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  contenderBadge: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#8B6914',
+  },
+  contenderBadgeText: {
+    color: '#C9952A',
+  },
+  familiarFoeBadge: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#5B3FCF',
+  },
+  familiarFoeBadgeText: {
+    color: '#8B7FEF',
   },
   actionRow: {
     flexDirection: 'row',
