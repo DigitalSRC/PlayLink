@@ -44,6 +44,8 @@ export default function BrowseScreen() {
 
   const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
+  const [showCodeEntry, setShowCodeEntry] = useState(false);
+  const [codeValue, setCodeValue] = useState('');
 
   const [newName, setNewName] = useState('');
   const [newGame, setNewGame] = useState<GameType>('mtg');
@@ -102,6 +104,31 @@ export default function BrowseScreen() {
       : filter === 'myGames'
       ? groups.filter((g) => currentUser?.games.includes(g.gameType))
       : groups.filter((g) => g.gameType === filter);
+
+  const handleJoinByCode = () => {
+    if (!currentUser) return;
+    const code = codeValue.toUpperCase().trim();
+    if (code.length !== 6) {
+      Alert.alert('Invalid code', 'Join codes are 6 characters long.');
+      return;
+    }
+    const group = groups.find((g) => g.joinCode === code);
+    if (!group) {
+      Alert.alert('Code not found', 'No group matches that join code. Double-check with the host.');
+      return;
+    }
+    if (currentUserGroup) {
+      Alert.alert('Already in a group', 'Leave your current group before joining another.');
+      return;
+    }
+    if (group.players.length >= group.targetPlayers) {
+      Alert.alert('Group full', 'This group has no open spots.');
+      return;
+    }
+    setCodeValue('');
+    setShowCodeEntry(false);
+    handleJoin(group);
+  };
 
   const handleJoin = (group: Group) => {
     if (!currentUser) return;
@@ -218,13 +245,40 @@ export default function BrowseScreen() {
 
       <View style={styles.topBar}>
         <Text style={styles.screenTitle}>Find a Game</Text>
-        <Pressable
-          style={[styles.createToggle, showCreate && styles.createToggleActive]}
-          onPress={() => { Haptics.selectionAsync(); setShowCreate((v) => !v); }}
-        >
-          <Text style={styles.createToggleText}>{showCreate ? '✕ Close' : '+ Create'}</Text>
-        </Pressable>
+        <View style={styles.topBarActions}>
+          <Pressable
+            style={[styles.createToggle, showCodeEntry && styles.codeToggleActive]}
+            onPress={() => { Haptics.selectionAsync(); setShowCodeEntry((v) => !v); setShowCreate(false); setCodeValue(''); }}
+          >
+            <Text style={[styles.createToggleText, showCodeEntry && styles.codeToggleText]}>{showCodeEntry ? '✕' : '# Code'}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.createToggle, showCreate && styles.createToggleActive]}
+            onPress={() => { Haptics.selectionAsync(); setShowCreate((v) => !v); setShowCodeEntry(false); setCodeValue(''); }}
+          >
+            <Text style={styles.createToggleText}>{showCreate ? '✕ Close' : '+ Create'}</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {/* Join by code */}
+      {showCodeEntry && (
+        <View style={styles.codeEntryBar}>
+          <TextInput
+            style={styles.codeInput}
+            value={codeValue}
+            onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
+            placeholder="XXXXXX"
+            placeholderTextColor="#444"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={6}
+          />
+          <Pressable style={styles.codeJoinBtn} onPress={handleJoinByCode}>
+            <Text style={styles.codeJoinText}>Join →</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Game filter chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
@@ -482,6 +536,50 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 12,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  codeToggleActive: {
+    backgroundColor: '#1A2A1A',
+    borderColor: '#34C759',
+  },
+  codeToggleText: {
+    color: '#34C759',
+  },
+  codeEntryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  codeInput: {
+    flex: 1,
+    backgroundColor: '#1C1C24',
+    borderWidth: 1.5,
+    borderColor: '#34C759',
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#34C759',
+    letterSpacing: 6,
+    textAlign: 'center',
+  },
+  codeJoinBtn: {
+    backgroundColor: '#34C759',
+    borderRadius: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 20,
+  },
+  codeJoinText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
   screenTitle: {
     fontSize: 26,
