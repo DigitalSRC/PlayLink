@@ -23,11 +23,11 @@ import {
   GameType,
   NO_GO_OPTIONS,
   NoGoRule,
-  TIME_SLOTS,
 } from '../../data/types';
 import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
 
-const ALL_GAMES: (GameType | 'all')[] = ['all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
+type FilterType = GameType | 'all' | 'myGames';
+const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
 
 /**
  * Browse tab showing open groups filterable by game type.
@@ -40,9 +40,9 @@ const ALL_GAMES: (GameType | 'all')[] = ['all', 'mtg', 'pokemon', 'lorcana', 'on
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, setGroups, awardXP, rivals } = useApp();
+  const { currentUser, groups, setGroups, awardPoints, rivals } = useApp();
 
-  const [filter, setFilter] = useState<GameType | 'all'>('all');
+  const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
 
   const [newName, setNewName] = useState('');
@@ -50,7 +50,9 @@ export default function BrowseScreen() {
   const [newFormat, setNewFormat] = useState('');
   const [newLocation, setNewLocation] = useState('');
   const [newDay, setNewDay] = useState('');
-  const [newTimeSlot, setNewTimeSlot] = useState('');
+  const [newHour, setNewHour] = useState(7);
+  const [newMinute, setNewMinute] = useState(0);
+  const [newPeriod, setNewPeriod] = useState<'AM' | 'PM'>('PM');
   const [newTarget, setNewTarget] = useState('4');
   const [newBrackets, setNewBrackets] = useState<number[]>([2]);
   const [newNoGo, setNewNoGo] = useState<NoGoRule[]>([]);
@@ -62,6 +64,18 @@ export default function BrowseScreen() {
   useEffect(() => {
     if (params.openCreate === '1') setShowCreate(true);
   }, [params.openCreate]);
+
+  useEffect(() => {
+    if (showCreate && currentUser) {
+      const primaryGame = currentUser.games[0] ?? 'mtg';
+      const primaryFormat = (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
+      setNewGame(primaryGame);
+      setNewFormat(primaryFormat);
+      setNewBrackets(currentUser.brackets.length > 0 ? [...currentUser.brackets] : [2]);
+      setNewNoGo([...currentUser.noGo]);
+      setNewLocation(currentUser.location);
+    }
+  }, [showCreate]);
 
   const showFeedback = (msg: string) => {
     setFeedbackMsg(msg);
@@ -82,7 +96,12 @@ export default function BrowseScreen() {
     g.players.some((p) => p.username === displayUser)
   );
 
-  const filtered = filter === 'all' ? groups : groups.filter((g) => g.gameType === filter);
+  const filtered =
+    filter === 'all'
+      ? groups
+      : filter === 'myGames'
+      ? groups.filter((g) => currentUser?.games.includes(g.gameType))
+      : groups.filter((g) => g.gameType === filter);
 
   const handleJoin = (group: Group) => {
     if (!currentUser) return;
@@ -117,8 +136,8 @@ export default function BrowseScreen() {
       )
     );
 
-    awardXP(10);
-    showFeedback(`Joined ${group.name}! +10 XP`);
+    awardPoints(10);
+    showFeedback(`Joined ${group.name}! +10 Points`);
   };
 
   const handleCreate = () => {
@@ -141,7 +160,7 @@ export default function BrowseScreen() {
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
-      time: newDay && newTimeSlot ? `${newDay} · ${newTimeSlot}` : 'TBD',
+      time: newDay ? `${newDay} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}` : 'TBD',
       players: [
         {
           id: Date.now() + 1,
@@ -159,16 +178,15 @@ export default function BrowseScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     setGroups((prev) => [group, ...prev]);
-    awardXP(10);
+    awardPoints(10);
     setShowCreate(false);
     setNewName('');
-    setNewLocation('');
     setNewDay('');
-    setNewTimeSlot('');
+    setNewHour(7);
+    setNewMinute(0);
+    setNewPeriod('PM');
     setNewTarget('4');
-    setNewBrackets([2]);
-    setNewNoGo([]);
-    showFeedback(`Group created! +10 XP`);
+    showFeedback(`Group created! +10 Points`);
   };
 
   const toggleBracket = (b: number) => {
@@ -210,16 +228,17 @@ export default function BrowseScreen() {
 
       {/* Game filter chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
-        {ALL_GAMES.map((g) => {
-          const active = filter === g;
+        {ALL_GAME_FILTERS.map((f) => {
+          const active = filter === f;
+          const chipColor = f === 'myGames' ? '#34C759' : f === 'all' ? '#007AFF' : GAME_COLOR[f as GameType];
           return (
             <Pressable
-              key={g}
-              style={[styles.filterChip, active && { backgroundColor: g === 'all' ? '#007AFF' : GAME_COLOR[g as GameType], borderColor: 'transparent' }]}
-              onPress={() => { Haptics.selectionAsync(); setFilter(g); }}
+              key={f}
+              style={[styles.filterChip, active && { backgroundColor: chipColor, borderColor: 'transparent' }]}
+              onPress={() => { Haptics.selectionAsync(); setFilter(f); }}
             >
               <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                {g === 'all' ? 'All Games' : `${GAME_EMOJI[g as GameType]} ${GAME_LABELS[g as GameType]}`}
+                {f === 'myGames' ? '🎮 My Games' : f === 'all' ? 'All Games' : `${GAME_EMOJI[f as GameType]} ${GAME_LABELS[f as GameType]}`}
               </Text>
             </Pressable>
           );
@@ -281,17 +300,35 @@ export default function BrowseScreen() {
             </ScrollView>
 
             <Text style={styles.fieldLabel}>Time</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
-              {TIME_SLOTS.map((slot) => (
-                <Pressable
-                  key={slot}
-                  style={[styles.chip, newTimeSlot === slot && styles.chipTimeActive]}
-                  onPress={() => { setNewTimeSlot(slot); Haptics.selectionAsync(); }}
-                >
-                  <Text style={[styles.chipText, newTimeSlot === slot && styles.chipTextActive]}>{slot}</Text>
+            <View style={styles.timePicker}>
+              <View style={styles.timeUnit}>
+                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 12 ? 1 : h + 1); }}>
+                  <Text style={styles.timeArrowText}>▲</Text>
                 </Pressable>
-              ))}
-            </ScrollView>
+                <Text style={styles.timeValue}>{String(newHour).padStart(2, '0')}</Text>
+                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 1 ? 12 : h - 1); }}>
+                  <Text style={styles.timeArrowText}>▼</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.timeSeparator}>:</Text>
+              <View style={styles.timeUnit}>
+                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => (m + 15) % 60); }}>
+                  <Text style={styles.timeArrowText}>▲</Text>
+                </Pressable>
+                <Text style={styles.timeValue}>{String(newMinute).padStart(2, '0')}</Text>
+                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => m === 0 ? 45 : m - 15); }}>
+                  <Text style={styles.timeArrowText}>▼</Text>
+                </Pressable>
+              </View>
+              <View style={styles.timePeriod}>
+                <Pressable style={[styles.periodBtn, newPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('AM'); }}>
+                  <Text style={[styles.periodText, newPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
+                </Pressable>
+                <Pressable style={[styles.periodBtn, newPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('PM'); }}>
+                  <Text style={[styles.periodText, newPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
+                </Pressable>
+              </View>
+            </View>
 
             <View style={styles.halfField}>
               <Text style={styles.fieldLabel}>Players Needed</Text>
@@ -387,7 +424,7 @@ export default function BrowseScreen() {
 
               <Text style={styles.groupName}>{group.name}</Text>
               <Text style={styles.groupMeta}>
-                {group.players.length}/{group.targetPlayers} players · {formatBrackets(group.brackets)}
+                {group.players.length}/{group.targetPlayers} players{group.format === 'Commander' ? ` · ${formatBrackets(group.brackets)}` : ''}
               </Text>
               <Text style={styles.groupMeta}>{group.location} · {group.time}</Text>
 
@@ -583,6 +620,69 @@ const styles = StyleSheet.create({
   timePickerContent: {
     gap: 6,
     paddingBottom: 4,
+  },
+  timePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F0F14',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 12,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  timeUnit: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  timeArrow: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timeArrowText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timeValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFF',
+    minWidth: 42,
+    textAlign: 'center',
+  },
+  timeSeparator: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#555',
+    marginBottom: 2,
+  },
+  timePeriod: {
+    gap: 6,
+    marginLeft: 4,
+  },
+  periodBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#333',
+    backgroundColor: '#1C1C24',
+  },
+  periodBtnActive: {
+    backgroundColor: '#001A33',
+    borderColor: '#007AFF',
+  },
+  periodText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#666',
+  },
+  periodTextActive: {
+    color: '#007AFF',
   },
   input: {
     backgroundColor: '#0F0F14',

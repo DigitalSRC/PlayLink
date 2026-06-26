@@ -18,7 +18,7 @@ export interface UserProfile {
   noGo: NoGoRule[];
   wins: number;
   losses: number;
-  xp: number;
+  points: number;
 }
 
 export const GAME_LABELS: Record<GameType, string> = {

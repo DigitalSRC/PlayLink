@@ -14,7 +14,7 @@ interface AppState {
   setRivals: (rivals: UserProfile[]) => void;
   setChosenRivalId: (id: number) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
-  awardXP: (amount: number) => void;
+  awardPoints: (amount: number) => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -44,15 +44,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setMostPlayedAgainst(null);
   };
 
-  const awardXP = (amount: number) => {
+  const awardPoints = (amount: number) => {
     setCurrentUserState((prev) =>
-      prev ? { ...prev, xp: prev.xp + amount } : prev
+      prev ? { ...prev, points: prev.points + amount } : prev
     );
   };
 
   return (
     <AppContext.Provider
-      value={{ currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, setCurrentUser, clearCurrentUser, setGroups, setRivals, setChosenRivalId, setMostPlayedAgainst, awardXP }}
+      value={{ currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, setCurrentUser, clearCurrentUser, setGroups, setRivals, setChosenRivalId, setMostPlayedAgainst, awardPoints }}
     >
       {children}
     </AppContext.Provider>

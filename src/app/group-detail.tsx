@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
-import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS, TIME_SLOTS } from '../data/types';
+import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
 
 /**
@@ -26,7 +26,7 @@ import { formatBrackets } from '../utils/group-utils';
 export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { currentUser, groups, setGroups, awardXP } = useApp();
+  const { currentUser, groups, setGroups, awardPoints } = useApp();
 
   const groupId = Number(id);
   const group = groups.find((g) => g.id === groupId);
@@ -37,8 +37,15 @@ export default function GroupDetail() {
   const [editTarget, setEditTarget] = useState(String(group?.targetPlayers ?? 4));
   const [editBrackets, setEditBrackets] = useState<number[]>(group?.brackets ?? [2]);
   const timeParts = (group?.time ?? '').split(' · ');
+  const parseTime = (s: string) => {
+    const m = s.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+    return m ? { h: parseInt(m[1], 10), min: parseInt(m[2], 10), p: m[3].toUpperCase() as 'AM' | 'PM' } : { h: 7, min: 0, p: 'PM' as 'AM' | 'PM' };
+  };
+  const parsedTime = parseTime(timeParts[1] ?? '');
   const [editDay, setEditDay] = useState(timeParts[0] ?? '');
-  const [editTimeSlot, setEditTimeSlot] = useState(timeParts[1] ?? '');
+  const [editHour, setEditHour] = useState(parsedTime.h);
+  const [editMinute, setEditMinute] = useState(parsedTime.min);
+  const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
   const [showConfirmOverlay, setShowConfirmOverlay] = useState(false);
 
   const celebScale = useRef(new Animated.Value(0)).current;
@@ -83,7 +90,7 @@ export default function GroupDetail() {
     if (!isHost) return;
     Alert.alert(
       'Confirm Meetup',
-      'Did this group meet up? This will award XP to everyone.',
+      'Did this group meet up? This will award Points to everyone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -92,7 +99,7 @@ export default function GroupDetail() {
             setGroups((prev) =>
               prev.map((g) => (g.id === groupId ? { ...g, confirmed: true } : g))
             );
-            awardXP(50);
+            awardPoints(50);
             triggerCelebration();
           },
         },
@@ -131,7 +138,7 @@ export default function GroupDetail() {
           : g
       )
     );
-    awardXP(10);
+    awardPoints(10);
   };
 
   const handleLeave = () => {
@@ -199,7 +206,7 @@ export default function GroupDetail() {
               ...g,
               name: editName.trim(),
               location: editLocation.trim(),
-              time: editDay && editTimeSlot ? `${editDay} · ${editTimeSlot}` : g.time,
+              time: editDay ? `${editDay} · ${editHour}:${String(editMinute).padStart(2, '0')} ${editPeriod}` : g.time,
               targetPlayers: Math.max(g.players.length, Number(editTarget) || g.targetPlayers),
               brackets: editBrackets.length > 0 ? editBrackets : g.brackets,
             }
@@ -220,7 +227,7 @@ export default function GroupDetail() {
             <Text style={styles.celebEmoji}>🎉</Text>
             <Text style={styles.celebTitle}>Meetup Confirmed!</Text>
             <Animated.Text style={styles.celebXP}>
-              +50 XP
+              +50 Points
             </Animated.Text>
             <Text style={styles.celebSub}>You showed up. That's what it's about.</Text>
             <Pressable
@@ -282,17 +289,35 @@ export default function GroupDetail() {
               </ScrollView>
 
               <Text style={styles.editLabel}>Time</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                {TIME_SLOTS.map((slot) => (
-                  <Pressable
-                    key={slot}
-                    style={[styles.editChip, editTimeSlot === slot && styles.editChipActive]}
-                    onPress={() => setEditTimeSlot(slot)}
-                  >
-                    <Text style={[styles.editChipText, editTimeSlot === slot && styles.editChipTextActive]}>{slot}</Text>
+              <View style={styles.timePicker}>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditHour((h) => h === 12 ? 1 : h + 1); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
                   </Pressable>
-                ))}
-              </ScrollView>
+                  <Text style={styles.timeValue}>{String(editHour).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditHour((h) => h === 1 ? 12 : h - 1); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.timeSeparator}>:</Text>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditMinute((m) => (m + 15) % 60); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={styles.timeValue}>{String(editMinute).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditMinute((m) => m === 0 ? 45 : m - 15); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.timePeriod}>
+                  <Pressable style={[styles.periodBtn, editPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setEditPeriod('AM'); }}>
+                    <Text style={[styles.periodText, editPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
+                  </Pressable>
+                  <Pressable style={[styles.periodBtn, editPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setEditPeriod('PM'); }}>
+                    <Text style={[styles.periodText, editPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
+                  </Pressable>
+                </View>
+              </View>
 
               <Text style={styles.editLabel}>Players Needed</Text>
               <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
@@ -372,7 +397,11 @@ export default function GroupDetail() {
         {/* Roster */}
         <Text style={styles.rosterTitle}>Players</Text>
         {group.players.map((player) => (
-          <View key={player.id} style={styles.playerRow}>
+          <Pressable
+            key={player.id}
+            style={styles.playerRow}
+            onPress={() => router.push({ pathname: '/player-profile', params: { username: player.username } })}
+          >
             <View style={styles.playerAvatar}>
               <Text style={styles.playerInitial}>{player.username[0]}</Text>
             </View>
@@ -395,7 +424,7 @@ export default function GroupDetail() {
                 <Text style={styles.hostBadgeText}>HOST</Text>
               </View>
             )}
-          </View>
+          </Pressable>
         ))}
 
         {/* Join / Leave */}
@@ -784,5 +813,68 @@ const styles = StyleSheet.create({
   },
   editChipTextActive: {
     color: '#FFF',
+  },
+  timePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F0F14',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 10,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  timeUnit: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  timeArrow: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timeArrowText: {
+    color: '#007AFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  timeValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFF',
+    minWidth: 38,
+    textAlign: 'center',
+  },
+  timeSeparator: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#555',
+    marginBottom: 2,
+  },
+  timePeriod: {
+    gap: 6,
+    marginLeft: 4,
+  },
+  periodBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: '#333',
+    backgroundColor: '#1C1C24',
+  },
+  periodBtnActive: {
+    backgroundColor: '#001A33',
+    borderColor: '#007AFF',
+  },
+  periodText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#666',
+  },
+  periodTextActive: {
+    color: '#007AFF',
   },
 });

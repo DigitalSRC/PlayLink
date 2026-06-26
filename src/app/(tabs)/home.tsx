@@ -12,7 +12,7 @@ import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
  */
 export default function HomeScreen() {
   const router = useRouter();
-  const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst } = useApp();
+  const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, awardPoints } = useApp();
 
   if (!currentUser) return null;
 
@@ -39,8 +39,8 @@ export default function HomeScreen() {
             <Text style={styles.gearIcon}>⚙️</Text>
           </Pressable>
           <View style={styles.xpBadge}>
-            <Text style={styles.xpLabel}>XP</Text>
-            <Text style={styles.xpValue}>{currentUser.xp}</Text>
+            <Text style={styles.xpLabel}>PTS</Text>
+            <Text style={styles.xpValue}>{currentUser.points}</Text>
           </View>
         </View>
       </View>
@@ -113,7 +113,7 @@ export default function HomeScreen() {
 
           {/* Chosen rival */}
           {rivals.filter((r) => r.id === chosenRivalId).map((rival) => (
-            <View key={rival.id} style={[styles.rivalCard, styles.rivalCardMain]}>
+            <Pressable key={rival.id} style={[styles.rivalCard, styles.rivalCardMain]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
               <View style={[styles.rivalAvatar, styles.rivalAvatarMain]}>
                 <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
               </View>
@@ -126,7 +126,7 @@ export default function HomeScreen() {
               <View style={styles.rivalBadge}>
                 <Text style={styles.rivalBadgeText}>RIVAL</Text>
               </View>
-            </View>
+            </Pressable>
           ))}
 
           {/* Contenders */}
@@ -134,7 +134,7 @@ export default function HomeScreen() {
             <>
               <Text style={styles.contendersLabel}>CONTENDERS</Text>
               {rivals.filter((r) => r.id !== chosenRivalId).map((rival) => (
-                <View key={rival.id} style={[styles.rivalCard, styles.rivalCardContender]}>
+                <Pressable key={rival.id} style={[styles.rivalCard, styles.rivalCardContender]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
                   <View style={[styles.rivalAvatar, styles.rivalAvatarContender]}>
                     <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
                   </View>
@@ -147,7 +147,7 @@ export default function HomeScreen() {
                   <View style={[styles.rivalBadge, styles.contenderBadge]}>
                     <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
                   </View>
-                </View>
+                </Pressable>
               ))}
             </>
           )}

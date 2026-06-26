@@ -81,7 +81,7 @@ export default function ProfileCreation() {
         noGo: selectedNoGo,
         wins: 0,
         losses: 0,
-        xp: 0,
+        points: 0,
       };
 
       const rivals = findRivals(newProfile, SEED_PROFILES, 3);

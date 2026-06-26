@@ -11,7 +11,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Infinites', 'Extra Turns'],
     wins: 4,
     losses: 8,
-    xp: 80,
+    points: 80,
   },
   {
     id: 102,
@@ -23,7 +23,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Mill'],
     wins: 15,
     losses: 5,
-    xp: 420,
+    points: 420,
   },
   {
     id: 103,
@@ -35,7 +35,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Game Changers'],
     wins: 8,
     losses: 7,
-    xp: 210,
+    points: 210,
   },
   {
     id: 104,
@@ -47,7 +47,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 6,
     losses: 6,
-    xp: 160,
+    points: 160,
   },
   {
     id: 105,
@@ -59,7 +59,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 20,
     losses: 3,
-    xp: 680,
+    points: 680,
   },
   {
     id: 106,
@@ -71,7 +71,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Infinites'],
     wins: 3,
     losses: 9,
-    xp: 60,
+    points: 60,
   },
   {
     id: 107,
@@ -83,7 +83,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Stax', 'Land Destruction'],
     wins: 10,
     losses: 10,
-    xp: 300,
+    points: 300,
   },
   {
     id: 108,
@@ -95,7 +95,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Extra Turns'],
     wins: 7,
     losses: 8,
-    xp: 190,
+    points: 190,
   },
   {
     id: 109,
@@ -112,7 +112,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 5,
     losses: 5,
-    xp: 130,
+    points: 130,
   },
   {
     id: 110,
@@ -124,7 +124,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Infinites', 'Game Changers'],
     wins: 9,
     losses: 6,
-    xp: 260,
+    points: 260,
   },
   {
     id: 111,
@@ -136,7 +136,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Mill'],
     wins: 12,
     losses: 8,
-    xp: 370,
+    points: 370,
   },
   {
     id: 112,
@@ -148,7 +148,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Infinites', 'Extra Turns', 'Mill'],
     wins: 2,
     losses: 4,
-    xp: 40,
+    points: 40,
   },
   {
     // Dillon Carroll — his games/formats/brackets are overridden at runtime to mirror
@@ -162,7 +162,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 7,
     losses: 8,
-    xp: 190,
+    points: 190,
   },
   {
     id: 114,
@@ -174,7 +174,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 11,
     losses: 4,
-    xp: 340,
+    points: 340,
   },
   {
     id: 115,
@@ -186,7 +186,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Stax', 'Land Destruction'],
     wins: 3,
     losses: 7,
-    xp: 70,
+    points: 70,
   },
   {
     id: 116,
@@ -198,7 +198,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 18,
     losses: 6,
-    xp: 610,
+    points: 610,
   },
   {
     id: 117,
@@ -210,7 +210,7 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: ['Infinites'],
     wins: 6,
     losses: 4,
-    xp: 165,
+    points: 165,
   },
   {
     id: 118,
@@ -222,6 +222,6 @@ export const SEED_PROFILES: UserProfile[] = [
     noGo: [],
     wins: 14,
     losses: 12,
-    xp: 450,
+    points: 450,
   },
 ];

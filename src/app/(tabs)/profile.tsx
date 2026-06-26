@@ -145,8 +145,8 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Text style={[styles.statNum, styles.xpColor]}>{currentUser.xp}</Text>
-            <Text style={styles.statLabel}>XP</Text>
+            <Text style={[styles.statNum, styles.xpColor]}>{currentUser.points}</Text>
+            <Text style={styles.statLabel}>Points</Text>
           </View>
         </View>
         <View style={styles.progressTrack}>
@@ -257,7 +257,7 @@ export default function ProfileScreen() {
       {allRivalsInSection.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Rivals & Contenders</Text>
-          <Text style={styles.sectionHintText}>Tap a card to set as your rival</Text>
+          <Text style={styles.sectionHintText}>Tap card to view · tap badge to set as rival</Text>
           {allRivalsInSection.map((rival) => {
             const isChosen = rival.id === chosenRivalId;
             const isFamiliarFoe = mostPlayedAgainst?.id === rival.id && !rivals.some((r) => r.id === rival.id);
@@ -269,10 +269,7 @@ export default function ProfileScreen() {
                   isChosen && styles.rivalCardChosen,
                   isFamiliarFoe && styles.rivalCardFamiliarFoe,
                 ]}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setChosenRivalId(rival.id);
-                }}
+                onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}
               >
                 <View style={[styles.rivalAvatar, isChosen && styles.rivalAvatarChosen]}>
                   <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
@@ -289,13 +286,19 @@ export default function ProfileScreen() {
                     <Text style={styles.rivalBadgeText}>RIVAL</Text>
                   </View>
                 ) : isFamiliarFoe ? (
-                  <View style={[styles.rivalBadge, styles.familiarFoeBadge]}>
+                  <Pressable
+                    style={[styles.rivalBadge, styles.familiarFoeBadge]}
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); setChosenRivalId(rival.id); }}
+                  >
                     <Text style={[styles.rivalBadgeText, styles.familiarFoeBadgeText]}>FAMILIAR FOE</Text>
-                  </View>
+                  </Pressable>
                 ) : (
-                  <View style={[styles.rivalBadge, styles.contenderBadge]}>
+                  <Pressable
+                    style={[styles.rivalBadge, styles.contenderBadge]}
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); setChosenRivalId(rival.id); }}
+                  >
                     <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
-                  </View>
+                  </Pressable>
                 )}
               </Pressable>
             );

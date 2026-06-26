@@ -5,11 +5,12 @@ import { useApp } from '../../context/AppContext';
 const TAB_ICON: Record<string, { active: string; inactive: string }> = {
   home: { active: '🏠', inactive: '🏠' },
   browse: { active: '🔍', inactive: '🔍' },
+  shop: { active: '🛍️', inactive: '🛍️' },
   profile: { active: '👤', inactive: '👤' },
 };
 
 /**
- * Defines the three-tab navigator for logged-in users.
+ * Defines the four-tab navigator for logged-in users: Home, Find, Shop, Profile.
  * Redirects to profile creation if no user profile exists in context.
  * Parameters: none.
  * Returns: a Tabs navigator element or a Redirect element.
@@ -48,6 +49,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="home" options={{ tabBarLabel: 'Home' }} />
       <Tabs.Screen name="browse" options={{ tabBarLabel: 'Find' }} />
+      <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop' }} />
       <Tabs.Screen name="profile" options={{ tabBarLabel: 'Profile' }} />
     </Tabs>
   );
