@@ -17,6 +17,7 @@ const makeGroup = (overrides: Partial<Group> = {}): Group => ({
   name: "Test Group",
   joinCode: "TST001",
   createdAt: 0,
+  roundsPlayed: 0,
   gameType: "mtg",
   format: "Commander",
   brackets: [2],

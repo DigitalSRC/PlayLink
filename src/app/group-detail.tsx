@@ -98,6 +98,20 @@ export default function GroupDetail() {
     }).start();
   };
 
+  const handlePlayAnotherRound = () => {
+    xpAnim.setValue(0);
+    setGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, confirmed: false } : g))
+    );
+    setShowConfirmOverlay(false);
+  };
+
+  const handleEndSession = () => {
+    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    setShowConfirmOverlay(false);
+    router.replace('/(tabs)/browse');
+  };
+
   const handleConfirmMeetup = () => {
     if (!isHost) return;
     if (timeLocked) {
@@ -123,7 +137,11 @@ export default function GroupDetail() {
           text: 'Confirm',
           onPress: () => {
             setGroups((prev) =>
-              prev.map((g) => (g.id === groupId ? { ...g, confirmed: true } : g))
+              prev.map((g) =>
+                g.id === groupId
+                  ? { ...g, confirmed: true, roundsPlayed: g.roundsPlayed + 1 }
+                  : g
+              )
             );
             awardPoints(50);
             triggerCelebration();
@@ -251,17 +269,19 @@ export default function GroupDetail() {
         <Animated.View style={[styles.overlay, { opacity: celebOpacity }]}>
           <Animated.View style={[styles.celebCard, { transform: [{ scale: celebScale }] }]}>
             <Text style={styles.celebEmoji}>🎉</Text>
-            <Text style={styles.celebTitle}>Meetup Confirmed!</Text>
+            <Text style={styles.celebTitle}>Round {group.roundsPlayed} Complete!</Text>
             <Animated.Text style={styles.celebXP}>
               +50 Points
             </Animated.Text>
             <Text style={styles.celebSub}>You showed up. That's what it's about.</Text>
-            <Pressable
-              style={styles.celebBtn}
-              onPress={() => { setShowConfirmOverlay(false); router.back(); }}
-            >
-              <Text style={styles.celebBtnText}>Back to Browse</Text>
-            </Pressable>
+            <View style={styles.celebBtnRow}>
+              <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
+                <Text style={styles.celebBtnSecondaryText}>End Session</Text>
+              </Pressable>
+              <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
+                <Text style={styles.celebBtnText}>▶ Another Round</Text>
+              </Pressable>
+            </View>
           </Animated.View>
         </Animated.View>
       )}
@@ -291,7 +311,12 @@ export default function GroupDetail() {
 
         {group.confirmed && (
           <View style={styles.confirmedBadge}>
-            <Text style={styles.confirmedText}>✓ Meetup Confirmed</Text>
+            <Text style={styles.confirmedText}>✓ Round {group.roundsPlayed} Confirmed</Text>
+          </View>
+        )}
+        {!group.confirmed && group.roundsPlayed > 0 && (
+          <View style={styles.roundInProgressBadge}>
+            <Text style={styles.roundInProgressText}>🎮 Round {group.roundsPlayed + 1} of this session</Text>
           </View>
         )}
 
@@ -385,6 +410,11 @@ export default function GroupDetail() {
               {group.noGo.length > 0 && (
                 <Text style={[styles.metaRow, styles.noGoRow]}>🚫 No {group.noGo.join(', ')}</Text>
               )}
+              {group.roundsPlayed > 0 && (
+                <Text style={styles.metaRow}>
+                  🔄 {group.roundsPlayed} round{group.roundsPlayed > 1 ? 's' : ''} completed this session
+                </Text>
+              )}
               <View style={styles.joinCodeRow}>
                 <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
                 <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
@@ -416,7 +446,7 @@ export default function GroupDetail() {
                     onPress={handleConfirmMeetup}
                   >
                     <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
-                      Confirm Meetup
+                      {group.roundsPlayed > 0 ? `Confirm Round ${group.roundsPlayed + 1}` : 'Confirm Meetup'}
                     </Text>
                   </Pressable>
                 )}
@@ -532,16 +562,38 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
   },
+  celebBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 0,
+  },
   celebBtn: {
+    flex: 1,
     backgroundColor: '#34C759',
     paddingVertical: 12,
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
     borderRadius: 12,
+    alignItems: 'center',
   },
   celebBtnText: {
     color: '#FFF',
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: 14,
+  },
+  celebBtnSecondary: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  celebBtnSecondaryText: {
+    color: '#888',
+    fontWeight: '700',
+    fontSize: 14,
   },
   content: {
     paddingTop: 56,
@@ -592,10 +644,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#34C759',
-    marginBottom: 14,
+    marginBottom: 8,
   },
   confirmedText: {
     color: '#34C759',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  roundInProgressBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#001A3D',
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    marginBottom: 8,
+  },
+  roundInProgressText: {
+    color: '#007AFF',
     fontSize: 12,
     fontWeight: '700',
   },

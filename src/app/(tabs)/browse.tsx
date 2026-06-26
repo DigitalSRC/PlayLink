@@ -184,6 +184,7 @@ export default function BrowseScreen() {
       name: newName.trim(),
       joinCode: generateJoinCode(groups),
       createdAt: Date.now(),
+      roundsPlayed: 0,
       gameType: newGame,
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],

@@ -13,6 +13,7 @@ export interface Group {
   name: string;
   joinCode: string;
   createdAt: number;
+  roundsPlayed: number;
   players: PlayerProfile[];
   targetPlayers: number;
   brackets: number[];
@@ -42,6 +43,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 4,
     noGo: ['Infinites', 'Extra Turns'],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -63,6 +65,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 8,
     noGo: [],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -81,6 +84,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 4,
     noGo: ['Infinites'],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -100,6 +104,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 5,
     noGo: [],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -118,6 +123,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 4,
     noGo: [],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -136,6 +142,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 4,
     noGo: [],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -153,6 +160,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 4,
     noGo: ['Infinites', 'Extra Turns', 'Game Changers'],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
   {
@@ -171,6 +179,7 @@ export const HARDCODED_GROUPS: Group[] = [
     targetPlayers: 6,
     noGo: [],
     createdAt: 0,
+    roundsPlayed: 0,
     confirmed: false,
   },
 ];
