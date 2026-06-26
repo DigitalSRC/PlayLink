@@ -53,6 +53,46 @@ Note: the `browse-games` screen duplicates some join/leave logic inline rather t
 
 All styles use React Native `StyleSheet.create` defined at the bottom of each screen file. No external styling library is used.
 
+## Git workflow — MANDATORY, follow in every session
+
+These rules apply unconditionally. Do not skip them, do not ask whether to follow them — just follow them.
+
+### Branch structure
+
+```
+main          ← production-only; merged into only from unitTests after tests pass
+unitTests     ← integration point; feature branches merge here first
+feature/*     ← one branch per feature, created fresh each time
+```
+
+- **`main` is read-only for direct work.** Never commit directly to main. It receives merges only from `unitTests` after all tests pass.
+- **`unitTests` is the staging branch.** Every completed feature branch merges into `unitTests`. Unit tests for that feature are written and run on this branch before anything reaches main.
+- **Each feature gets its own branch**, named `feature/<short-description>` (e.g. `feature/login-existing-profile`). Create it from the current tip of `unitTests`.
+- **Branches are never deleted.** Keep all branches so work can be resumed or reverted later.
+
+### Commit rules
+
+- Every feature produces at least one commit on its feature branch.
+- Commit as soon as a discrete piece of work is complete — do not batch unrelated changes into one commit.
+- Commit messages must be descriptive: what changed and why, not just "fix" or "update".
+
+### Workflow steps — do this for every feature
+
+1. `git checkout unitTests && git pull` — start from the latest staging state.
+2. `git checkout -b feature/<name>` — create the feature branch.
+3. Implement the feature. Commit on the feature branch when done.
+4. `git checkout unitTests && git merge feature/<name>` — bring the feature into staging.
+5. Write or update unit tests on `unitTests` for the new behavior.
+6. `npm test` — all tests must pass before anything merges to main.
+7. `git checkout main && git merge unitTests` — only after tests are green.
+
+### What to do at the start of every session
+
+1. Run `git branch -a` to orient yourself — know what branches exist.
+2. Ask the user which feature to work on if it is not obvious from context.
+3. Check out (or create) the appropriate feature branch before touching any files.
+4. Never assume it is acceptable to work on `main` directly, even for a "small" fix.
+
 ## Working conventions
 
 - Prefer small, focused changes that fit the existing React Native patterns instead of introducing new libraries or architecture.

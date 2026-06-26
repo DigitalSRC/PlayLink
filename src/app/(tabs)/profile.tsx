@@ -31,7 +31,7 @@ import {
  */
 export default function ProfileScreen() {
   const router = useRouter();
-  const { currentUser, rivals, setCurrentUser } = useApp();
+  const { currentUser, rivals, chosenRivalId, setCurrentUser, clearCurrentUser } = useApp();
   const [editing, setEditing] = useState(false);
 
   if (!currentUser) return null;
@@ -226,24 +226,36 @@ export default function ProfileScreen() {
       {/* Rivals */}
       {rivals.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Rivals</Text>
-          {rivals.map((rival) => (
-            <View key={rival.id} style={styles.rivalCard}>
-              <View style={styles.rivalAvatar}>
-                <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+          <Text style={styles.sectionTitle}>Rivals & Contenders</Text>
+          {rivals.map((rival) => {
+            const isChosen = rival.id === chosenRivalId;
+            return (
+              <View
+                key={rival.id}
+                style={[styles.rivalCard, isChosen && styles.rivalCardChosen]}
+              >
+                <View style={[styles.rivalAvatar, isChosen && styles.rivalAvatarChosen]}>
+                  <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+                </View>
+                <View style={styles.rivalInfo}>
+                  <Text style={styles.rivalName}>{rival.username}</Text>
+                  <Text style={styles.rivalMeta}>
+                    {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                  </Text>
+                  <Text style={styles.rivalLocation}>{rival.location}</Text>
+                </View>
+                {isChosen ? (
+                  <View style={styles.rivalBadge}>
+                    <Text style={styles.rivalBadgeText}>RIVAL</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.rivalBadge, styles.contenderBadge]}>
+                    <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
+                  </View>
+                )}
               </View>
-              <View style={styles.rivalInfo}>
-                <Text style={styles.rivalName}>{rival.username}</Text>
-                <Text style={styles.rivalMeta}>
-                  {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
-                </Text>
-                <Text style={styles.rivalLocation}>{rival.location}</Text>
-              </View>
-              <View style={styles.rivalBadge}>
-                <Text style={styles.rivalBadgeText}>RIVAL</Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
 
@@ -263,6 +275,28 @@ export default function ProfileScreen() {
             <Text style={styles.editBtnText}>Edit Profile</Text>
           </Pressable>
         )}
+        <Pressable
+          style={styles.restartBtn}
+          onPress={() => {
+            Alert.alert(
+              'RESTART',
+              'Clear your profile and start over from the beginning?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Restart',
+                  style: 'destructive',
+                  onPress: () => {
+                    clearCurrentUser();
+                    router.replace('/profile-creation');
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Text style={styles.restartBtnText}>RESTART</Text>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -467,17 +501,24 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#2C2C38',
+  },
+  rivalCardChosen: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#1F1012',
   },
   rivalAvatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#444',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+  },
+  rivalAvatarChosen: {
+    backgroundColor: '#FF3B30',
   },
   rivalInitial: {
     fontSize: 18,
@@ -513,6 +554,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFF',
     letterSpacing: 0.8,
+  },
+  contenderBadge: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#8B6914',
+  },
+  contenderBadgeText: {
+    color: '#C9952A',
   },
   editActions: {
     gap: 10,
@@ -554,5 +603,20 @@ const styles = StyleSheet.create({
     color: '#888',
     fontWeight: '700',
     fontSize: 15,
+  },
+  restartBtn: {
+    backgroundColor: '#1C1C24',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3D1215',
+    marginTop: 8,
+  },
+  restartBtnText: {
+    color: '#C0392B',
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 1.5,
   },
 });

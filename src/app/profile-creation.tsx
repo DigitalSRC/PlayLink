@@ -31,13 +31,14 @@ const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
  * Multi-step onboarding screen that collects the player's full profile.
  * Steps: identity (username + location), game selection, preferences (formats, bracket, no-go), rival reveal.
  * Computes rivals on completion and saves them to global context before navigating home.
+ * Also supports one-tap login for any existing seed profile via the identity step.
  * Parameters: none.
  * Returns: a React Native screen with animated step transitions and haptic feedback on progression.
  * Edge cases: blocks progression if required fields are missing; rival reveal animates in automatically.
  */
 export default function ProfileCreation() {
   const router = useRouter();
-  const { setCurrentUser, setRivals } = useApp();
+  const { setCurrentUser, setRivals, setChosenRivalId } = useApp();
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
@@ -47,6 +48,7 @@ export default function ProfileCreation() {
   const [selectedBrackets, setSelectedBrackets] = useState<number[]>([2]);
   const [selectedNoGo, setSelectedNoGo] = useState<NoGoRule[]>([]);
   const [computedRivals, setComputedRivals] = useState<UserProfile[]>([]);
+  const [pickedRivalId, setPickedRivalId] = useState<number | null>(null);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rivalCardAnims = useRef([
@@ -141,6 +143,21 @@ export default function ProfileCreation() {
     );
   };
 
+  const loginAsExisting = (profile: UserProfile) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const rivals = findRivals(profile, SEED_PROFILES.filter((p) => p.id !== profile.id), 3);
+    setCurrentUser(profile);
+    setRivals(rivals);
+    if (rivals.length > 0) setChosenRivalId(rivals[0].id);
+    router.replace('/(tabs)/home');
+  };
+
+  const matchedProfiles = username.trim().length > 0
+    ? SEED_PROFILES.filter((p) =>
+        p.username.toLowerCase().includes(username.trim().toLowerCase())
+      )
+    : [];
+
   const renderStepDots = () => (
     <View style={styles.dots}>
       {STEPS.map((_, i) => (
@@ -163,6 +180,30 @@ export default function ProfileCreation() {
         onChangeText={setUsername}
         autoFocus
       />
+
+      {matchedProfiles.length > 0 && (
+        <View style={styles.loginSuggestions}>
+          <Text style={styles.loginSuggestionsLabel}>Returning player?</Text>
+          {matchedProfiles.map((profile) => (
+            <Pressable
+              key={profile.id}
+              style={styles.loginSuggestionRow}
+              onPress={() => loginAsExisting(profile)}
+            >
+              <View style={styles.loginAvatar}>
+                <Text style={styles.loginAvatarText}>{profile.username[0]}</Text>
+              </View>
+              <View style={styles.loginInfo}>
+                <Text style={styles.loginName}>{profile.username}</Text>
+                <Text style={styles.loginMeta}>
+                  {profile.wins}W – {profile.losses}L · {profile.location}
+                </Text>
+              </View>
+              <Text style={styles.loginArrow}>Log In →</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       <Text style={styles.label}>Your Area</Text>
       <TextInput
@@ -295,45 +336,68 @@ export default function ProfileCreation() {
 
   const renderRivalReveal = () => (
     <View style={styles.rivalContainer}>
-      <Text style={styles.stepTitle}>Your Rivals</Text>
+      <Text style={styles.stepTitle}>Choose Your Rival</Text>
       <Text style={styles.stepSubtitle}>
-        Based on your record — these players are matched to your level
+        One rival to chase. The others lurk as Contenders.
       </Text>
 
-      {computedRivals.map((rival, i) => (
-        <Animated.View
-          key={rival.id}
-          style={[
-            styles.rivalCard,
-            {
-              opacity: rivalCardAnims[i],
-              transform: [
-                {
-                  scale: rivalCardAnims[i].interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.8, 1],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <View style={styles.rivalAvatar}>
-            <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
-          </View>
-          <View style={styles.rivalInfo}>
-            <Text style={styles.rivalName}>{rival.username}</Text>
-            <Text style={styles.rivalMeta}>
-              {rival.wins}W – {rival.losses}L ·{" "}
-              {rival.games.map((g) => GAME_EMOJI[g]).join(" ")}
-            </Text>
-            <Text style={styles.rivalLocation}>{rival.location}</Text>
-          </View>
-          <View style={styles.rivalBadge}>
-            <Text style={styles.rivalBadgeText}>RIVAL</Text>
-          </View>
-        </Animated.View>
-      ))}
+      {computedRivals.map((rival, i) => {
+        const isPicked = pickedRivalId === rival.id;
+        const isContender = pickedRivalId !== null && !isPicked;
+        return (
+          <Animated.View
+            key={rival.id}
+            style={[
+              {
+                opacity: rivalCardAnims[i],
+                transform: [
+                  {
+                    scale: rivalCardAnims[i].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Pressable
+              style={[
+                styles.rivalCard,
+                isPicked && styles.rivalCardPicked,
+                isContender && styles.rivalCardContender,
+              ]}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setPickedRivalId(rival.id);
+              }}
+            >
+              <View style={[styles.rivalAvatar, isPicked && styles.rivalAvatarPicked]}>
+                <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+              </View>
+              <View style={styles.rivalInfo}>
+                <Text style={styles.rivalName}>{rival.username}</Text>
+                <Text style={styles.rivalMeta}>
+                  {rival.wins}W – {rival.losses}L ·{" "}
+                  {rival.games.map((g) => GAME_EMOJI[g]).join(" ")}
+                </Text>
+                <Text style={styles.rivalLocation}>{rival.location}</Text>
+              </View>
+              {isPicked ? (
+                <View style={styles.rivalBadge}>
+                  <Text style={styles.rivalBadgeText}>RIVAL</Text>
+                </View>
+              ) : (
+                <View style={[styles.rivalBadge, styles.contenderBadge]}>
+                  <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>
+                    {pickedRivalId !== null ? "CONTENDER" : "TAP TO PICK"}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          </Animated.View>
+        );
+      })}
 
       {computedRivals.length === 0 && (
         <Text style={styles.noRivals}>
@@ -347,7 +411,7 @@ export default function ProfileCreation() {
     (step === 0 && username.trim().length > 0) ||
     (step === 1 && selectedGames.length > 0) ||
     step === 2 ||
-    step === 3;
+    (step === 3 && pickedRivalId !== null);
 
   return (
     <View style={styles.container}>
@@ -378,10 +442,16 @@ export default function ProfileCreation() {
           </Pressable>
         ) : (
           <Pressable
-            style={styles.nextBtn}
-            onPress={() => router.replace("/(tabs)/home")}
+            style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
+            disabled={!canProceed}
+            onPress={() => {
+              if (pickedRivalId !== null) setChosenRivalId(pickedRivalId);
+              router.replace("/(tabs)/home");
+            }}
           >
-            <Text style={styles.nextBtnText}>Enter the Arena →</Text>
+            <Text style={styles.nextBtnText}>
+              {pickedRivalId === null ? "Pick Your Rival First" : "Enter the Arena →"}
+            </Text>
           </Pressable>
         )}
       </View>
@@ -561,17 +631,27 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#2C2C38",
+  },
+  rivalCardPicked: {
+    borderColor: "#FF3B30",
+    backgroundColor: "#1F1012",
+  },
+  rivalCardContender: {
+    opacity: 0.65,
   },
   rivalAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#FF3B30",
+    backgroundColor: "#444",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
+  },
+  rivalAvatarPicked: {
+    backgroundColor: "#FF3B30",
   },
   rivalInitial: {
     fontSize: 20,
@@ -608,11 +688,77 @@ const styles = StyleSheet.create({
     color: "#FFF",
     letterSpacing: 1,
   },
+  contenderBadge: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#8B6914",
+  },
+  contenderBadgeText: {
+    color: "#C9952A",
+  },
   noRivals: {
     color: "#666",
     textAlign: "center",
     marginTop: 40,
     fontSize: 15,
+  },
+  loginSuggestions: {
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#2C2C38",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  loginSuggestionsLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#555",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  loginSuggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#1E1E28",
+  },
+  loginAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#007AFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  loginAvatarText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#FFF",
+  },
+  loginInfo: {
+    flex: 1,
+  },
+  loginName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+  loginMeta: {
+    fontSize: 11,
+    color: "#666",
+    marginTop: 1,
+  },
+  loginArrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#007AFF",
   },
   footer: {
     paddingHorizontal: 24,
