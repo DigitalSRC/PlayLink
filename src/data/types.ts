@@ -19,6 +19,7 @@ export interface UserProfile {
   wins: number;
   losses: number;
   points: number;
+  rivalIds?: number[];
 }
 
 export const GAME_LABELS: Record<GameType, string> = {

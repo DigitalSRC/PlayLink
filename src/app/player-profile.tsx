@@ -13,6 +13,7 @@ import {
   GAME_COLOR,
   GAME_EMOJI,
   GAME_LABELS,
+  UserProfile,
 } from '../data/types';
 import { SEED_PROFILES } from '../data/seed-profiles';
 
@@ -43,6 +44,10 @@ export default function PlayerProfileScreen() {
   const initials = username
     ? username.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
+
+  const theirRivals: UserProfile[] = (profile?.rivalIds ?? [])
+    .map((id) => SEED_PROFILES.find((p) => p.id === id))
+    .filter((p): p is UserProfile => p !== undefined);
 
   return (
     <View style={styles.container}>
@@ -163,6 +168,35 @@ export default function PlayerProfileScreen() {
                     </View>
                   ))}
                 </View>
+              </View>
+            )}
+
+            {/* Their rivals */}
+            {theirRivals.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Rivals</Text>
+                {theirRivals.map((rival, index) => (
+                  <Pressable
+                    key={rival.id}
+                    style={[styles.rivalMiniCard, index === 0 && styles.rivalMiniCardMain]}
+                    onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}
+                  >
+                    <View style={[styles.rivalMiniAvatar, index === 0 && styles.rivalMiniAvatarMain]}>
+                      <Text style={styles.rivalMiniInitial}>{rival.username[0]}</Text>
+                    </View>
+                    <View style={styles.rivalMiniInfo}>
+                      <Text style={styles.rivalMiniName}>{rival.username}</Text>
+                      <Text style={styles.rivalMiniMeta}>
+                        {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                      </Text>
+                    </View>
+                    <View style={[styles.rivalMiniBadge, index > 0 && styles.rivalMiniContenderBadge]}>
+                      <Text style={[styles.rivalMiniBadgeText, index > 0 && styles.rivalMiniContenderBadgeText]}>
+                        {index === 0 ? 'RIVAL' : 'CONTENDER'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
               </View>
             )}
           </>
@@ -420,6 +454,71 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#555',
     textAlign: 'center',
+  },
+  rivalMiniCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C24',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+  },
+  rivalMiniCardMain: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#1F1012',
+    borderWidth: 1.5,
+  },
+  rivalMiniAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  rivalMiniAvatarMain: {
+    backgroundColor: '#FF3B30',
+  },
+  rivalMiniInitial: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  rivalMiniInfo: {
+    flex: 1,
+  },
+  rivalMiniName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 2,
+  },
+  rivalMiniMeta: {
+    fontSize: 12,
+    color: '#666',
+  },
+  rivalMiniBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+  },
+  rivalMiniContenderBadge: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#8B6914',
+  },
+  rivalMiniBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 0.8,
+  },
+  rivalMiniContenderBadgeText: {
+    color: '#C9952A',
   },
   rivalBtn: {
     backgroundColor: '#1C1C24',

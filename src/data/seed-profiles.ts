@@ -12,6 +12,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 4,
     losses: 8,
     points: 80,
+    rivalIds: [103],
   },
   {
     id: 102,
@@ -24,6 +25,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 15,
     losses: 5,
     points: 420,
+    rivalIds: [111, 105],
   },
   {
     id: 103,
@@ -36,6 +38,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 8,
     losses: 7,
     points: 210,
+    rivalIds: [101, 108],
   },
   {
     id: 104,
@@ -48,6 +51,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 6,
     losses: 6,
     points: 160,
+    rivalIds: [112],
   },
   {
     id: 105,
@@ -60,6 +64,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 20,
     losses: 3,
     points: 680,
+    rivalIds: [116, 111],
   },
   {
     id: 106,
@@ -72,6 +77,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 3,
     losses: 9,
     points: 60,
+    rivalIds: [114],
   },
   {
     id: 107,
@@ -84,6 +90,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 10,
     losses: 10,
     points: 300,
+    rivalIds: [102],
   },
   {
     id: 108,
@@ -96,6 +103,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 7,
     losses: 8,
     points: 190,
+    rivalIds: [103, 110],
   },
   {
     id: 109,
@@ -113,6 +121,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 5,
     losses: 5,
     points: 130,
+    rivalIds: [118, 113],
   },
   {
     id: 110,
@@ -125,6 +134,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 9,
     losses: 6,
     points: 260,
+    rivalIds: [108, 118],
   },
   {
     id: 111,
@@ -137,6 +147,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 12,
     losses: 8,
     points: 370,
+    rivalIds: [105, 102],
   },
   {
     id: 112,
@@ -149,6 +160,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 2,
     losses: 4,
     points: 40,
+    rivalIds: [115, 104],
   },
   {
     // Dillon Carroll — his games/formats/brackets are overridden at runtime to mirror
@@ -163,6 +175,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 7,
     losses: 8,
     points: 190,
+    rivalIds: [105, 116],
   },
   {
     id: 114,
@@ -175,6 +188,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 11,
     losses: 4,
     points: 340,
+    rivalIds: [106, 117],
   },
   {
     id: 115,
@@ -187,6 +201,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 3,
     losses: 7,
     points: 70,
+    rivalIds: [112],
   },
   {
     id: 116,
@@ -199,6 +214,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 18,
     losses: 6,
     points: 610,
+    rivalIds: [105, 118],
   },
   {
     id: 117,
@@ -211,6 +227,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 6,
     losses: 4,
     points: 165,
+    rivalIds: [114],
   },
   {
     id: 118,
@@ -223,5 +240,6 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 14,
     losses: 12,
     points: 450,
+    rivalIds: [116, 110],
   },
 ];
