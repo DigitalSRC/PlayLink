@@ -7,22 +7,36 @@ import { useApp } from '../context/AppContext';
 const STARTING_LIFE = 40;
 
 /**
- * Full-screen MTG life counter that doubles as the session controller for a group.
+ * Full-screen MTG life counter that works in two modes.
+ * Group mode (groupId param): ties into an active group — End Game confirms a round, awards +30 to the winner, and offers Another Round or End Session (+10 consolation).
+ * Pickup mode (playerNames param): ad-hoc session with no group record and no Points awarded — offers Play Again, Form a Group, or Done after each game.
  * Each player panel is split into two tap zones: upper half adds life, lower half subtracts.
- * Zones show at 30% opacity and highlight to 75% on press; long-press adjusts by 10.
- * One player is randomly chosen as first and highlighted with a gold GOES FIRST badge.
- * End Game opens the winner picker; the winner earns +30 Points; End Session gives +10 consolation.
- * Parameters: groupId — route param matching the active group's id in global context.
- * Returns: a full-screen life tracker; close button returns to group detail without recording a game.
- * Edge cases: closing without ending a game leaves the group unchanged and awards no points.
+ * Zones are 30% opacity at rest and highlight to 75% on press; long-press adjusts by 10.
+ * One player is randomly selected as first on each game start and highlighted with a gold GOES FIRST badge.
+ * Parameters: groupId (group mode) or playerNames (comma-separated, pickup mode).
+ * Returns: a full-screen life tracker; close button returns to the previous screen without recording a game.
+ * Edge cases: closing without ending a game leaves state unchanged and awards no Points.
  */
 export default function LifeCounter() {
   const router = useRouter();
-  const { groupId } = useLocalSearchParams<{ groupId: string }>();
+  const { groupId, playerNames } = useLocalSearchParams<{ groupId?: string; playerNames?: string }>();
   const { groups, setGroups, currentUser, awardPoints } = useApp();
 
-  const group = groups.find((g) => g.id === Number(groupId));
-  const players = group?.players ?? [];
+  const isPickup = !!playerNames && !groupId;
+  const group = !isPickup ? groups.find((g) => g.id === Number(groupId)) : undefined;
+
+  // Pickup players built from the comma-separated playerNames param
+  const pickupPlayerList = playerNames
+    ? playerNames.split(',').map((name, idx) => ({
+        id: idx,
+        username: name.trim(),
+        bracket: 2,
+        location: '',
+        role: 'Member',
+      }))
+    : [];
+
+  const players = group?.players ?? pickupPlayerList;
 
   const [lifeTotals, setLifeTotals] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
@@ -30,10 +44,10 @@ export default function LifeCounter() {
     return init;
   });
 
-  const [firstPlayer] = useState<string>(() => {
-    if (players.length === 0) return '';
-    return players[Math.floor(Math.random() * players.length)].username;
-  });
+  const pickRandom = () =>
+    players.length > 0 ? players[Math.floor(Math.random() * players.length)].username : '';
+
+  const [firstPlayer, setFirstPlayer] = useState<string>(pickRandom);
 
   const [showWinnerPicker, setShowWinnerPicker] = useState(false);
   const [pickerPhase, setPickerPhase] = useState<'winner' | 'celebrate'>('winner');
@@ -75,13 +89,15 @@ export default function LifeCounter() {
         {
           text: 'Yes',
           onPress: () => {
-            setGroups((prev) =>
-              prev.map((g) =>
-                g.id === Number(groupId)
-                  ? { ...g, confirmed: true, roundsPlayed: g.roundsPlayed + 1 }
-                  : g
-              )
-            );
+            if (!isPickup) {
+              setGroups((prev) =>
+                prev.map((g) =>
+                  g.id === Number(groupId)
+                    ? { ...g, confirmed: true, roundsPlayed: g.roundsPlayed + 1 }
+                    : g
+                )
+              );
+            }
             setPickerPhase('winner');
             setShowWinnerPicker(true);
             Haptics.selectionAsync();
@@ -93,12 +109,14 @@ export default function LifeCounter() {
 
   const handleSelectWinner = (winnerUsername: string) => {
     setRoundWinner(winnerUsername);
-    if (winnerUsername === currentUser?.username) {
+    if (!isPickup && winnerUsername === currentUser?.username) {
       awardPoints(30);
     }
     setPickerPhase('celebrate');
     animateCelebration();
   };
+
+  // ── Group-mode handlers ──────────────────────────────────────────────────
 
   const handlePlayAnotherRound = () => {
     setRoundWinner(null);
@@ -119,7 +137,28 @@ export default function LifeCounter() {
     router.replace('/(tabs)/browse');
   };
 
-  // Top half of the table gets rotated 180° so those players face their own panels
+  // ── Pickup-mode handlers ─────────────────────────────────────────────────
+
+  const handlePlayAgain = () => {
+    setFirstPlayer(pickRandom());
+    resetAll();
+    setRoundWinner(null);
+    setPickerPhase('winner');
+    setShowWinnerPicker(false);
+  };
+
+  const handleFormGroup = () => {
+    setShowWinnerPicker(false);
+    router.replace({ pathname: '/(tabs)/browse', params: { openCreate: '1' } });
+  };
+
+  const handlePickupDone = () => {
+    setShowWinnerPicker(false);
+    router.replace('/(tabs)/home');
+  };
+
+  // ── Layout helpers ───────────────────────────────────────────────────────
+
   const topPlayers = players.slice(0, Math.floor(players.length / 2));
   const bottomPlayers = players.slice(Math.floor(players.length / 2));
 
@@ -167,7 +206,7 @@ export default function LifeCounter() {
           <Text style={styles.halfBtnLabel}>−</Text>
         </Pressable>
 
-        {/* Centre overlay — non-interactive, touches fall through to the half buttons */}
+        {/* Centre overlay — non-interactive; touches fall through to half buttons */}
         <View style={styles.cellCenter} pointerEvents="none">
           <Text style={[styles.lifeTotal, isDead && styles.lifeDead]}>{life}</Text>
           <Text style={styles.playerName}>{username}</Text>
@@ -191,7 +230,9 @@ export default function LifeCounter() {
           {pickerPhase === 'winner' ? (
             <View style={styles.pickerCard}>
               <Text style={styles.celebEmoji}>🏆</Text>
-              <Text style={styles.celebTitle}>Who Won Round {group?.roundsPlayed}?</Text>
+              <Text style={styles.celebTitle}>
+                {isPickup ? 'Who Won?' : `Who Won Round ${group?.roundsPlayed}?`}
+              </Text>
               <Text style={styles.celebSub}>Select the winner of this game</Text>
               {players.map((player) => (
                 <Pressable
@@ -219,27 +260,48 @@ export default function LifeCounter() {
               ]}
             >
               <Text style={styles.celebEmoji}>🎉</Text>
-              <Text style={styles.celebTitle}>Round {group?.roundsPlayed} Complete!</Text>
+              <Text style={styles.celebTitle}>
+                {isPickup ? 'Game Over!' : `Round ${group?.roundsPlayed} Complete!`}
+              </Text>
               <View style={styles.winnerAnnounce}>
                 <Text style={styles.winnerAnnounceLabel}>WINNER</Text>
                 <Text style={styles.winnerAnnounceName}>{roundWinner}</Text>
               </View>
-              {roundWinner === currentUser?.username && (
+              {!isPickup && roundWinner === currentUser?.username && (
                 <Text style={styles.celebXP}>+30 Points</Text>
               )}
               <Text style={styles.celebSub}>
-                {roundWinner === currentUser?.username
+                {isPickup
+                  ? 'Nice game! Play again or form a group to earn rewards.'
+                  : roundWinner === currentUser?.username
                   ? 'You took it down!'
                   : 'Good game. End the session or run it back.'}
               </Text>
-              <View style={styles.celebBtnRow}>
-                <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
-                  <Text style={styles.celebBtnSecondaryText}>End Session</Text>
-                </Pressable>
-                <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
-                  <Text style={styles.celebBtnText}>▶ Another Round</Text>
-                </Pressable>
-              </View>
+
+              {isPickup ? (
+                <>
+                  <View style={styles.celebBtnRow}>
+                    <Pressable style={styles.celebBtnSecondary} onPress={handlePickupDone}>
+                      <Text style={styles.celebBtnSecondaryText}>Done</Text>
+                    </Pressable>
+                    <Pressable style={styles.celebBtn} onPress={handlePlayAgain}>
+                      <Text style={styles.celebBtnText}>▶ Play Again</Text>
+                    </Pressable>
+                  </View>
+                  <Pressable style={styles.formGroupBtn} onPress={handleFormGroup}>
+                    <Text style={styles.formGroupBtnText}>Form a Group to Earn Rewards →</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <View style={styles.celebBtnRow}>
+                  <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
+                    <Text style={styles.celebBtnSecondaryText}>End Session</Text>
+                  </Pressable>
+                  <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
+                    <Text style={styles.celebBtnText}>▶ Another Round</Text>
+                  </Pressable>
+                </View>
+              )}
             </Animated.View>
           )}
         </View>
@@ -407,7 +469,7 @@ const styles = StyleSheet.create({
   pickerCard: {
     backgroundColor: '#1C1C24',
     borderRadius: 24,
-    padding: 32,
+    padding: 28,
     alignItems: 'center',
     width: '88%',
     borderWidth: 1,
@@ -418,7 +480,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   celebTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     color: '#FFF',
     marginBottom: 8,
@@ -431,10 +493,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   celebSub: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#888',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
+    lineHeight: 20,
   },
   celebBtnRow: {
     flexDirection: 'row',
@@ -466,6 +529,21 @@ const styles = StyleSheet.create({
   },
   celebBtnSecondaryText: {
     color: '#888',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  formGroupBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#007AFF',
+    width: '100%',
+    alignItems: 'center',
+  },
+  formGroupBtnText: {
+    color: '#007AFF',
     fontWeight: '700',
     fontSize: 14,
   },

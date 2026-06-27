@@ -7,8 +7,9 @@ import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
  * Home tab — the player's personal dashboard after logging in.
  * Shows the player's Points balance, win/loss record, active group, and rival hierarchy.
  * Rival section distinguishes between one chosen Rival (red), up to two Contenders (gold), and an optional Familiar Foe slot for the most-played-against player.
+ * A Pickup Game button launches an ad-hoc life counter session without creating a formal group.
  * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
- * Returns: a scrollable dashboard screen with quick-action buttons for Find and Create Group.
+ * Returns: a scrollable dashboard screen with a Pickup Game card and quick-action buttons for Find and Create Group.
  * Edge cases: hides the active group section when the user is in no group; hides the rivals section entirely when the rivals array is empty.
  */
 export default function HomeScreen() {
@@ -175,6 +176,23 @@ export default function HomeScreen() {
           )}
         </View>
       )}
+
+      {/* Pickup Game */}
+      <View style={styles.section}>
+        <Pressable
+          style={styles.pickupCard}
+          onPress={() => router.push('/pickup-setup')}
+        >
+          <View style={styles.pickupCardLeft}>
+            <Text style={styles.pickupCardEmoji}>⚡</Text>
+            <View>
+              <Text style={styles.pickupCardTitle}>Pickup Game</Text>
+              <Text style={styles.pickupCardSub}>Jump in without a group · 2–8 players</Text>
+            </View>
+          </View>
+          <Text style={styles.pickupCardArrow}>→</Text>
+        </Pressable>
+      </View>
 
       {/* Quick actions */}
       <View style={styles.section}>
@@ -470,6 +488,39 @@ const styles = StyleSheet.create({
   },
   familiarFoeBadgeText: {
     color: '#8B7FEF',
+  },
+  pickupCard: {
+    backgroundColor: '#0A1F0A',
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderColor: '#34C759',
+  },
+  pickupCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  pickupCardEmoji: {
+    fontSize: 28,
+  },
+  pickupCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+    marginBottom: 2,
+  },
+  pickupCardSub: {
+    fontSize: 12,
+    color: '#34C759',
+  },
+  pickupCardArrow: {
+    fontSize: 18,
+    color: '#34C759',
+    fontWeight: '700',
   },
   actionRow: {
     flexDirection: 'row',
