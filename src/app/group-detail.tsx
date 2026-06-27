@@ -1,9 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
-  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,9 +14,8 @@ import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
 
-const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can confirm
-const MIN_PLAYERS_COMMANDER = 3;        // minimum attendees for a Commander session
-const MIN_PLAYERS_OTHER = 2;            // minimum attendees for all other formats
+const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can start a game
+const MIN_PLAYERS_OTHER = 2;            // minimum attendees required to start any game format
 
 /**
  * Group detail screen showing the full roster, settings, and host controls for a single group.
@@ -31,7 +29,7 @@ const MIN_PLAYERS_OTHER = 2;            // minimum attendees for all other forma
 export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { currentUser, groups, setGroups, awardPoints } = useApp();
+  const { currentUser, groups, setGroups } = useApp();
 
   const groupId = Number(id);
   const group = groups.find((g) => g.id === groupId);
@@ -51,13 +49,6 @@ export default function GroupDetail() {
   const [editHour, setEditHour] = useState(parsedTime.h);
   const [editMinute, setEditMinute] = useState(parsedTime.min);
   const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
-  const [showConfirmOverlay, setShowConfirmOverlay] = useState(false);
-  const [pickerPhase, setPickerPhase] = useState<'winner' | 'celebrate'>('winner');
-  const [roundWinner, setRoundWinner] = useState<string | null>(null);
-
-  const celebScale = useRef(new Animated.Value(0)).current;
-  const celebOpacity = useRef(new Animated.Value(0)).current;
-
   if (!group || !currentUser) {
     return null;
   }
@@ -67,7 +58,7 @@ export default function GroupDetail() {
   const isHost = group.players.some((p) => p.username === displayUser && p.role === 'Host');
   const isFull = group.players.length >= group.targetPlayers;
 
-  const minPlayers = group.format === 'Commander' ? MIN_PLAYERS_COMMANDER : MIN_PLAYERS_OTHER;
+  const minPlayers = MIN_PLAYERS_OTHER;
   const msRemaining = Math.max(0, CONFIRM_LOCK_MS - (Date.now() - group.createdAt));
   const minutesRemaining = Math.ceil(msRemaining / 60000);
   const timeLocked = msRemaining > 0;
@@ -78,83 +69,24 @@ export default function GroupDetail() {
     g.players.some((p) => p.username === displayUser)
   );
 
-  const animateCelebration = () => {
-    celebScale.setValue(0.5);
-    celebOpacity.setValue(0);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 300);
-    setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success), 600);
-    Animated.parallel([
-      Animated.spring(celebScale, { toValue: 1, useNativeDriver: true, bounciness: 15 }),
-      Animated.timing(celebOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSelectWinner = (winnerUsername: string) => {
-    setRoundWinner(winnerUsername);
-    if (winnerUsername === displayUser) {
-      awardPoints(30);
-    }
-    setPickerPhase('celebrate');
-    animateCelebration();
-  };
-
-  const handlePlayAnotherRound = () => {
-    setRoundWinner(null);
-    setPickerPhase('winner');
-    setGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, confirmed: false } : g))
-    );
-    setShowConfirmOverlay(false);
-  };
-
-  const handleEndSession = () => {
-    if (group.roundsPlayed > 0) {
-      awardPoints(10);
-    }
-    setGroups((prev) => prev.filter((g) => g.id !== groupId));
-    setShowConfirmOverlay(false);
-    router.replace('/(tabs)/browse');
-  };
-
-  const handleConfirmMeetup = () => {
+  const handleStartGame = () => {
     if (!isHost) return;
     if (timeLocked) {
       Alert.alert(
         'Too Soon',
-        `Groups must exist for at least 30 minutes before they can be confirmed. ${minutesRemaining} min remaining.`
+        `Groups must exist for at least 30 minutes before starting. ${minutesRemaining} min remaining.`
       );
       return;
     }
     if (headcountLocked) {
       Alert.alert(
         'Not Enough Players',
-        `A ${group.format === 'Commander' ? 'Commander' : ''} session needs at least ${minPlayers} players to confirm. You currently have ${group.players.length}.`
+        `You need at least ${minPlayers} players to start. You currently have ${group.players.length}.`
       );
       return;
     }
-    Alert.alert(
-      'Confirm Round',
-      'Did your pod finish a game?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Yes',
-          onPress: () => {
-            setGroups((prev) =>
-              prev.map((g) =>
-                g.id === groupId
-                  ? { ...g, confirmed: true, roundsPlayed: g.roundsPlayed + 1 }
-                  : g
-              )
-            );
-            setPickerPhase('winner');
-            setShowConfirmOverlay(true);
-            Haptics.selectionAsync();
-          },
-        },
-      ]
-    );
+    Haptics.selectionAsync();
+    router.push({ pathname: '/life-counter', params: { groupId: group.id } });
   };
 
   const handleJoin = () => {
@@ -267,59 +199,6 @@ export default function GroupDetail() {
 
   return (
     <View style={styles.container}>
-      {/* Confirm overlay — winner picker then celebration */}
-      {showConfirmOverlay && (
-        <View style={styles.overlay}>
-          {pickerPhase === 'winner' ? (
-            <View style={styles.celebCard}>
-              <Text style={styles.celebEmoji}>🏆</Text>
-              <Text style={styles.celebTitle}>Who Won Round {group.roundsPlayed}?</Text>
-              <Text style={styles.celebSub}>Select the winner of this game</Text>
-              {group.players.map((player) => (
-                <Pressable
-                  key={player.id}
-                  style={styles.winnerOption}
-                  onPress={() => handleSelectWinner(player.username)}
-                >
-                  <View style={styles.winnerAvatar}>
-                    <Text style={styles.winnerInitial}>{player.username[0]}</Text>
-                  </View>
-                  <Text style={styles.winnerName}>{player.username}</Text>
-                  {player.username === displayUser && (
-                    <View style={styles.winnerYouTag}>
-                      <Text style={styles.winnerYouText}>You</Text>
-                    </View>
-                  )}
-                </Pressable>
-              ))}
-            </View>
-          ) : (
-            <Animated.View style={[styles.celebCard, { transform: [{ scale: celebScale }], opacity: celebOpacity }]}>
-              <Text style={styles.celebEmoji}>🎉</Text>
-              <Text style={styles.celebTitle}>Round {group.roundsPlayed} Complete!</Text>
-              <View style={styles.winnerAnnounce}>
-                <Text style={styles.winnerAnnounceLabel}>WINNER</Text>
-                <Text style={styles.winnerAnnounceName}>{roundWinner}</Text>
-              </View>
-              {roundWinner === displayUser && (
-                <Text style={styles.celebXP}>+30 Points</Text>
-              )}
-              <Text style={styles.celebSub}>
-                {roundWinner === displayUser ? 'You took it down!' : 'Good game. End the session or run it back.'}
-              </Text>
-              <View style={styles.celebBtnRow}>
-                <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
-                  <Text style={styles.celebBtnSecondaryText}>End Session</Text>
-                </Pressable>
-                <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
-                  <Text style={styles.celebBtnText}>▶ Another Round</Text>
-                </Pressable>
-              </View>
-            </Animated.View>
-          )}
-        </View>
-      )}
-
       <ScrollView contentContainerStyle={styles.content}>
         {/* Back */}
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -478,10 +357,10 @@ export default function GroupDetail() {
                   {!group.confirmed && (
                     <Pressable
                       style={[styles.confirmBtn, confirmBlocked && styles.confirmBtnLocked]}
-                      onPress={handleConfirmMeetup}
+                      onPress={handleStartGame}
                     >
                       <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
-                        {group.roundsPlayed > 0 ? `Confirm Round ${group.roundsPlayed + 1}` : 'Confirm Meetup'}
+                        {group.roundsPlayed > 0 ? `Start Round ${group.roundsPlayed + 1}` : 'Start Game'}
                       </Text>
                     </Pressable>
                   )}
