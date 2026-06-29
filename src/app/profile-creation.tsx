@@ -45,6 +45,8 @@ export default function ProfileCreation() {
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [usernameError, setUsernameError] = useState("");
   const [location, setLocation] = useState("");
   const [selectedGames, setSelectedGames] = useState<GameType[]>([]);
   const [selectedFormats, setSelectedFormats] = useState<Partial<Record<GameType, string[]>>>({});
@@ -69,14 +71,29 @@ export default function ProfileCreation() {
     }).start();
   };
 
+  const USERNAME_RE = /^[a-zA-Z0-9_]{1,20}$/;
+
+  const validateUsername = (value: string) => {
+    if (!value.trim()) { setUsernameError("Username is required."); return false; }
+    if (!USERNAME_RE.test(value.trim())) {
+      setUsernameError("Only letters, numbers, and underscores. No spaces.");
+      return false;
+    }
+    setUsernameError("");
+    return true;
+  };
+
   const nextStep = () => {
-    if (step === 0 && !username.trim()) return;
+    if (step === 0) {
+      if (!validateUsername(username)) return;
+    }
     if (step === 1 && selectedGames.length === 0) return;
 
     if (step === 2) {
       const newProfile: UserProfile = {
         id: Date.now(),
         username: username.trim(),
+        displayName: displayName.trim() || undefined,
         location: location.trim() || "Nearby",
         games: selectedGames,
         preferredFormats: selectedFormats,
@@ -156,9 +173,11 @@ export default function ProfileCreation() {
   };
 
   const matchedProfiles = username.trim().length > 0
-    ? SEED_PROFILES.filter((p) =>
-        p.username.toLowerCase().includes(username.trim().toLowerCase())
-      )
+    ? SEED_PROFILES.filter((p) => {
+        const q = username.trim().toLowerCase();
+        return p.username.toLowerCase().includes(q) ||
+          (p.displayName ?? '').toLowerCase().includes(q);
+      })
     : [];
 
   const renderStepDots = () => (
@@ -175,13 +194,29 @@ export default function ProfileCreation() {
       <Text style={styles.stepSubtitle}>Who are you at the table?</Text>
 
       <Text style={styles.label}>Username</Text>
+      <Text style={styles.labelHint}>Letters, numbers, underscores only — no spaces</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, !!usernameError && styles.inputError]}
         placeholder="e.g. DarkRitualDave"
         placeholderTextColor="#999"
         value={username}
-        onChangeText={setUsername}
+        onChangeText={(v) => { setUsername(v); if (usernameError) validateUsername(v); }}
         autoFocus
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={20}
+      />
+      {!!usernameError && <Text style={styles.errorText}>{usernameError}</Text>}
+
+      <Text style={styles.label}>Display Name <Text style={styles.labelOptional}>(optional)</Text></Text>
+      <Text style={styles.labelHint}>How your name appears in-app — can include spaces</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="e.g. Dark Ritual Dave"
+        placeholderTextColor="#999"
+        value={displayName}
+        onChangeText={setDisplayName}
+        maxLength={32}
       />
 
       {matchedProfiles.length > 0 && (
@@ -194,12 +229,12 @@ export default function ProfileCreation() {
               onPress={() => loginAsExisting(profile)}
             >
               <View style={styles.loginAvatar}>
-                <Text style={styles.loginAvatarText}>{profile.username.charAt(0) || '?'}</Text>
+                <Text style={styles.loginAvatarText}>{(profile.displayName ?? profile.username).charAt(0) || '?'}</Text>
               </View>
               <View style={styles.loginInfo}>
-                <Text style={styles.loginName}>{profile.username}</Text>
+                <Text style={styles.loginName}>{profile.displayName ?? profile.username}</Text>
                 <Text style={styles.loginMeta}>
-                  {profile.wins}W – {profile.losses}L · {profile.location}
+                  @{profile.username} · {profile.wins}W – {profile.losses}L · {profile.location}
                 </Text>
               </View>
               <Text style={styles.loginArrow}>Log In →</Text>
@@ -523,10 +558,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#AAA",
-    marginBottom: 8,
+    marginBottom: 4,
     marginTop: 16,
     textTransform: "uppercase",
     letterSpacing: 0.8,
+  },
+  labelHint: {
+    fontSize: 11,
+    color: "#666",
+    marginBottom: 8,
+  },
+  labelOptional: {
+    fontSize: 11,
+    color: "#666",
+    fontWeight: "400",
+    textTransform: "none",
+    letterSpacing: 0,
+  },
+  inputError: {
+    borderColor: '#FF3B30',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#FF3B30',
+    marginTop: 6,
+    fontWeight: '600',
   },
   input: {
     backgroundColor: "#1C1C24",

@@ -2,12 +2,16 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { UserProfile } from '../data/types';
 import { Group, HARDCODED_GROUPS } from '../data/groups';
 
+export type AppTheme = 'dark' | 'light';
+
 interface AppState {
   currentUser: UserProfile | null;
   groups: Group[];
   rivals: UserProfile[];
   chosenRivalId: number | null;
   mostPlayedAgainst: UserProfile | null;
+  theme: AppTheme;
+  devDateOffset: number;
   setCurrentUser: (profile: UserProfile) => void;
   clearCurrentUser: () => void;
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
@@ -15,13 +19,16 @@ interface AppState {
   setChosenRivalId: (id: number) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
   awardPoints: (amount: number) => void;
+  setTheme: (t: AppTheme) => void;
+  setDevDateOffset: (ms: number) => void;
+  getNow: () => number;
 }
 
 const AppContext = createContext<AppState | null>(null);
 
 /**
  * Provides global app state to all child screens.
- * Holds the current user profile, group list, and computed rivals.
+ * Holds the current user profile, group list, computed rivals, app theme, and a dev-date offset for testing.
  * Parameters: children (React tree to wrap).
  * Returns: a context provider element.
  * Edge cases: throws if useApp is called outside this provider.
@@ -32,6 +39,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<number | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
+  const [theme, setTheme] = useState<AppTheme>('dark');
+  const [devDateOffset, setDevDateOffset] = useState(0);
 
   const setCurrentUser = (profile: UserProfile) => {
     setCurrentUserState(profile);
@@ -50,9 +59,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
   };
 
+  const getNow = () => Date.now() + devDateOffset;
+
   return (
     <AppContext.Provider
-      value={{ currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, setCurrentUser, clearCurrentUser, setGroups, setRivals, setChosenRivalId, setMostPlayedAgainst, awardPoints }}
+      value={{
+        currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst,
+        theme, devDateOffset,
+        setCurrentUser, clearCurrentUser, setGroups, setRivals,
+        setChosenRivalId, setMostPlayedAgainst, awardPoints,
+        setTheme, setDevDateOffset, getNow,
+      }}
     >
       {children}
     </AppContext.Provider>
@@ -62,7 +79,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 /**
  * Returns the app-wide state from the nearest AppProvider.
  * Parameters: none.
- * Returns: the AppState object with user, groups, rivals, and mutators including clearCurrentUser.
+ * Returns: the AppState object with user, groups, rivals, theme, and all mutators.
  * Edge cases: throws an error when called outside an AppProvider.
  */
 export const useApp = (): AppState => {

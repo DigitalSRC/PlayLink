@@ -11,6 +11,8 @@ export type NoGoRule =
 export interface UserProfile {
   id: number;
   username: string;
+  displayName?: string;
+  isDeveloper?: boolean;
   location: string;
   games: GameType[];
   preferredFormats: Partial<Record<GameType, string[]>>;

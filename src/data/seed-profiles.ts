@@ -3,7 +3,9 @@ import { UserProfile } from './types';
 export const SEED_PROFILES: UserProfile[] = [
   {
     id: 101,
-    username: 'Kevin Caravelli',
+    username: 'KCaravelli',
+    displayName: 'Kevin Caravelli',
+    isDeveloper: true,
     location: 'This App',
     games: ['mtg'],
     preferredFormats: { mtg: ['Commander'] },
@@ -16,7 +18,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 102,
-    username: 'Sarah Chen',
+    username: 'SChen',
+    displayName: 'Sarah Chen',
+    isDeveloper: true,
     location: 'Downtown Library',
     games: ['mtg', 'pokemon'],
     preferredFormats: { mtg: ['Standard', 'Pioneer'], pokemon: ['Standard'] },
@@ -29,7 +33,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 103,
-    username: 'Kai Torres',
+    username: 'KTorres',
+    displayName: 'Kai Torres',
+    isDeveloper: true,
     location: 'Northside Rec Center',
     games: ['mtg'],
     preferredFormats: { mtg: ['Commander', 'Draft'] },
@@ -42,7 +48,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 104,
-    username: 'Maya Patel',
+    username: 'MPatel',
+    displayName: 'Maya Patel',
+    isDeveloper: true,
     location: 'Maple Street Café',
     games: ['lorcana'],
     preferredFormats: { lorcana: ['Constructed'] },
@@ -55,7 +63,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 105,
-    username: 'Jake Rivers',
+    username: 'JRivers',
+    displayName: 'Jake Rivers',
+    isDeveloper: true,
     location: 'Main Street Arcade',
     games: ['mtg'],
     preferredFormats: { mtg: ['Modern', 'Pioneer'] },
@@ -68,7 +78,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 106,
-    username: 'Zoe Nakamura',
+    username: 'ZNakamura',
+    displayName: 'Zoe Nakamura',
+    isDeveloper: true,
     location: 'Willow Creek Cafe',
     games: ['pokemon'],
     preferredFormats: { pokemon: ['Standard', 'Limited'] },
@@ -81,7 +93,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 107,
-    username: 'Marcus Bell',
+    username: 'MBell',
+    displayName: 'Marcus Bell',
+    isDeveloper: true,
     location: 'University Union',
     games: ['mtg'],
     preferredFormats: { mtg: ['Standard'] },
@@ -94,7 +108,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 108,
-    username: 'Elena Voss',
+    username: 'EVoss',
+    displayName: 'Elena Voss',
+    isDeveloper: true,
     location: 'Eastside Brewery',
     games: ['mtg', 'onepiece'],
     preferredFormats: { mtg: ['Commander'], onepiece: ['OP'] },
@@ -107,7 +123,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 109,
-    username: 'Ryan Okafor',
+    username: 'ROkafor',
+    displayName: 'Ryan Okafor',
+    isDeveloper: true,
     location: 'Harbor Market',
     games: ['mtg', 'pokemon', 'lorcana', 'onepiece'],
     preferredFormats: {
@@ -125,7 +143,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 110,
-    username: 'Priya Sharma',
+    username: 'PSharma',
+    displayName: 'Priya Sharma',
+    isDeveloper: true,
     location: 'Brookside Commons',
     games: ['mtg'],
     preferredFormats: { mtg: ['Commander', 'Standard'] },
@@ -138,7 +158,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 111,
-    username: 'Cole Westbrook',
+    username: 'CWestbrook',
+    displayName: 'Cole Westbrook',
+    isDeveloper: true,
     location: 'Highland Hall',
     games: ['mtg'],
     preferredFormats: { mtg: ['Pioneer', 'Modern'] },
@@ -151,7 +173,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 112,
-    username: 'Aria Mendez',
+    username: 'AMendez',
+    displayName: 'Aria Mendez',
+    isDeveloper: true,
     location: 'Bluebird Plaza',
     games: ['lorcana', 'mtg'],
     preferredFormats: { lorcana: ['Constructed', 'Draft'], mtg: ['Commander'] },
@@ -163,10 +187,10 @@ export const SEED_PROFILES: UserProfile[] = [
     rivalIds: [115, 104],
   },
   {
-    // Dillon Carroll — his games/formats/brackets are overridden at runtime to mirror
-    // the current user, so he always qualifies as a rival regardless of what they play.
     id: 113,
-    username: 'Dillon Carroll',
+    username: 'DCarroll',
+    displayName: 'Dillon Carroll',
+    isDeveloper: true,
     location: 'Anytime, Anywhere',
     games: ['mtg'],
     preferredFormats: { mtg: ['Commander'] },
@@ -179,7 +203,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 114,
-    username: 'Tommy Walsh',
+    username: 'TWalsh',
+    displayName: 'Tommy Walsh',
+    isDeveloper: true,
     location: 'Crossroads Comic Shop',
     games: ['pokemon'],
     preferredFormats: { pokemon: ['Standard', 'Expanded'] },
@@ -192,7 +218,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 115,
-    username: 'Nadia Flores',
+    username: 'NFlores',
+    displayName: 'Nadia Flores',
+    isDeveloper: true,
     location: 'Sunset Café',
     games: ['lorcana', 'mtg'],
     preferredFormats: { lorcana: ['Constructed'], mtg: ['Commander'] },
@@ -205,7 +233,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 116,
-    username: 'Derek Stone',
+    username: 'DStone',
+    displayName: 'Derek Stone',
+    isDeveloper: true,
     location: 'The Underground Vault',
     games: ['mtg'],
     preferredFormats: { mtg: ['Modern', 'Pioneer', 'Commander'] },
@@ -218,7 +248,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 117,
-    username: 'Mia Laurent',
+    username: 'MLaurent',
+    displayName: 'Mia Laurent',
+    isDeveloper: true,
     location: 'Riverfront Hobby Den',
     games: ['onepiece', 'pokemon'],
     preferredFormats: { onepiece: ['OP'], pokemon: ['Standard', 'Limited'] },
@@ -231,7 +263,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 118,
-    username: 'Brutus Kane',
+    username: 'BKane',
+    displayName: 'Brutus Kane',
+    isDeveloper: true,
     location: 'Iron Fortress Game Hall',
     games: ['mtg'],
     preferredFormats: { mtg: ['Commander', 'Modern', 'Draft'] },
@@ -244,7 +278,9 @@ export const SEED_PROFILES: UserProfile[] = [
   },
   {
     id: 119,
-    username: 'Lucas Webb',
+    username: 'LWebb',
+    displayName: 'Lucas Webb',
+    isDeveloper: true,
     location: 'Riverside Park',
     games: ['mtg'],
     preferredFormats: { mtg: ['Commander'] },
