@@ -102,6 +102,7 @@ export default function ProfileCreation() {
         wins: 0,
         losses: 0,
         points: 0,
+        monthlyPoints: 0,
       };
 
       const rivals = findRivals(newProfile, SEED_PROFILES, 3);

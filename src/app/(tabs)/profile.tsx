@@ -49,6 +49,8 @@ export default function ProfileScreen() {
   const [editFormats, setEditFormats] = useState(currentUser.preferredFormats);
   const [editNoGo, setEditNoGo] = useState<NoGoRule[]>(currentUser.noGo);
   const [dirty, setDirty] = useState(false);
+  const [showGameModal, setShowGameModal] = useState(false);
+  const [modalGames, setModalGames] = useState<GameType[]>(currentUser.games);
 
   const setEditDisplayName = (v: string) => { setEditDisplayNameState(v); setDirty(true); };
   const setEditLocation = (v: string) => { setEditLocationState(v); setDirty(true); };
@@ -61,7 +63,6 @@ export default function ProfileScreen() {
     .slice(0, 2) || currentUser.username.charAt(0).toUpperCase();
 
   const commanderSelected = editGames.includes('mtg') && (editFormats?.mtg ?? []).includes('Commander');
-  const unselectedGames = ALL_GAMES.filter((g) => !editGames.includes(g));
 
   const saveEdit = () => {
     setCurrentUser({
@@ -156,38 +157,74 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* ── Add Game modal ── */}
+      {showGameModal && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? '#1C1C24' : '#FFF', borderColor: border }]}>
+            <Text style={[styles.modalTitle, { color: textPrimary }]}>Games I Play</Text>
+            <Text style={[styles.modalSub, { color: textSec }]}>Tap to select or deselect</Text>
+            {ALL_GAMES.map((g) => {
+              const selected = modalGames.includes(g);
+              return (
+                <Pressable
+                  key={g}
+                  style={[styles.modalGameRow, { borderColor: selected ? GAME_COLOR[g] : border, backgroundColor: selected ? GAME_COLOR[g] + '22' : 'transparent' }]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setModalGames((prev) =>
+                      prev.includes(g)
+                        ? prev.length > 1 ? prev.filter((x) => x !== g) : prev
+                        : [...prev, g]
+                    );
+                  }}
+                >
+                  <Text style={[styles.modalGameEmoji]}>{GAME_EMOJI[g]}</Text>
+                  <Text style={[styles.modalGameLabel, { color: selected ? GAME_COLOR[g] : textPrimary }]}>
+                    {GAME_LABELS[g]}
+                  </Text>
+                  {selected && <Text style={[styles.modalCheckmark, { color: GAME_COLOR[g] }]}>✓</Text>}
+                </Pressable>
+              );
+            })}
+            <View style={styles.modalBtns}>
+              <Pressable
+                style={[styles.modalCancelBtn, { backgroundColor: isDark ? '#2C2C38' : '#EEE' }]}
+                onPress={() => { setModalGames(editGames); setShowGameModal(false); }}
+              >
+                <Text style={[styles.modalCancelText, { color: textSec }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalConfirmBtn}
+                onPress={() => {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  setEditGames(modalGames);
+                  setDirty(true);
+                  setShowGameModal(false);
+                }}
+              >
+                <Text style={styles.modalConfirmText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* ── Games ── */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: textSec }]}>Games I Play</Text>
         <View style={styles.chipRow}>
           {editGames.map((g) => (
-            <Pressable
-              key={g}
-              style={[styles.gamePill, { borderColor: GAME_COLOR[g], backgroundColor: card }]}
-              onPress={() => {
-                if (editGames.length <= 1) return;
-                Haptics.selectionAsync(); setDirty(true);
-                setEditGames((prev) => prev.filter((x) => x !== g));
-              }}
-            >
+            <View key={g} style={[styles.gamePill, { borderColor: GAME_COLOR[g], backgroundColor: card }]}>
               <Text style={[styles.gamePillText, { color: textPrimary }]}>{GAME_EMOJI[g]} {GAME_LABELS[g]}</Text>
-              <Text style={[styles.gamePillRemove, { color: GAME_COLOR[g] }]}>  ✕</Text>
-            </Pressable>
+            </View>
           ))}
+          <Pressable
+            style={[styles.gamePill, styles.addGameBtn, { borderColor: isDark ? '#3C3C4C' : '#C0C0D0', backgroundColor: card }]}
+            onPress={() => { setModalGames(editGames); setShowGameModal(true); }}
+          >
+            <Text style={[styles.gamePillText, { color: textSec }]}>+ Add Game</Text>
+          </Pressable>
         </View>
-        {unselectedGames.length > 0 && (
-          <View style={styles.addGamesRow}>
-            <Text style={[styles.addGamesLabel, { color: textSec }]}>Add: </Text>
-            {unselectedGames.map((g) => (
-              <Pressable
-                key={g}
-                onPress={() => { Haptics.selectionAsync(); setDirty(true); setEditGames((prev) => [...prev, g]); }}
-              >
-                <Text style={[styles.addGameLink, { color: GAME_COLOR[g] }]}>{GAME_EMOJI[g]} {GAME_LABELS[g]}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
       </View>
 
       {/* ── Formats ── */}
@@ -406,12 +443,33 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 },
   sectionHint: { fontSize: 11, marginBottom: 10, marginTop: -8 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  gamePill: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1.5 },
+  gamePill: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.5 },
   gamePillText: { fontSize: 13, fontWeight: '600' },
-  gamePillRemove: { fontSize: 11, fontWeight: '700' },
-  addGamesRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, gap: 6 },
-  addGamesLabel: { fontSize: 12, fontWeight: '600' },
-  addGameLink: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
+  addGameBtn: { borderStyle: 'dashed' },
+
+  /* Add Game modal */
+  modalOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 99,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  modalCard: {
+    width: '88%', borderRadius: 20, padding: 24, borderWidth: 1,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  modalSub: { fontSize: 12, marginBottom: 18 },
+  modalGameRow: {
+    flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1.5,
+    padding: 14, marginBottom: 10,
+  },
+  modalGameEmoji: { fontSize: 22, marginRight: 12 },
+  modalGameLabel: { flex: 1, fontSize: 15, fontWeight: '700' },
+  modalCheckmark: { fontSize: 18, fontWeight: '900' },
+  modalBtns: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  modalCancelBtn: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  modalCancelText: { fontSize: 15, fontWeight: '700' },
+  modalConfirmBtn: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center', backgroundColor: '#007AFF' },
+  modalConfirmText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
   gameFormatBlock: { marginBottom: 14 },
   gameFormatTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
   chip: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1.5 },
@@ -436,11 +494,11 @@ const styles = StyleSheet.create({
   rivalName: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
   rivalMeta: { fontSize: 12, marginBottom: 2 },
   rivalLocation: { fontSize: 11 },
-  rivalBadge: { paddingVertical: 3, paddingHorizontal: 7, borderRadius: 5, backgroundColor: '#FF3B30' },
-  rivalBadgeText: { fontSize: 9, fontWeight: '800', color: '#FFF', letterSpacing: 0.8 },
-  contenderBadge: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#8B6914' },
+  rivalBadge: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#FF3B30' },
+  rivalBadgeText: { fontSize: 12, fontWeight: '800', color: '#FFF', letterSpacing: 0.8 },
+  contenderBadge: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#8B6914' },
   contenderBadgeText: { color: '#C9952A' },
-  foeBadge: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#5B3FCF' },
+  foeBadge: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#5B3FCF' },
   foeBadgeText: { color: '#8B7FEF' },
 
   /* Settings */
