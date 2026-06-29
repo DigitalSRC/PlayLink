@@ -182,7 +182,7 @@ export default function PlayerProfileScreen() {
                     onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}
                   >
                     <View style={[styles.rivalMiniAvatar, index === 0 && styles.rivalMiniAvatarMain]}>
-                      <Text style={styles.rivalMiniInitial}>{rival.username[0]}</Text>
+                      <Text style={styles.rivalMiniInitial}>{rival.username.charAt(0) || '?'}</Text>
                     </View>
                     <View style={styles.rivalMiniInfo}>
                       <Text style={styles.rivalMiniName}>{rival.username}</Text>

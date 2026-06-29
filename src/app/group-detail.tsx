@@ -282,7 +282,7 @@ export default function GroupDetail() {
                   onPress={() => handleSelectWinner(player.username)}
                 >
                   <View style={styles.winnerAvatar}>
-                    <Text style={styles.winnerInitial}>{player.username[0]}</Text>
+                    <Text style={styles.winnerInitial}>{player.username.charAt(0) || '?'}</Text>
                   </View>
                   <Text style={styles.winnerName}>{player.username}</Text>
                   {player.username === displayUser && (
@@ -508,7 +508,7 @@ export default function GroupDetail() {
             onPress={() => router.push({ pathname: '/player-profile', params: { username: player.username } })}
           >
             <View style={styles.playerAvatar}>
-              <Text style={styles.playerInitial}>{player.username[0]}</Text>
+              <Text style={styles.playerInitial}>{player.username.charAt(0) || '?'}</Text>
             </View>
             <View style={styles.playerInfo}>
               <Text style={styles.playerName}>{player.username}</Text>
