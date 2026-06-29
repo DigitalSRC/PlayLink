@@ -19,6 +19,10 @@ interface AppState {
   setChosenRivalId: (id: number) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
   awardPoints: (amount: number) => void;
+  addWin: () => void;
+  addLoss: () => void;
+  addDraw: () => void;
+  resetMonthlyPoints: () => void;
   setTheme: (t: AppTheme) => void;
   setDevDateOffset: (ms: number) => void;
   getNow: () => number;
@@ -54,9 +58,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const awardPoints = (amount: number) => {
+    setCurrentUserState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        points: Math.max(0, prev.points + amount),
+        monthlyPoints: amount > 0 ? prev.monthlyPoints + amount : prev.monthlyPoints,
+      };
+    });
+  };
+
+  const addWin = () => {
     setCurrentUserState((prev) =>
-      prev ? { ...prev, points: prev.points + amount } : prev
+      prev ? { ...prev, wins: prev.wins + 1, points: prev.points + 30, monthlyPoints: prev.monthlyPoints + 30 } : prev
     );
+  };
+
+  const addLoss = () => {
+    setCurrentUserState((prev) =>
+      prev ? { ...prev, losses: prev.losses + 1 } : prev
+    );
+  };
+
+  const addDraw = () => {
+    setCurrentUserState((prev) =>
+      prev ? { ...prev, points: prev.points + 10, monthlyPoints: prev.monthlyPoints + 10 } : prev
+    );
+  };
+
+  const resetMonthlyPoints = () => {
+    setCurrentUserState((prev) => prev ? { ...prev, monthlyPoints: 0 } : prev);
   };
 
   const getNow = () => Date.now() + devDateOffset;
@@ -67,7 +98,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst,
         theme, devDateOffset,
         setCurrentUser, clearCurrentUser, setGroups, setRivals,
-        setChosenRivalId, setMostPlayedAgainst, awardPoints,
+        setChosenRivalId, setMostPlayedAgainst,
+        awardPoints, addWin, addLoss, addDraw, resetMonthlyPoints,
         setTheme, setDevDateOffset, getNow,
       }}
     >

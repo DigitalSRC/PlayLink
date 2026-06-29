@@ -122,7 +122,7 @@ export default function HomeScreen() {
                 <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.rivalInfo}>
-                <Text style={styles.rivalName}>{rival.username}</Text>
+                <Text style={styles.rivalName}>{rival.displayName ?? rival.username}</Text>
                 <Text style={styles.rivalMeta}>
                   {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
                 </Text>
@@ -143,7 +143,7 @@ export default function HomeScreen() {
                     <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
                   </View>
                   <View style={styles.rivalInfo}>
-                    <Text style={styles.rivalName}>{rival.username}</Text>
+                    <Text style={styles.rivalName}>{rival.displayName ?? rival.username}</Text>
                     <Text style={styles.rivalMeta}>
                       {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
                     </Text>
@@ -165,7 +165,7 @@ export default function HomeScreen() {
                   <Text style={styles.rivalInitial}>{mostPlayedAgainst.username.charAt(0) || '?'}</Text>
                 </View>
                 <View style={styles.rivalInfo}>
-                  <Text style={styles.rivalName}>{mostPlayedAgainst.username}</Text>
+                  <Text style={styles.rivalName}>{mostPlayedAgainst.displayName ?? mostPlayedAgainst.username}</Text>
                   <Text style={styles.rivalMeta}>
                     {mostPlayedAgainst.wins}W – {mostPlayedAgainst.losses}L · {mostPlayedAgainst.games.map((g) => GAME_EMOJI[g]).join(' ')}
                   </Text>

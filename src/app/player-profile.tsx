@@ -66,7 +66,8 @@ export default function PlayerProfileScreen() {
           <View style={[styles.avatar, isChosenRival && styles.avatarRival]}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
-          <Text style={styles.username}>{username}</Text>
+          <Text style={styles.displayName}>{profile?.displayName ?? username}</Text>
+          <Text style={styles.usernameTag}>@{username}</Text>
           {profile && <Text style={styles.location}>{profile.location}</Text>}
           {isChosenRival && (
             <View style={styles.rivalBannerPill}>
@@ -190,7 +191,7 @@ export default function PlayerProfileScreen() {
                       <Text style={styles.rivalMiniInitial}>{rival.username.charAt(0) || '?'}</Text>
                     </View>
                     <View style={styles.rivalMiniInfo}>
-                      <Text style={styles.rivalMiniName}>{rival.username}</Text>
+                      <Text style={styles.rivalMiniName}>{rival.displayName ?? rival.username}</Text>
                       <Text style={styles.rivalMiniMeta}>
                         {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
                       </Text>
@@ -288,11 +289,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFF',
   },
-  username: {
+  displayName: {
     fontSize: 24,
     fontWeight: '800',
     color: '#FFF',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  usernameTag: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '600',
+    marginBottom: 6,
   },
   location: {
     fontSize: 14,
