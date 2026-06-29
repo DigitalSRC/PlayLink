@@ -16,7 +16,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 export default function DevTools() {
   const router = useRouter();
-  const { currentUser, devDateOffset, setDevDateOffset, awardPoints, getNow } = useApp();
+  const { currentUser, devDateOffset, setDevDateOffset, awardPoints, addWin, addLoss, addDraw, resetMonthlyPoints, getNow } = useApp();
 
   if (!currentUser?.isDeveloper) {
     router.back();
@@ -122,6 +122,60 @@ export default function DevTools() {
         </View>
       </View>
 
+      {/* Game results simulation */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>SIMULATE GAME RESULTS</Text>
+        <Text style={styles.simInfo}>
+          W/L: {currentUser.wins}/{currentUser.losses}
+          {'  ·  '}Monthly: {currentUser.monthlyPoints} pts
+        </Text>
+        <View style={styles.simRow}>
+          <Pressable
+            style={[styles.simBtn, styles.simBtnWin]}
+            onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); addWin(); }}
+          >
+            <Text style={styles.simBtnIcon}>🏆</Text>
+            <Text style={[styles.simBtnText, styles.simBtnTextWin]}>Win</Text>
+            <Text style={styles.simBtnSub}>+30 pts</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.simBtn, styles.simBtnLoss]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); addLoss(); }}
+          >
+            <Text style={styles.simBtnIcon}>💀</Text>
+            <Text style={[styles.simBtnText, styles.simBtnTextLoss]}>Loss</Text>
+            <Text style={styles.simBtnSub}>+0 pts</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.simBtn, styles.simBtnDraw]}
+            onPress={() => { Haptics.selectionAsync(); addDraw(); }}
+          >
+            <Text style={styles.simBtnIcon}>🤝</Text>
+            <Text style={[styles.simBtnText, styles.simBtnTextDraw]}>Draw</Text>
+            <Text style={styles.simBtnSub}>+10 pts</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Monthly leaderboard reset */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>MONTHLY LEADERBOARD</Text>
+        <Text style={styles.simInfo}>Current monthly pts: {currentUser.monthlyPoints}</Text>
+        <Pressable
+          style={styles.resetMonthBtn}
+          onPress={() => Alert.alert(
+            'Reset Monthly Leaderboard',
+            'This simulates the monthly reset — your monthly points go to 0. All-time points are unchanged.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Reset Month', style: 'destructive', onPress: () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); resetMonthlyPoints(); } },
+            ]
+          )}
+        >
+          <Text style={styles.resetMonthBtnText}>🗓 Simulate Monthly Reset</Text>
+        </Pressable>
+      </View>
+
       {/* Profile info */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>CURRENT SESSION</Text>
@@ -197,4 +251,28 @@ const styles = StyleSheet.create({
   ptsBtnTextDanger: { color: '#FF3B30' },
   infoRow: { fontSize: 13, color: '#888', marginBottom: 6 },
   devBadge: { color: '#34C759', fontWeight: '700', marginTop: 4 },
+
+  /* Game sim */
+  simInfo: { fontSize: 13, color: '#888', marginBottom: 14, fontWeight: '600' },
+  simRow: { flexDirection: 'row', gap: 8 },
+  simBtn: {
+    flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center',
+    borderWidth: 1.5, gap: 4,
+  },
+  simBtnWin: { backgroundColor: '#0A2A0A', borderColor: '#34C759' },
+  simBtnLoss: { backgroundColor: '#2A0A0A', borderColor: '#FF3B30' },
+  simBtnDraw: { backgroundColor: '#1A1A0A', borderColor: '#E6A817' },
+  simBtnIcon: { fontSize: 22 },
+  simBtnText: { fontSize: 15, fontWeight: '800' },
+  simBtnTextWin: { color: '#34C759' },
+  simBtnTextLoss: { color: '#FF3B30' },
+  simBtnTextDraw: { color: '#E6A817' },
+  simBtnSub: { fontSize: 10, color: '#666', fontWeight: '600' },
+
+  /* Monthly reset */
+  resetMonthBtn: {
+    backgroundColor: '#1A0A20', borderRadius: 12, paddingVertical: 13,
+    alignItems: 'center', borderWidth: 1.5, borderColor: '#7B4FBF',
+  },
+  resetMonthBtnText: { fontSize: 14, fontWeight: '700', color: '#A07FDF' },
 });

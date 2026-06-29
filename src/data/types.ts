@@ -21,6 +21,7 @@ export interface UserProfile {
   wins: number;
   losses: number;
   points: number;
+  monthlyPoints: number;
   rivalIds?: number[];
 }
 

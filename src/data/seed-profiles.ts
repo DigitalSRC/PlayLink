@@ -14,6 +14,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 10,
     losses: 5,
     points: 8000,
+    monthlyPoints: 0,
     rivalIds: [109, 113],
   },
   {
@@ -29,6 +30,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 15,
     losses: 5,
     points: 420,
+    monthlyPoints: 320,
     rivalIds: [111, 105],
   },
   {
@@ -44,6 +46,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 8,
     losses: 7,
     points: 210,
+    monthlyPoints: 140,
     rivalIds: [101, 108],
   },
   {
@@ -59,6 +62,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 6,
     losses: 6,
     points: 160,
+    monthlyPoints: 110,
     rivalIds: [112],
   },
   {
@@ -74,6 +78,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 20,
     losses: 3,
     points: 680,
+    monthlyPoints: 520,
     rivalIds: [116, 111],
   },
   {
@@ -89,6 +94,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 3,
     losses: 9,
     points: 60,
+    monthlyPoints: 30,
     rivalIds: [114],
   },
   {
@@ -104,6 +110,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 10,
     losses: 10,
     points: 300,
+    monthlyPoints: 200,
     rivalIds: [102],
   },
   {
@@ -119,6 +126,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 7,
     losses: 8,
     points: 190,
+    monthlyPoints: 120,
     rivalIds: [103, 110],
   },
   {
@@ -139,6 +147,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 5,
     losses: 5,
     points: 130,
+    monthlyPoints: 80,
     rivalIds: [118, 113],
   },
   {
@@ -154,6 +163,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 9,
     losses: 6,
     points: 260,
+    monthlyPoints: 180,
     rivalIds: [108, 118],
   },
   {
@@ -169,6 +179,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 12,
     losses: 8,
     points: 370,
+    monthlyPoints: 260,
     rivalIds: [105, 102],
   },
   {
@@ -184,6 +195,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 2,
     losses: 4,
     points: 40,
+    monthlyPoints: 20,
     rivalIds: [115, 104],
   },
   {
@@ -199,6 +211,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 7,
     losses: 8,
     points: 190,
+    monthlyPoints: 600,
     rivalIds: [105, 116],
   },
   {
@@ -214,6 +227,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 11,
     losses: 4,
     points: 340,
+    monthlyPoints: 240,
     rivalIds: [106, 117],
   },
   {
@@ -229,6 +243,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 3,
     losses: 7,
     points: 70,
+    monthlyPoints: 40,
     rivalIds: [112],
   },
   {
@@ -244,6 +259,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 18,
     losses: 6,
     points: 610,
+    monthlyPoints: 440,
     rivalIds: [105, 118],
   },
   {
@@ -259,12 +275,13 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 6,
     losses: 4,
     points: 165,
+    monthlyPoints: 100,
     rivalIds: [114],
   },
   {
     id: 118,
-    username: 'BKane',
-    displayName: 'Brutus Kane',
+    username: 'JVarni',
+    displayName: 'John Varni',
     isDeveloper: true,
     location: 'Iron Fortress Game Hall',
     games: ['mtg'],
@@ -274,6 +291,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 14,
     losses: 12,
     points: 450,
+    monthlyPoints: 360,
     rivalIds: [116, 110],
   },
   {
@@ -289,6 +307,7 @@ export const SEED_PROFILES: UserProfile[] = [
     wins: 4,
     losses: 8,
     points: 80,
+    monthlyPoints: 50,
     rivalIds: [103],
   },
 ];

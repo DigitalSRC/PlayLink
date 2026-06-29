@@ -1,17 +1,21 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useApp } from '../../context/AppContext';
 import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
 import { SEED_PROFILES } from '../../data/seed-profiles';
 
 /**
- * Stats tab showing the player's detailed performance history and rankings.
- * Displays win/loss record, points balance, win-rate bar, per-game breakdown, and milestone badges.
- * Leaderboard ranks the current user against seed profiles by points.
+ * Stats tab showing the player's detailed performance history and monthly rankings.
+ * Displays win/loss record, all-time points, win-rate bar, per-game breakdown, and milestone badges.
+ * Leaderboard ranks players by monthly points, which reset at the start of each calendar month.
+ * The current user's seed profile entry is excluded from the leaderboard to prevent duplicates.
  * Parameters: none; reads currentUser from global context.
  * Returns: a scrollable stats screen; null when no user is logged in.
- * Edge cases: percentages and rank show 0 / last when no games have been played.
+ * Edge cases: percentages and rank show 0 / last when no games have been played; leaderboard rows
+ * are tappable to view any player's full profile.
  */
 export default function StatsScreen() {
+  const router = useRouter();
   const { currentUser } = useApp();
 
   if (!currentUser) return null;
@@ -31,13 +35,21 @@ export default function StatsScreen() {
   ];
 
   const allPlayers = [
-    { name: currentUser.displayName ?? currentUser.username, points: currentUser.points, isMe: true },
-    ...SEED_PROFILES.map((p) => ({
-      name: p.displayName ?? p.username,
-      points: p.points,
-      isMe: false,
-    })),
-  ].sort((a, b) => b.points - a.points);
+    {
+      displayName: currentUser.displayName ?? currentUser.username,
+      username: currentUser.username,
+      monthlyPoints: currentUser.monthlyPoints,
+      isMe: true,
+    },
+    ...SEED_PROFILES
+      .filter((p) => p.username !== currentUser.username)
+      .map((p) => ({
+        displayName: p.displayName ?? p.username,
+        username: p.username,
+        monthlyPoints: p.monthlyPoints,
+        isMe: false,
+      })),
+  ].sort((a, b) => b.monthlyPoints - a.monthlyPoints);
 
   const myRank = allPlayers.findIndex((p) => p.isMe) + 1;
 
@@ -52,7 +64,7 @@ export default function StatsScreen() {
             { value: currentUser.wins, label: 'Wins', color: '#34C759' },
             { value: currentUser.losses, label: 'Losses', color: '#FF3B30' },
             { value: totalGames, label: 'Games', color: '#FFF' },
-            { value: currentUser.points, label: 'Points', color: '#007AFF' },
+            { value: currentUser.points, label: 'All-Time Pts', color: '#007AFF' },
           ].map((stat, i, arr) => (
             <View key={stat.label} style={styles.overviewStatWrap}>
               <View style={styles.overviewStat}>
@@ -72,11 +84,15 @@ export default function StatsScreen() {
         </View>
       </View>
 
-      {/* Rank */}
+      {/* Monthly rank */}
       <View style={styles.rankCard}>
-        <Text style={styles.rankLabel}>LEADERBOARD RANK</Text>
+        <Text style={styles.rankLabel}>MONTHLY LEADERBOARD RANK</Text>
         <Text style={styles.rankNum}>#{myRank}</Text>
         <Text style={styles.rankSub}>out of {allPlayers.length} players</Text>
+        <View style={styles.monthlyPtsBadge}>
+          <Text style={styles.monthlyPtsLabel}>THIS MONTH</Text>
+          <Text style={styles.monthlyPtsVal}>{currentUser.monthlyPoints} pts</Text>
+        </View>
       </View>
 
       {/* Games */}
@@ -114,25 +130,40 @@ export default function StatsScreen() {
 
       {/* Leaderboard */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Leaderboard — Top 10</Text>
+        <Text style={styles.sectionTitle}>Monthly Leaderboard — Top 10</Text>
+        <Text style={styles.sectionHint}>Ranked by points earned this month · tap to view profile</Text>
         {allPlayers.slice(0, 10).map((p, idx) => (
-          <View key={idx} style={[styles.leaderRow, p.isMe && styles.leaderRowMe]}>
+          <Pressable
+            key={p.username}
+            style={[styles.leaderRow, p.isMe && styles.leaderRowMe]}
+            onPress={() => {
+              if (!p.isMe) {
+                router.push({ pathname: '/player-profile', params: { username: p.username } });
+              }
+            }}
+          >
             <Text style={[styles.leaderRank, idx < 3 && styles.leaderRankTop]}>
               {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
             </Text>
-            <Text style={[styles.leaderName, p.isMe && styles.leaderNameMe]}>
-              {p.name}{p.isMe ? ' (You)' : ''}
-            </Text>
-            <Text style={styles.leaderPts}>{p.points} pts</Text>
-          </View>
+            <View style={styles.leaderNameCol}>
+              <Text style={[styles.leaderName, p.isMe && styles.leaderNameMe]}>
+                {p.displayName}
+              </Text>
+              {p.isMe && <Text style={styles.leaderYou}>YOU</Text>}
+            </View>
+            <Text style={[styles.leaderPts, p.isMe && styles.leaderPtsMe]}>{p.monthlyPoints} pts</Text>
+          </Pressable>
         ))}
         {myRank > 10 && (
           <View style={[styles.leaderRow, styles.leaderRowMe, { marginTop: 8 }]}>
             <Text style={styles.leaderRank}>#{myRank}</Text>
-            <Text style={[styles.leaderName, styles.leaderNameMe]}>
-              {currentUser.displayName ?? currentUser.username} (You)
-            </Text>
-            <Text style={styles.leaderPts}>{currentUser.points} pts</Text>
+            <View style={styles.leaderNameCol}>
+              <Text style={[styles.leaderName, styles.leaderNameMe]}>
+                {currentUser.displayName ?? currentUser.username}
+              </Text>
+              <Text style={styles.leaderYou}>YOU</Text>
+            </View>
+            <Text style={[styles.leaderPts, styles.leaderPtsMe]}>{currentUser.monthlyPoints} pts</Text>
           </View>
         )}
       </View>
@@ -151,8 +182,8 @@ const styles = StyleSheet.create({
   overviewRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   overviewStatWrap: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   overviewStat: { flex: 1, alignItems: 'center' },
-  overviewNum: { fontSize: 26, fontWeight: '900', color: '#FFF' },
-  overviewLabel: { fontSize: 11, color: '#888', marginTop: 3, fontWeight: '600' },
+  overviewNum: { fontSize: 24, fontWeight: '900', color: '#FFF' },
+  overviewLabel: { fontSize: 10, color: '#888', marginTop: 3, fontWeight: '600' },
   overviewDivider: { width: 1, height: 40, backgroundColor: '#2C2C38' },
   winRateRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   winRateLabel: { fontSize: 12, color: '#888', fontWeight: '700' },
@@ -165,12 +196,19 @@ const styles = StyleSheet.create({
   },
   rankLabel: { fontSize: 11, fontWeight: '700', color: '#8B6FBF', letterSpacing: 1.5, marginBottom: 6 },
   rankNum: { fontSize: 52, fontWeight: '900', color: '#A07FDF', lineHeight: 58 },
-  rankSub: { fontSize: 13, color: '#7B5FAF', marginTop: 4 },
+  rankSub: { fontSize: 13, color: '#7B5FAF', marginTop: 4, marginBottom: 12 },
+  monthlyPtsBadge: {
+    backgroundColor: '#2A1A3A', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8,
+    alignItems: 'center', borderWidth: 1, borderColor: '#5B3FCF',
+  },
+  monthlyPtsLabel: { fontSize: 9, fontWeight: '800', color: '#8B6FBF', letterSpacing: 1.5, marginBottom: 2 },
+  monthlyPtsVal: { fontSize: 22, fontWeight: '900', color: '#C0A0FF' },
   section: { marginBottom: 28 },
   sectionTitle: {
     fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 1.5,
-    textTransform: 'uppercase', marginBottom: 14,
+    textTransform: 'uppercase', marginBottom: 6,
   },
+  sectionHint: { fontSize: 11, color: '#555', marginBottom: 12 },
   gameRow: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C24',
     borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1,
@@ -196,7 +234,10 @@ const styles = StyleSheet.create({
   leaderRowMe: { backgroundColor: '#0A1A2A', borderColor: '#007AFF' },
   leaderRank: { width: 40, fontSize: 14, fontWeight: '700', color: '#888' },
   leaderRankTop: { fontSize: 22 },
-  leaderName: { flex: 1, fontSize: 14, fontWeight: '700', color: '#CCC' },
+  leaderNameCol: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  leaderName: { fontSize: 14, fontWeight: '700', color: '#CCC' },
   leaderNameMe: { color: '#007AFF' },
+  leaderYou: { fontSize: 9, fontWeight: '800', color: '#007AFF', backgroundColor: '#001830', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
   leaderPts: { fontSize: 13, fontWeight: '700', color: '#888' },
+  leaderPtsMe: { color: '#007AFF' },
 });
