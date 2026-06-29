@@ -94,9 +94,19 @@ export default function HomeScreen() {
       ) : (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>No Active Group</Text>
-          <Pressable style={styles.findBtn} onPress={() => router.push('/(tabs)/browse')}>
-            <Text style={styles.findBtnText}>Find a Group →</Text>
-          </Pressable>
+          <View style={styles.groupActionRow}>
+            <Pressable style={styles.groupActionBtn} onPress={() => router.push('/(tabs)/browse')}>
+              <Text style={styles.groupActionEmoji}>🔍</Text>
+              <Text style={styles.groupActionLabel}>Find a Group</Text>
+            </Pressable>
+            <Pressable
+              style={styles.groupActionBtn}
+              onPress={() => router.push({ pathname: '/(tabs)/browse', params: { openCreate: '1' } })}
+            >
+              <Text style={styles.groupActionEmoji}>➕</Text>
+              <Text style={styles.groupActionLabel}>Create Group</Text>
+            </Pressable>
+          </View>
         </View>
       )}
 
@@ -172,19 +182,6 @@ export default function HomeScreen() {
       {/* Quick Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionRow}>
-          <Pressable style={styles.actionBtn} onPress={() => router.push('/(tabs)/browse')}>
-            <Text style={styles.actionEmoji}>🔍</Text>
-            <Text style={styles.actionLabel}>Find a Group</Text>
-          </Pressable>
-          <Pressable
-            style={styles.actionBtn}
-            onPress={() => router.push({ pathname: '/(tabs)/browse', params: { openCreate: '1' } })}
-          >
-            <Text style={styles.actionEmoji}>➕</Text>
-            <Text style={styles.actionLabel}>Create Group</Text>
-          </Pressable>
-        </View>
         <Pressable style={styles.pickupCard} onPress={() => router.push('/pickup-setup')}>
           <View style={styles.pickupCardLeft}>
             <Text style={styles.pickupCardEmoji}>⚡</Text>
@@ -365,18 +362,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
   },
-  findBtn: {
+  groupActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  groupActionBtn: {
+    flex: 1,
     backgroundColor: '#1C1C24',
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 14,
+    paddingVertical: 18,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#2C2C38',
   },
-  findBtnText: {
-    fontSize: 15,
-    color: '#007AFF',
-    fontWeight: '700',
+  groupActionEmoji: {
+    fontSize: 26,
+    marginBottom: 6,
+  },
+  groupActionLabel: {
+    fontSize: 13,
+    color: '#AAA',
+    fontWeight: '600',
   },
   rivalCard: {
     flexDirection: 'row',
@@ -506,27 +512,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#34C759',
     fontWeight: '700',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionBtn: {
-    flex: 1,
-    backgroundColor: '#1C1C24',
-    borderRadius: 14,
-    paddingVertical: 18,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2C2C38',
-  },
-  actionEmoji: {
-    fontSize: 26,
-    marginBottom: 6,
-  },
-  actionLabel: {
-    fontSize: 13,
-    color: '#AAA',
-    fontWeight: '600',
   },
 });
