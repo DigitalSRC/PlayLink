@@ -15,7 +15,6 @@ import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
   BRACKET_INFO,
-  DAYS_OF_WEEK,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -51,7 +50,7 @@ export default function BrowseScreen() {
   const [newGame, setNewGame] = useState<GameType>('mtg');
   const [newFormat, setNewFormat] = useState('');
   const [newLocation, setNewLocation] = useState('');
-  const [newDay, setNewDay] = useState('');
+  const [newDateOffset, setNewDateOffset] = useState(0);
   const [newHour, setNewHour] = useState(7);
   const [newMinute, setNewMinute] = useState(0);
   const [newPeriod, setNewPeriod] = useState<'AM' | 'PM'>('PM');
@@ -188,7 +187,16 @@ export default function BrowseScreen() {
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
-      time: newDay ? `${newDay} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}` : 'TBD',
+      scheduledAt: (() => {
+        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
+        d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
+        return d.getTime();
+      })(),
+      time: (() => {
+        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
+        const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        return `${dayLabel} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}`;
+      })(),
       players: [
         {
           id: Date.now() + 1,
@@ -208,7 +216,7 @@ export default function BrowseScreen() {
     setGroups((prev) => [group, ...prev]);
     setShowCreate(false);
     setNewName('');
-    setNewDay('');
+    setNewDateOffset(0);
     setNewHour(7);
     setNewMinute(0);
     setNewPeriod('PM');
@@ -340,17 +348,22 @@ export default function BrowseScreen() {
             <Text style={styles.fieldLabel}>Location</Text>
             <TextInput style={styles.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
 
-            <Text style={styles.fieldLabel}>Day</Text>
+            <Text style={styles.fieldLabel}>Date</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
-              {DAYS_OF_WEEK.map((day) => (
-                <Pressable
-                  key={day}
-                  style={[styles.chip, newDay === day && styles.chipTimeActive]}
-                  onPress={() => { setNewDay(day); Haptics.selectionAsync(); }}
-                >
-                  <Text style={[styles.chipText, newDay === day && styles.chipTextActive]}>{day}</Text>
-                </Pressable>
-              ))}
+              {Array.from({ length: 15 }, (_, i) => {
+                const d = new Date(); d.setDate(d.getDate() + i);
+                const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
+                  : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                return (
+                  <Pressable
+                    key={i}
+                    style={[styles.chip, newDateOffset === i && styles.chipTimeActive]}
+                    onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
+                  >
+                    <Text style={[styles.chipText, newDateOffset === i && styles.chipTextActive]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
 
             <Text style={styles.fieldLabel}>Time</Text>

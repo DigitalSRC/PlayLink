@@ -13,6 +13,7 @@ export interface Group {
   name: string;
   joinCode: string;
   createdAt: number;
+  scheduledAt?: number;
   roundsPlayed: number;
   players: PlayerProfile[];
   targetPlayers: number;
