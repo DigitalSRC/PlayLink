@@ -30,20 +30,12 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.username}>{currentUser.username}</Text>
+          <Text style={styles.username}>{currentUser.displayName ?? currentUser.username}</Text>
           <Text style={styles.location}>{currentUser.location}</Text>
         </View>
-        <View style={styles.headerRight}>
-          <Pressable
-            style={styles.gearBtn}
-            onPress={() => router.push('/(tabs)/profile')}
-          >
-            <Text style={styles.gearIcon}>⚙️</Text>
-          </Pressable>
-          <View style={styles.xpBadge}>
-            <Text style={styles.xpLabel}>PTS</Text>
-            <Text style={styles.xpValue}>{currentUser.points}</Text>
-          </View>
+        <View style={styles.xpBadge}>
+          <Text style={styles.xpLabel}>PTS</Text>
+          <Text style={styles.xpValue}>{currentUser.points}</Text>
         </View>
       </View>
 
@@ -177,24 +169,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Pickup Game */}
-      <View style={styles.section}>
-        <Pressable
-          style={styles.pickupCard}
-          onPress={() => router.push('/pickup-setup')}
-        >
-          <View style={styles.pickupCardLeft}>
-            <Text style={styles.pickupCardEmoji}>⚡</Text>
-            <View>
-              <Text style={styles.pickupCardTitle}>Pickup Game</Text>
-              <Text style={styles.pickupCardSub}>Jump in without a group · 2–8 players</Text>
-            </View>
-          </View>
-          <Text style={styles.pickupCardArrow}>→</Text>
-        </Pressable>
-      </View>
-
-      {/* Quick actions */}
+      {/* Quick Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionRow}>
@@ -210,6 +185,16 @@ export default function HomeScreen() {
             <Text style={styles.actionLabel}>Create Group</Text>
           </Pressable>
         </View>
+        <Pressable style={styles.pickupCard} onPress={() => router.push('/pickup-setup')}>
+          <View style={styles.pickupCardLeft}>
+            <Text style={styles.pickupCardEmoji}>⚡</Text>
+            <View>
+              <Text style={styles.pickupCardTitle}>Pickup Game</Text>
+              <Text style={styles.pickupCardSub}>Jump in without a group · 2–8 players</Text>
+            </View>
+          </View>
+          <Text style={styles.pickupCardArrow}>→</Text>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -233,7 +218,7 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 14,
-    color: '#666',
+    color: '#999',
   },
   username: {
     fontSize: 26,
@@ -243,7 +228,7 @@ const styles = StyleSheet.create({
   },
   location: {
     fontSize: 13,
-    color: '#555',
+    color: '#888',
     marginTop: 4,
   },
   headerRight: {
@@ -302,7 +287,7 @@ const styles = StyleSheet.create({
   },
   recordLabel: {
     fontSize: 12,
-    color: '#666',
+    color: '#999',
     marginTop: 2,
   },
   recordDivider: {
@@ -344,7 +329,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#555',
+    color: '#888',
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
@@ -371,7 +356,7 @@ const styles = StyleSheet.create({
   },
   activeGroupMeta: {
     fontSize: 13,
-    color: '#666',
+    color: '#999',
     marginBottom: 2,
   },
   activeGroupTime: {
@@ -450,7 +435,7 @@ const styles = StyleSheet.create({
   },
   rivalMeta: {
     fontSize: 12,
-    color: '#666',
+    color: '#999',
   },
   rivalBadge: {
     paddingVertical: 3,
@@ -467,7 +452,7 @@ const styles = StyleSheet.create({
   contendersLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#555',
+    color: '#888',
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 8,
