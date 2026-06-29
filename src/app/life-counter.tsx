@@ -10,15 +10,15 @@ import { useApp } from '../context/AppContext';
 const LIFE_OPTIONS = [20, 25, 30, 40, 60];
 
 /**
- * Full-screen MTG life counter with commander damage, per-cell rotation, and configurable starting life.
- * Group mode (groupId param): ties into an active group — End Game confirms a round, awards +30 winner.
- * Pickup mode (playerNames param): ad-hoc session with no Points — offers Play Again, Form a Group, or Done.
- * A setup modal on launch lets the user choose starting life (20/25/30/40/60) and enable commander damage.
- * Each player panel is split into top/bottom tap zones (+/-) with left/right orientation when rotated.
- * Commander damage tracks up to two commanders per attacker; 21 damage from one commander = eliminated.
- * Parameters: groupId (group mode) or playerNames (comma-separated, pickup mode).
+ * Full-screen MTG life counter with commander damage, per-cell landscape rotation, and configurable starting life.
+ * Group mode (groupId param): tracks rounds; pickup mode (playerNames param): ad-hoc session.
+ * Setup modal on launch chooses starting life (20/25/30/40/60) and enables commander damage tracking.
+ * Each cell has a "Rotate" button that flips its content -90° so life reads along the phone's long edge.
+ * When rotated: − on left, + on right; player name always anchored to the physical top edge.
+ * Commander damage defaults to one commander per attacker; a per-attacker button adds a second (partner).
+ * Parameters: groupId (group mode) or playerNames (comma-separated list, pickup mode).
  * Returns: a full-screen life tracker; close button exits without recording a game.
- * Edge cases: closing without ending a game leaves all state unchanged; empty player list returns null.
+ * Edge cases: empty player list returns null; long-press life total to enter a custom value.
  */
 export default function LifeCounter() {
   const router = useRouter();
@@ -36,12 +36,12 @@ export default function LifeCounter() {
 
   const players = group?.players ?? pickupPlayerList;
 
-  // ── Setup modal state ────────────────────────────────────────────────────
+  // ── Setup ─────────────────────────────────────────────────────────────────
   const [showSetup, setShowSetup] = useState(true);
   const [startingLife, setStartingLife] = useState(40);
   const [cmdMode, setCmdMode] = useState(false);
 
-  // ── Life totals ──────────────────────────────────────────────────────────
+  // ── Life totals ───────────────────────────────────────────────────────────
   const [lifeTotals, setLifeTotals] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     players.forEach((p) => { init[p.username] = 40; });
@@ -51,14 +51,15 @@ export default function LifeCounter() {
   const [customLifeFor, setCustomLifeFor] = useState<string | null>(null);
   const [customLifeInput, setCustomLifeInput] = useState('');
 
-  // ── Commander damage: cmdDmg[victim][attacker] = [cmd1Dmg, cmd2Dmg] ─────
+  // ── Commander damage: [victim][attacker] = [cmd1Dmg, cmd2Dmg] ────────────
   const [cmdDmg, setCmdDmg] = useState<Record<string, Record<string, [number, number]>>>({});
   const [cmdPanelFor, setCmdPanelFor] = useState<string | null>(null);
+  const [cmdSecondSlot, setCmdSecondSlot] = useState<Record<string, boolean>>({});
 
-  // ── Per-cell rotation ────────────────────────────────────────────────────
+  // ── Per-cell rotation ─────────────────────────────────────────────────────
   const [cellRotated, setCellRotated] = useState<Record<string, boolean>>({});
 
-  // ── Winner picker ────────────────────────────────────────────────────────
+  // ── Winner picker ─────────────────────────────────────────────────────────
   const [showWinnerPicker, setShowWinnerPicker] = useState(false);
   const [pickerPhase, setPickerPhase] = useState<'winner' | 'celebrate'>('winner');
   const [roundWinner, setRoundWinner] = useState<string | null>(null);
@@ -73,7 +74,7 @@ export default function LifeCounter() {
 
   if (players.length === 0) return null;
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   const applyStartingLife = () => {
     const init: Record<string, number> = {};
@@ -114,10 +115,11 @@ export default function LifeCounter() {
     });
   };
 
-  const getCmdDmgTotal = (victim: string, attacker: string): number => {
-    const pair = cmdDmg[victim]?.[attacker] ?? [0, 0];
-    return pair[0] + pair[1];
-  };
+  const getCmdDmgTotal = (victim: string): number =>
+    players.filter((p) => p.username !== victim).reduce((sum, p) => {
+      const pair = cmdDmg[victim]?.[p.username] ?? [0, 0];
+      return sum + pair[0] + pair[1];
+    }, 0);
 
   const handleReset = () => {
     Alert.alert('Reset Life Counters', 'Choose how to reset:', [
@@ -139,15 +141,11 @@ export default function LifeCounter() {
           if (!me) return;
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setLifeTotals((prev) => ({ ...prev, [me]: startingLife }));
-          setCmdDmg((prev) => {
-            const next = { ...prev };
-            delete next[me];
-            return next;
-          });
+          setCmdDmg((prev) => { const n = { ...prev }; delete n[me]; return n; });
         },
       },
       {
-        text: 'Pick Starting Life',
+        text: 'Change Starting Life',
         onPress: () => setShowSetup(true),
       },
     ]);
@@ -157,37 +155,20 @@ export default function LifeCounter() {
     celebScale.setValue(0.5); celebOpacity.setValue(0);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 300);
-    setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success), 600);
     Animated.parallel([
       Animated.spring(celebScale, { toValue: 1, useNativeDriver: true, bounciness: 15 }),
       Animated.timing(celebOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
   };
 
-  const handleEndGame = () => {
-    Alert.alert('End Game', 'Did your pod finish a game?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Yes',
-        onPress: () => {
-          if (!isPickup) {
-            setGroups((prev) =>
-              prev.map((g) =>
-                g.id === Number(groupId) ? { ...g, confirmed: true, roundsPlayed: g.roundsPlayed + 1 } : g
-              )
-            );
-          }
-          setPickerPhase('winner');
-          setShowWinnerPicker(true);
-          Haptics.selectionAsync();
-        },
-      },
-    ]);
-  };
-
   const handleSelectWinner = (winnerUsername: string) => {
     setRoundWinner(winnerUsername);
     if (!isPickup && winnerUsername === currentUser?.username) awardPoints(30);
+    if (!isPickup) {
+      setGroups((prev) =>
+        prev.map((g) => g.id === Number(groupId) ? { ...g, confirmed: true, roundsPlayed: g.roundsPlayed + 1 } : g)
+      );
+    }
     setPickerPhase('celebrate');
     animateCelebration();
   };
@@ -211,117 +192,135 @@ export default function LifeCounter() {
     const reset: Record<string, number> = {};
     players.forEach((p) => { reset[p.username] = startingLife; });
     setLifeTotals(reset);
-    setCmdDmg({});
+    setCmdDmg({}); setCmdSecondSlot({});
     setRoundWinner(null); setPickerPhase('winner'); setShowWinnerPicker(false);
   };
 
+  const handlePickupDone = () => { setShowWinnerPicker(false); router.replace('/(tabs)/home'); };
   const handleFormGroup = () => {
     setShowWinnerPicker(false);
     router.replace({ pathname: '/(tabs)/browse', params: { openCreate: '1' } });
   };
 
-  const handlePickupDone = () => {
-    setShowWinnerPicker(false);
-    router.replace('/(tabs)/home');
-  };
-
-  // ── Layout ───────────────────────────────────────────────────────────────
+  // ── Render cell ───────────────────────────────────────────────────────────
 
   const topPlayers = players.slice(0, Math.floor(players.length / 2));
   const bottomPlayers = players.slice(Math.floor(players.length / 2));
 
-  const renderCell = (username: string, rotated: boolean) => {
+  const renderCell = (username: string, isTopRow: boolean) => {
     const life = lifeTotals[username] ?? startingLife;
     const isFirst = username === firstPlayer;
     const isDead = life <= 0;
     const isCellRotated = cellRotated[username] ?? false;
+    const cmdDmgTotal = getCmdDmgTotal(username);
 
-    const totalCmdDmgReceived = players
-      .filter((p) => p.username !== username)
-      .reduce((sum, p) => sum + getCmdDmgTotal(username, p.username), 0);
-
-    const container = (
+    return (
       <View
         key={username}
-        style={[styles.cell, isFirst && styles.cellFirst, rotated && !isCellRotated && styles.cellRotated]}
+        style={[
+          styles.cell,
+          isFirst && styles.cellFirst,
+          isTopRow && !isCellRotated && styles.cellFlipped,
+        ]}
       >
-        {/* Rotate toggle */}
-        <Pressable
-          style={styles.rotateCellBtn}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setCellRotated((prev) => ({ ...prev, [username]: !prev[username] }));
-          }}
-        >
-          <Text style={styles.rotateCellIcon}>⟳</Text>
-        </Pressable>
-
-        {/* +/- halves — column (normal) or row (rotated) */}
-        <View style={[styles.halfContainer, isCellRotated && styles.halfContainerRow]}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.halfBtn,
-              isCellRotated ? styles.halfBtnLeft : styles.halfBtnPlus,
-              { opacity: pressed ? 0.75 : 0.3 },
-            ]}
-            onPress={() => adjustLife(username, +1)}
-            onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustLife(username, +10); }}
-            delayLongPress={400}
-          >
-            <Text style={[styles.halfBtnLabel, isCellRotated && styles.halfBtnLabelSide]}>+</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.halfBtn,
-              isCellRotated ? styles.halfBtnRight : styles.halfBtnMinus,
-              { opacity: pressed ? 0.75 : 0.3 },
-            ]}
-            onPress={() => adjustLife(username, -1)}
-            onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustLife(username, -10); }}
-            delayLongPress={400}
-          >
-            <Text style={[styles.halfBtnLabel, isCellRotated && styles.halfBtnLabelSide]}>−</Text>
-          </Pressable>
+        {/* Player name — always anchored to physical top of the cell */}
+        <View style={styles.nameBar} pointerEvents="none">
+          <Text style={styles.playerName} numberOfLines={1}>{username}</Text>
         </View>
 
-        {/* Centre overlay */}
-        <View style={styles.cellCenter} pointerEvents="none">
+        {/* +/- halves */}
+        {isCellRotated ? (
+          /* Landscape: − left, + right */
+          <View style={styles.halfRow}>
+            <Pressable
+              style={({ pressed }) => [styles.halfBtn, styles.halfLandMinus, { opacity: pressed ? 0.85 : 0.35 }]}
+              onPress={() => adjustLife(username, -1)}
+              onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustLife(username, -10); }}
+              delayLongPress={400}
+            >
+              <Text style={styles.halfLabel}>−</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.halfBtn, styles.halfLandPlus, { opacity: pressed ? 0.85 : 0.35 }]}
+              onPress={() => adjustLife(username, +1)}
+              onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustLife(username, +10); }}
+              delayLongPress={400}
+            >
+              <Text style={styles.halfLabel}>+</Text>
+            </Pressable>
+          </View>
+        ) : (
+          /* Portrait: + top, − bottom */
+          <View style={styles.halfCol}>
+            <Pressable
+              style={({ pressed }) => [styles.halfBtn, styles.halfPortPlus, { opacity: pressed ? 0.85 : 0.35 }]}
+              onPress={() => adjustLife(username, +1)}
+              onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustLife(username, +10); }}
+              delayLongPress={400}
+            >
+              <Text style={styles.halfLabel}>+</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.halfBtn, styles.halfPortMinus, { opacity: pressed ? 0.85 : 0.35 }]}
+              onPress={() => adjustLife(username, -1)}
+              onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustLife(username, -10); }}
+              delayLongPress={400}
+            >
+              <Text style={styles.halfLabel}>−</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Life total + badges — centred, rotated -90° when in landscape mode */}
+        <View style={styles.cellCenter} pointerEvents="box-none">
           <Pressable
-            style={styles.lifeTapArea}
             onLongPress={() => openCustomLife(username)}
             delayLongPress={600}
+            hitSlop={16}
           >
-            <Text style={[styles.lifeTotal, isDead && styles.lifeDead, isCellRotated && styles.lifeTotalRotated]}>
+            <Text style={[
+              styles.lifeTotal,
+              isDead && styles.lifeDead,
+              isCellRotated && styles.lifeTotalLandscape,
+            ]}>
               {life}
             </Text>
           </Pressable>
-          <Text style={[styles.playerName, isCellRotated && styles.playerNameRotated]}>{username}</Text>
-          {isFirst && (
+          {isFirst && !isCellRotated && (
             <View style={styles.firstBadge}>
               <Text style={styles.firstBadgeText}>GOES FIRST</Text>
             </View>
           )}
-          {cmdMode && totalCmdDmgReceived > 0 && (
-            <View style={styles.cmdDmgBadge}>
-              <Text style={styles.cmdDmgBadgeText}>⚔️ {totalCmdDmgReceived}</Text>
-            </View>
+          {cmdMode && cmdDmgTotal > 0 && (
+            <Text style={[styles.cmdDmgBadgeText, isCellRotated && { transform: [{ rotate: '-90deg' }] }]}>
+              ⚔️ {cmdDmgTotal}
+            </Text>
           )}
         </View>
 
-        {/* Commander damage button */}
+        {/* Rotate button — top right, always */}
+        <Pressable
+          style={styles.rotateCellBtn}
+          onPress={() => { Haptics.selectionAsync(); setCellRotated((prev) => ({ ...prev, [username]: !prev[username] })); }}
+        >
+          <Text style={styles.rotateCellText}>Rotate</Text>
+        </Pressable>
+
+        {/* Commander damage button — mini life counter widget */}
         {cmdMode && (
           <Pressable
             style={styles.cmdBtn}
             onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(username); }}
           >
-            <Text style={styles.cmdBtnText}>CMD</Text>
+            <View style={styles.cmdBtnMini}>
+              <Text style={styles.cmdBtnMiniLife}>{life}</Text>
+              <View style={styles.cmdBtnMiniLine} />
+              <Text style={styles.cmdBtnMiniSword}>⚔️</Text>
+            </View>
           </Pressable>
         )}
       </View>
     );
-
-    return container;
   };
 
   return (
@@ -350,7 +349,7 @@ export default function LifeCounter() {
             </View>
 
             <Pressable
-              style={[styles.cmdToggleRow]}
+              style={styles.cmdToggleRow}
               onPress={() => { Haptics.selectionAsync(); setCmdMode((v) => !v); }}
             >
               <View style={[styles.cmdToggle, cmdMode && styles.cmdToggleOn]}>
@@ -358,7 +357,7 @@ export default function LifeCounter() {
               </View>
               <View style={styles.cmdToggleInfo}>
                 <Text style={styles.cmdToggleLabel}>Commander Damage Tracking</Text>
-                <Text style={styles.cmdToggleHint}>Track ⚔️ damage + partner commanders</Text>
+                <Text style={styles.cmdToggleHint}>21 from one commander = eliminated</Text>
               </View>
             </Pressable>
 
@@ -372,9 +371,9 @@ export default function LifeCounter() {
       {/* ── Custom life input modal ── */}
       {customLifeFor && (
         <View style={styles.overlay}>
-          <View style={styles.customLifeCard}>
-            <Text style={styles.customLifeTitle}>Set Life Total</Text>
-            <Text style={styles.customLifeName}>{customLifeFor}</Text>
+          <View style={styles.setupCard}>
+            <Text style={styles.setupTitle}>Set Life Total</Text>
+            <Text style={styles.setupLabel}>{customLifeFor}</Text>
             <TextInput
               style={styles.customLifeInput}
               value={customLifeInput}
@@ -387,8 +386,8 @@ export default function LifeCounter() {
               <Pressable style={styles.customLifeCancel} onPress={() => setCustomLifeFor(null)}>
                 <Text style={styles.customLifeCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.customLifeConfirm} onPress={confirmCustomLife}>
-                <Text style={styles.customLifeConfirmText}>Set</Text>
+              <Pressable style={styles.setupStartBtn} onPress={confirmCustomLife}>
+                <Text style={styles.setupStartBtnText}>Set</Text>
               </Pressable>
             </View>
           </View>
@@ -398,61 +397,92 @@ export default function LifeCounter() {
       {/* ── Commander damage panel ── */}
       {cmdPanelFor && (
         <View style={styles.overlay}>
-          <View style={styles.cmdCard}>
-            <Text style={styles.cmdCardTitle}>⚔️ Commander Damage</Text>
-            <Text style={styles.cmdCardSub}>{cmdPanelFor} received from:</Text>
-            <ScrollView style={styles.cmdScroll}>
+          <View style={styles.setupCard}>
+            <Text style={styles.setupTitle}>⚔️ Commander Damage</Text>
+            <Text style={styles.setupLabel}>{cmdPanelFor} received from:</Text>
+            <ScrollView style={styles.cmdScroll} showsVerticalScrollIndicator={false}>
               {players.filter((p) => p.username !== cmdPanelFor).map((attacker) => {
                 const pair = cmdDmg[cmdPanelFor]?.[attacker.username] ?? [0, 0];
-                const total = pair[0] + pair[1];
-                const eliminated = pair[0] >= 21 || pair[1] >= 21;
+                const cmd1Dead = pair[0] >= 21;
+                const cmd2Dead = pair[1] >= 21;
+                const hasSecond = cmdSecondSlot[attacker.username] ?? false;
+                const eliminated = cmd1Dead || cmd2Dead;
                 return (
-                  <View key={attacker.username} style={[styles.cmdAttackerRow, eliminated && styles.cmdAttackerElim]}>
+                  <View
+                    key={attacker.username}
+                    style={[styles.cmdAttackerRow, eliminated && styles.cmdAttackerElim]}
+                  >
                     <Text style={[styles.cmdAttackerName, eliminated && styles.cmdAttackerNameElim]}>
-                      {attacker.username}{eliminated ? ' ☠️' : ''}
+                      {attacker.username}{eliminated ? '  ☠️' : ''}
                     </Text>
-                    <View style={styles.cmdSlots}>
-                      {([0, 1] as (0 | 1)[]).map((slot) => (
-                        <View key={slot} style={styles.cmdSlot}>
-                          <Text style={styles.cmdSlotLabel}>Cmd {slot + 1}</Text>
-                          <View style={styles.cmdSlotRow}>
-                            <Pressable style={styles.cmdAdjBtn}
-                              onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, slot, -1)}>
-                              <Text style={styles.cmdAdjBtnText}>−</Text>
-                            </Pressable>
-                            <Text style={[styles.cmdSlotVal, pair[slot] >= 21 && styles.cmdSlotValDead]}>
-                              {pair[slot]}
-                            </Text>
-                            <Pressable style={styles.cmdAdjBtn}
-                              onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, slot, +1)}>
-                              <Text style={styles.cmdAdjBtnText}>+</Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      ))}
+
+                    {/* Commander 1 — always shown */}
+                    <View style={styles.cmdSlotBlock}>
+                      <Text style={styles.cmdSlotLabel}>Commander 1</Text>
+                      <View style={styles.cmdSlotRow}>
+                        <Pressable style={styles.cmdAdjBtn}
+                          onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 0, -1)}>
+                          <Text style={styles.cmdAdjBtnText}>−</Text>
+                        </Pressable>
+                        <Text style={[styles.cmdSlotVal, cmd1Dead && styles.cmdSlotValDead]}>
+                          {pair[0]}
+                        </Text>
+                        <Pressable style={styles.cmdAdjBtn}
+                          onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 0, +1)}>
+                          <Text style={styles.cmdAdjBtnText}>+</Text>
+                        </Pressable>
+                        {cmd1Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
+                      </View>
                     </View>
-                    <Text style={styles.cmdTotal}>Total: {total}</Text>
+
+                    {/* Commander 2 — shown only after tapping Add Partner */}
+                    {hasSecond ? (
+                      <View style={styles.cmdSlotBlock}>
+                        <Text style={styles.cmdSlotLabel}>Commander 2 (Partner)</Text>
+                        <View style={styles.cmdSlotRow}>
+                          <Pressable style={styles.cmdAdjBtn}
+                            onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 1, -1)}>
+                            <Text style={styles.cmdAdjBtnText}>−</Text>
+                          </Pressable>
+                          <Text style={[styles.cmdSlotVal, cmd2Dead && styles.cmdSlotValDead]}>
+                            {pair[1]}
+                          </Text>
+                          <Pressable style={styles.cmdAdjBtn}
+                            onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 1, +1)}>
+                            <Text style={styles.cmdAdjBtnText}>+</Text>
+                          </Pressable>
+                          {cmd2Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
+                        </View>
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={styles.addPartnerBtn}
+                        onPress={() => {
+                          Haptics.selectionAsync();
+                          setCmdSecondSlot((prev) => ({ ...prev, [attacker.username]: true }));
+                        }}
+                      >
+                        <Text style={styles.addPartnerBtnText}>＋ Add Partner Commander</Text>
+                      </Pressable>
+                    )}
                   </View>
                 );
               })}
             </ScrollView>
-            <Pressable style={styles.cmdCloseBtn} onPress={() => setCmdPanelFor(null)}>
-              <Text style={styles.cmdCloseBtnText}>Done</Text>
+            <Pressable style={styles.setupStartBtn} onPress={() => setCmdPanelFor(null)}>
+              <Text style={styles.setupStartBtnText}>Done</Text>
             </Pressable>
           </View>
         </View>
       )}
 
-      {/* ── Winner picker / celebration overlay ── */}
+      {/* ── Winner picker / celebration ── */}
       {showWinnerPicker && (
         <View style={styles.overlay}>
           {pickerPhase === 'winner' ? (
-            <View style={styles.pickerCard}>
-              <Text style={styles.celebEmoji}>🏆</Text>
-              <Text style={styles.celebTitle}>
-                {isPickup ? 'Who Won?' : `Who Won Round ${group?.roundsPlayed}?`}
-              </Text>
-              <Text style={styles.celebSub}>Select the winner</Text>
+            <View style={styles.setupCard}>
+              <Text style={styles.setupTitle}>🏆 Who Won?</Text>
+              <Text style={styles.setupLabel}>Select the winner</Text>
               {players.map((player) => (
                 <Pressable
                   key={player.id}
@@ -468,44 +498,49 @@ export default function LifeCounter() {
                   )}
                 </Pressable>
               ))}
+              <Pressable style={styles.customLifeCancel} onPress={() => setShowWinnerPicker(false)}>
+                <Text style={styles.customLifeCancelText}>Cancel</Text>
+              </Pressable>
             </View>
           ) : (
-            <Animated.View style={[styles.pickerCard, { transform: [{ scale: celebScale }], opacity: celebOpacity }]}>
+            <Animated.View style={[styles.setupCard, styles.celebCard, { transform: [{ scale: celebScale }], opacity: celebOpacity }]}>
               <Text style={styles.celebEmoji}>🎉</Text>
-              <Text style={styles.celebTitle}>
+              <Text style={styles.setupTitle}>
                 {isPickup ? 'Game Over!' : `Round ${group?.roundsPlayed} Complete!`}
               </Text>
               <View style={styles.winnerAnnounce}>
-                <Text style={styles.winnerAnnounceLabel}>WINNER</Text>
+                <Text style={styles.setupLabel}>WINNER</Text>
                 <Text style={styles.winnerAnnounceName}>{roundWinner}</Text>
               </View>
               {!isPickup && roundWinner === currentUser?.username && (
                 <Text style={styles.celebXP}>+30 Points</Text>
               )}
-              <Text style={styles.celebSub}>
-                {isPickup ? 'Nice game! Play again or form a group.' : roundWinner === currentUser?.username ? 'You took it down!' : 'Good game.'}
+              <Text style={[styles.setupLabel, { textAlign: 'center', marginBottom: 20 }]}>
+                {isPickup
+                  ? 'Nice game!'
+                  : roundWinner === currentUser?.username ? 'You took it down!' : 'Good game.'}
               </Text>
               {isPickup ? (
                 <>
                   <View style={styles.celebBtnRow}>
-                    <Pressable style={styles.celebBtnSecondary} onPress={handlePickupDone}>
-                      <Text style={styles.celebBtnSecondaryText}>Done</Text>
+                    <Pressable style={styles.customLifeCancel} onPress={handlePickupDone}>
+                      <Text style={styles.customLifeCancelText}>Done</Text>
                     </Pressable>
-                    <Pressable style={styles.celebBtn} onPress={handlePlayAgain}>
-                      <Text style={styles.celebBtnText}>▶ Play Again</Text>
+                    <Pressable style={styles.setupStartBtn} onPress={handlePlayAgain}>
+                      <Text style={styles.setupStartBtnText}>▶ Play Again</Text>
                     </Pressable>
                   </View>
-                  <Pressable style={styles.formGroupBtn} onPress={handleFormGroup}>
-                    <Text style={styles.formGroupBtnText}>Form a Group to Earn Rewards →</Text>
+                  <Pressable style={[styles.addPartnerBtn, { marginTop: 10 }]} onPress={handleFormGroup}>
+                    <Text style={styles.addPartnerBtnText}>Form a Group to Earn Rewards →</Text>
                   </Pressable>
                 </>
               ) : (
                 <View style={styles.celebBtnRow}>
-                  <Pressable style={styles.celebBtnSecondary} onPress={handleEndSession}>
-                    <Text style={styles.celebBtnSecondaryText}>End Session</Text>
+                  <Pressable style={styles.customLifeCancel} onPress={handleEndSession}>
+                    <Text style={styles.customLifeCancelText}>End Session</Text>
                   </Pressable>
-                  <Pressable style={styles.celebBtn} onPress={handlePlayAnotherRound}>
-                    <Text style={styles.celebBtnText}>▶ Another Round</Text>
+                  <Pressable style={styles.setupStartBtn} onPress={handlePlayAnotherRound}>
+                    <Text style={styles.setupStartBtnText}>▶ Another Round</Text>
                   </Pressable>
                 </View>
               )}
@@ -521,12 +556,16 @@ export default function LifeCounter() {
         </View>
       )}
 
+      {/* ── Centre bar: reset + close + winner trigger ── */}
       <View style={styles.divider}>
         <Pressable style={styles.dividerBtn} onPress={handleReset}>
           <Text style={styles.dividerBtnText}>↺</Text>
         </Pressable>
-        <Pressable style={styles.endGameBtn} onPress={handleEndGame}>
-          <Text style={styles.endGameBtnText}>End Game</Text>
+        <Pressable
+          style={styles.winnerBtn}
+          onPress={() => { setPickerPhase('winner'); setShowWinnerPicker(true); Haptics.selectionAsync(); }}
+        >
+          <Text style={styles.winnerBtnText}>🏆</Text>
         </Pressable>
         <Pressable style={styles.dividerBtn} onPress={() => router.back()}>
           <Text style={styles.dividerBtnText}>✕</Text>
@@ -545,55 +584,67 @@ const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: 'row' },
   rowFull: { flex: 1 },
 
-  /* Cells */
-  cell: { flex: 1, position: 'relative', borderWidth: 0.5, borderColor: '#1E1E2A' },
-  cellRotated: { transform: [{ rotate: '180deg' }] },
+  /* ── Cell ── */
+  cell: { flex: 1, position: 'relative', borderWidth: 0.5, borderColor: '#1E1E2A', overflow: 'hidden' },
+  cellFlipped: { transform: [{ rotate: '180deg' }] },
   cellFirst: { borderColor: '#FFD700', borderWidth: 1.5 },
 
-  halfContainer: { flex: 1 },
-  halfContainerRow: { flexDirection: 'row' },
+  /* Player name bar — absolute, always at physical top of cell */
+  nameBar: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 5,
+    alignItems: 'center', paddingTop: 6, paddingHorizontal: 40,
+  },
+  playerName: { fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.5 },
 
-  halfBtn: { flex: 1, width: '100%', alignItems: 'center' },
-  halfBtnPlus: { backgroundColor: '#1A3A1A', justifyContent: 'flex-start', paddingTop: 16 },
-  halfBtnMinus: { backgroundColor: '#3A1A1A', justifyContent: 'flex-end', paddingBottom: 16 },
-  halfBtnLeft: { backgroundColor: '#1A3A1A', justifyContent: 'flex-start', paddingLeft: 12, alignItems: 'flex-start' },
-  halfBtnRight: { backgroundColor: '#3A1A1A', justifyContent: 'flex-end', paddingRight: 12, alignItems: 'flex-end' },
-  halfBtnLabel: { fontSize: 32, color: '#FFF', fontWeight: '200' },
-  halfBtnLabelSide: { fontSize: 32, color: '#FFF', fontWeight: '200' },
+  /* +/- half buttons */
+  halfCol: { flex: 1, flexDirection: 'column' },
+  halfRow: { flex: 1, flexDirection: 'row' },
+  halfBtn: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  halfPortPlus: { backgroundColor: '#1A3A1A' },
+  halfPortMinus: { backgroundColor: '#3A1A1A' },
+  halfLandMinus: { backgroundColor: '#3A1A1A' },
+  halfLandPlus: { backgroundColor: '#1A3A1A' },
+  halfLabel: { fontSize: 40, color: '#FFF', fontWeight: '200' },
 
+  /* Life total */
   cellCenter: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center', gap: 6,
   },
-  lifeTapArea: { alignItems: 'center' },
   lifeTotal: { fontSize: 86, fontWeight: '900', color: '#FFF', lineHeight: 92, textAlign: 'center' },
-  lifeTotalRotated: { fontSize: 70 },
+  lifeTotalLandscape: { transform: [{ rotate: '-90deg' }], fontSize: 72 },
   lifeDead: { color: '#FF3B30' },
-  playerName: { fontSize: 13, fontWeight: '700', color: '#888', textAlign: 'center', letterSpacing: 0.5 },
-  playerNameRotated: { transform: [{ rotate: '-90deg' }] },
   firstBadge: { backgroundColor: '#FFD700', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
   firstBadgeText: { fontSize: 10, fontWeight: '900', color: '#000', letterSpacing: 1.5 },
-  cmdDmgBadge: { backgroundColor: '#3A1A1A', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  cmdDmgBadgeText: { fontSize: 11, color: '#FF6B6B', fontWeight: '700' },
+  cmdDmgBadgeText: { fontSize: 12, color: '#FF9090', fontWeight: '700' },
 
+  /* Rotate button */
   rotateCellBtn: {
     position: 'absolute', top: 4, right: 4, zIndex: 10,
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.2)',
   },
-  rotateCellIcon: { fontSize: 14, color: '#888' },
+  rotateCellText: { fontSize: 10, fontWeight: '700', color: '#AAA', letterSpacing: 0.5 },
 
+  /* Commander damage button — mini life counter widget */
   cmdBtn: {
-    position: 'absolute', bottom: 6, left: 6, zIndex: 10,
-    backgroundColor: 'rgba(138,60,60,0.6)', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 3,
+    position: 'absolute', bottom: 8, left: 8, zIndex: 10,
   },
-  cmdBtnText: { fontSize: 10, fontWeight: '800', color: '#FF9090', letterSpacing: 1 },
+  cmdBtnMini: {
+    width: 46, height: 58, backgroundColor: '#0A0A12',
+    borderRadius: 8, borderWidth: 1.5, borderColor: '#8B3A3A',
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  cmdBtnMiniLife: { fontSize: 14, fontWeight: '900', color: '#FFF', lineHeight: 16 },
+  cmdBtnMiniLine: { width: '80%', height: 1, backgroundColor: '#8B3A3A', marginVertical: 4 },
+  cmdBtnMiniSword: { fontSize: 14, lineHeight: 16 },
 
-  /* Divider */
+  /* Centre divider bar */
   divider: {
-    height: 64, backgroundColor: '#050508', flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 16,
+    height: 60, backgroundColor: '#050508', flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center', gap: 14,
     borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: '#1E1E2A',
   },
   dividerBtn: {
@@ -601,26 +652,31 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2C2C3C',
   },
   dividerBtnText: { fontSize: 22, color: '#888' },
-  endGameBtn: {
-    backgroundColor: '#1A0A00', borderRadius: 14, paddingVertical: 13,
-    paddingHorizontal: 32, borderWidth: 1.5, borderColor: '#8B3A3A',
+  winnerBtn: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#1A1A00',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#5A5000',
   },
-  endGameBtnText: { color: '#C0605A', fontWeight: '700', fontSize: 17, letterSpacing: 0.5 },
+  winnerBtnText: { fontSize: 22 },
 
-  /* Overlay */
+  /* ── Overlay shared base ── */
   overlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.90)', alignItems: 'center',
     justifyContent: 'center', zIndex: 99,
   },
 
-  /* Setup modal */
+  /* Setup card — reused for setup, custom life, commander panel, winner picker */
   setupCard: {
-    backgroundColor: '#1C1C24', borderRadius: 24, padding: 28,
+    backgroundColor: '#1C1C24', borderRadius: 24, padding: 24,
     width: '90%', borderWidth: 1, borderColor: '#2C2C3C',
   },
-  setupTitle: { fontSize: 24, fontWeight: '900', color: '#FFF', textAlign: 'center', marginBottom: 20 },
-  setupLabel: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 },
+  celebCard: { alignItems: 'center' },
+  setupTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', textAlign: 'center', marginBottom: 6 },
+  setupLabel: {
+    fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 1,
+    textTransform: 'uppercase', marginBottom: 14,
+  },
+
   lifeOptionRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
   lifeOptionBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center',
@@ -630,7 +686,10 @@ const styles = StyleSheet.create({
   lifeOptionText: { fontSize: 18, fontWeight: '800', color: '#555' },
   lifeOptionTextActive: { color: '#34C759' },
 
-  cmdToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24, padding: 14, backgroundColor: '#111118', borderRadius: 14, borderWidth: 1, borderColor: '#2C2C3C' },
+  cmdToggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20,
+    padding: 14, backgroundColor: '#111118', borderRadius: 14, borderWidth: 1, borderColor: '#2C2C3C',
+  },
   cmdToggle: { width: 48, height: 28, borderRadius: 14, backgroundColor: '#2C2C3C', justifyContent: 'center', paddingHorizontal: 3 },
   cmdToggleOn: { backgroundColor: '#34C759' },
   cmdToggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF' },
@@ -639,80 +698,68 @@ const styles = StyleSheet.create({
   cmdToggleLabel: { fontSize: 14, fontWeight: '700', color: '#FFF', marginBottom: 2 },
   cmdToggleHint: { fontSize: 12, color: '#888' },
 
-  setupStartBtn: { backgroundColor: '#34C759', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  setupStartBtnText: { color: '#FFF', fontWeight: '800', fontSize: 17 },
+  setupStartBtn: { backgroundColor: '#34C759', borderRadius: 14, paddingVertical: 16, alignItems: 'center', flex: 1 },
+  setupStartBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
 
   /* Custom life input */
-  customLifeCard: {
-    backgroundColor: '#1C1C24', borderRadius: 20, padding: 24,
-    width: '80%', alignItems: 'center', borderWidth: 1, borderColor: '#2C2C3C',
-  },
-  customLifeTitle: { fontSize: 20, fontWeight: '800', color: '#FFF', marginBottom: 4 },
-  customLifeName: { fontSize: 14, color: '#888', marginBottom: 16 },
   customLifeInput: {
     backgroundColor: '#111', borderRadius: 12, borderWidth: 1, borderColor: '#34C759',
     color: '#FFF', fontSize: 36, fontWeight: '900', textAlign: 'center',
     paddingVertical: 12, paddingHorizontal: 20, width: '100%', marginBottom: 20,
   },
-  customLifeBtns: { flexDirection: 'row', gap: 10, width: '100%' },
-  customLifeCancel: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: '#222' },
-  customLifeCancelText: { color: '#888', fontWeight: '700', fontSize: 15 },
-  customLifeConfirm: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: '#34C759' },
-  customLifeConfirmText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
+  customLifeBtns: { flexDirection: 'row', gap: 10 },
+  customLifeCancel: {
+    flex: 1, borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+    backgroundColor: '#2C2C38',
+  },
+  customLifeCancelText: { color: '#888', fontWeight: '700', fontSize: 16 },
 
   /* Commander damage panel */
-  cmdCard: {
-    backgroundColor: '#1C1C24', borderRadius: 24, padding: 24, width: '92%',
-    maxHeight: '80%', borderWidth: 1, borderColor: '#8B3A3A',
-  },
-  cmdCardTitle: { fontSize: 20, fontWeight: '900', color: '#FFF', marginBottom: 4 },
-  cmdCardSub: { fontSize: 13, color: '#888', marginBottom: 14 },
-  cmdScroll: { maxHeight: 300 },
+  cmdScroll: { maxHeight: 320, marginBottom: 14 },
   cmdAttackerRow: {
-    backgroundColor: '#111118', borderRadius: 14, padding: 12, marginBottom: 10,
+    backgroundColor: '#111118', borderRadius: 14, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: '#2C2C3C',
   },
   cmdAttackerElim: { borderColor: '#FF3B30', backgroundColor: '#1F0808' },
-  cmdAttackerName: { fontSize: 14, fontWeight: '700', color: '#FFF', marginBottom: 10 },
+  cmdAttackerName: { fontSize: 14, fontWeight: '700', color: '#FFF', marginBottom: 12 },
   cmdAttackerNameElim: { color: '#FF3B30' },
-  cmdSlots: { flexDirection: 'row', gap: 12, marginBottom: 8 },
-  cmdSlot: { flex: 1 },
-  cmdSlotLabel: { fontSize: 10, color: '#666', fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
-  cmdSlotRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cmdSlotBlock: { marginBottom: 10 },
+  cmdSlotLabel: { fontSize: 10, color: '#666', fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
+  cmdSlotRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   cmdAdjBtn: {
-    width: 32, height: 32, borderRadius: 8, backgroundColor: '#2C2C3C',
+    width: 36, height: 36, borderRadius: 10, backgroundColor: '#2C2C3C',
     alignItems: 'center', justifyContent: 'center',
   },
-  cmdAdjBtnText: { fontSize: 18, color: '#FFF', fontWeight: '200' },
-  cmdSlotVal: { fontSize: 22, fontWeight: '900', color: '#FFF', minWidth: 36, textAlign: 'center' },
+  cmdAdjBtnText: { fontSize: 20, color: '#FFF', fontWeight: '200' },
+  cmdSlotVal: { fontSize: 26, fontWeight: '900', color: '#FFF', minWidth: 40, textAlign: 'center' },
   cmdSlotValDead: { color: '#FF3B30' },
-  cmdTotal: { fontSize: 12, color: '#888', textAlign: 'right' },
-  cmdCloseBtn: { backgroundColor: '#2C2C3C', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
-  cmdCloseBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+  cmdDeadLabel: {
+    fontSize: 9, fontWeight: '800', color: '#FF3B30', backgroundColor: '#3A0808',
+    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, letterSpacing: 1,
+  },
+  addPartnerBtn: {
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
+    borderWidth: 1, borderColor: '#3C2C4C', backgroundColor: '#180A28',
+    alignItems: 'center',
+  },
+  addPartnerBtnText: { fontSize: 12, color: '#9B7FBF', fontWeight: '700' },
 
   /* Winner picker */
-  pickerCard: {
-    backgroundColor: '#1C1C24', borderRadius: 24, padding: 28,
-    alignItems: 'center', width: '88%', borderWidth: 1, borderColor: '#34C759',
-  },
-  celebEmoji: { fontSize: 56, marginBottom: 12 },
-  celebTitle: { fontSize: 24, fontWeight: '800', color: '#FFF', marginBottom: 8, textAlign: 'center' },
-  celebXP: { fontSize: 40, fontWeight: '800', color: '#34C759', marginBottom: 8 },
-  celebSub: { fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 20, lineHeight: 20 },
+  celebEmoji: { fontSize: 48, textAlign: 'center', marginBottom: 8 },
+  celebXP: { fontSize: 36, fontWeight: '800', color: '#34C759', textAlign: 'center', marginBottom: 8 },
   celebBtnRow: { flexDirection: 'row', gap: 10, width: '100%' },
-  celebBtn: { flex: 1, backgroundColor: '#34C759', paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  celebBtnText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
-  celebBtnSecondary: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#444' },
-  celebBtnSecondaryText: { color: '#888', fontWeight: '700', fontSize: 14 },
-  formGroupBtn: { marginTop: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#007AFF', width: '100%', alignItems: 'center' },
-  formGroupBtnText: { color: '#007AFF', fontWeight: '700', fontSize: 14 },
-  winnerOption: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F0F14', borderRadius: 12, padding: 12, marginTop: 10, borderWidth: 1, borderColor: '#2C2C38', width: '100%' },
-  winnerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2C2C38', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  winnerOption: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#111118',
+    borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#2C2C38',
+  },
+  winnerAvatar: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#2C2C38',
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
   winnerInitial: { fontSize: 15, fontWeight: '700', color: '#FFF' },
   winnerName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#FFF' },
   winnerYouTag: { backgroundColor: '#007AFF', borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 },
   winnerYouText: { fontSize: 11, fontWeight: '800', color: '#FFF' },
-  winnerAnnounce: { alignItems: 'center', backgroundColor: '#0F0F14', borderRadius: 12, padding: 16, marginVertical: 12, width: '100%' },
-  winnerAnnounceLabel: { fontSize: 10, fontWeight: '800', color: '#888', letterSpacing: 2, marginBottom: 6 },
-  winnerAnnounceName: { fontSize: 28, fontWeight: '900', color: '#FFF' },
+  winnerAnnounce: { alignItems: 'center', backgroundColor: '#111118', borderRadius: 12, padding: 14, marginVertical: 10, width: '100%' },
+  winnerAnnounceName: { fontSize: 26, fontWeight: '900', color: '#FFF' },
 });
