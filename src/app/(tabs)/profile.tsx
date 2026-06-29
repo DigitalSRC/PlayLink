@@ -22,6 +22,8 @@ import {
   NoGoRule,
 } from '../../data/types';
 
+const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
+
 /**
  * Profile tab — personal info, stats, game preferences, rivals, settings, and dev tools.
  * Header row shows an avatar circle on the left and display name / username / location on the right.
@@ -42,6 +44,7 @@ export default function ProfileScreen() {
 
   const [editDisplayName, setEditDisplayNameState] = useState(currentUser.displayName ?? '');
   const [editLocation, setEditLocationState] = useState(currentUser.location);
+  const [editGames, setEditGames] = useState<GameType[]>(currentUser.games);
   const [editBrackets, setEditBrackets] = useState<number[]>(currentUser.brackets);
   const [editFormats, setEditFormats] = useState(currentUser.preferredFormats);
   const [editNoGo, setEditNoGo] = useState<NoGoRule[]>(currentUser.noGo);
@@ -50,9 +53,6 @@ export default function ProfileScreen() {
   const setEditDisplayName = (v: string) => { setEditDisplayNameState(v); setDirty(true); };
   const setEditLocation = (v: string) => { setEditLocationState(v); setDirty(true); };
 
-  const totalGames = currentUser.wins + currentUser.losses;
-  const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
-
   const initials = (currentUser.displayName ?? currentUser.username)
     .split(' ')
     .map((w) => w[0] ?? '')
@@ -60,13 +60,15 @@ export default function ProfileScreen() {
     .toUpperCase()
     .slice(0, 2) || currentUser.username.charAt(0).toUpperCase();
 
-  const commanderSelected = (editFormats?.mtg ?? []).includes('Commander');
+  const commanderSelected = editGames.includes('mtg') && (editFormats?.mtg ?? []).includes('Commander');
+  const unselectedGames = ALL_GAMES.filter((g) => !editGames.includes(g));
 
   const saveEdit = () => {
     setCurrentUser({
       ...currentUser,
       displayName: editDisplayName.trim() || undefined,
       location: editLocation.trim() || currentUser.location,
+      games: editGames.length > 0 ? editGames : currentUser.games,
       brackets: editBrackets.length > 0 ? editBrackets : currentUser.brackets,
       preferredFormats: editFormats,
       noGo: editNoGo,
@@ -78,6 +80,7 @@ export default function ProfileScreen() {
   const discardChanges = () => {
     setEditDisplayNameState(currentUser.displayName ?? '');
     setEditLocationState(currentUser.location);
+    setEditGames(currentUser.games);
     setEditBrackets(currentUser.brackets);
     setEditFormats(currentUser.preferredFormats);
     setEditNoGo(currentUser.noGo);
@@ -119,12 +122,16 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      {/* ── Profile header: avatar left, info right ── */}
+      {/* ── Profile header: avatar + username left, labeled fields right ── */}
       <View style={styles.profileHeader}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{initials}</Text>
+        <View style={styles.avatarColumn}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+          <Text style={[styles.usernameTag, { color: textSec }]}>@{currentUser.username}</Text>
         </View>
         <View style={styles.profileInfo}>
+          <Text style={[styles.fieldLabel, { color: textSec }]}>Display Name</Text>
           <TextInput
             style={[styles.displayNameInput, { color: textPrimary, borderColor: border }]}
             value={editDisplayName}
@@ -133,64 +140,60 @@ export default function ProfileScreen() {
             placeholderTextColor={textSec}
             maxLength={32}
           />
-          <Text style={[styles.usernameTag, { color: textSec }]}>@{currentUser.username}</Text>
-          <View style={styles.locationRow}>
-            <Text style={styles.locationPin}>📍</Text>
-            <TextInput
-              style={[styles.locationInput, { color: textPrimary, borderColor: border }]}
-              value={editLocation}
-              onChangeText={setEditLocation}
-              placeholder="Your area"
-              placeholderTextColor={textSec}
-            />
-          </View>
+          <Text style={[styles.fieldLabel, { color: textSec, marginTop: 10 }]}>My Location</Text>
+          <TextInput
+            style={[styles.locationInput, { color: textPrimary, borderColor: border }]}
+            value={editLocation}
+            onChangeText={setEditLocation}
+            placeholder="Your area"
+            placeholderTextColor={textSec}
+          />
           {currentUser.isDeveloper && (
-            <View style={styles.devBadge}>
+            <View style={[styles.devBadge, { marginTop: 10 }]}>
               <Text style={styles.devBadgeText}>🔧 DEVELOPER</Text>
             </View>
           )}
         </View>
       </View>
 
-      {/* ── Stats ── */}
-      <View style={[styles.statsCard, { backgroundColor: card, borderColor: border }]}>
-        <View style={styles.statRow}>
-          {[
-            { num: currentUser.wins, label: 'Wins', color: '#34C759' },
-            { num: currentUser.losses, label: 'Losses', color: '#FF3B30' },
-            { num: `${winPct}%`, label: 'Win Rate', color: '#FFF' },
-            { num: currentUser.points, label: 'Points', color: '#007AFF' },
-          ].map((s, i, arr) => (
-            <View key={s.label} style={styles.statWrap}>
-              <View style={styles.stat}>
-                <Text style={[styles.statNum, { color: s.color }]}>{s.num}</Text>
-                <Text style={[styles.statLabel, { color: textSec }]}>{s.label}</Text>
-              </View>
-              {i < arr.length - 1 && <View style={[styles.statDivider, { backgroundColor: border }]} />}
-            </View>
-          ))}
-        </View>
-        <View style={[styles.progressTrack, { backgroundColor: border }]}>
-          <View style={[styles.progressFill, { width: `${winPct}%` }]} />
-        </View>
-      </View>
-
       {/* ── Games ── */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: textSec }]}>Games</Text>
+        <Text style={[styles.sectionTitle, { color: textSec }]}>Games I Play</Text>
         <View style={styles.chipRow}>
-          {currentUser.games.map((g) => (
-            <View key={g} style={[styles.gamePill, { borderColor: GAME_COLOR[g], backgroundColor: card }]}>
+          {editGames.map((g) => (
+            <Pressable
+              key={g}
+              style={[styles.gamePill, { borderColor: GAME_COLOR[g], backgroundColor: card }]}
+              onPress={() => {
+                if (editGames.length <= 1) return;
+                Haptics.selectionAsync(); setDirty(true);
+                setEditGames((prev) => prev.filter((x) => x !== g));
+              }}
+            >
               <Text style={[styles.gamePillText, { color: textPrimary }]}>{GAME_EMOJI[g]} {GAME_LABELS[g]}</Text>
-            </View>
+              <Text style={[styles.gamePillRemove, { color: GAME_COLOR[g] }]}>  ✕</Text>
+            </Pressable>
           ))}
         </View>
+        {unselectedGames.length > 0 && (
+          <View style={styles.addGamesRow}>
+            <Text style={[styles.addGamesLabel, { color: textSec }]}>Add: </Text>
+            {unselectedGames.map((g) => (
+              <Pressable
+                key={g}
+                onPress={() => { Haptics.selectionAsync(); setDirty(true); setEditGames((prev) => [...prev, g]); }}
+              >
+                <Text style={[styles.addGameLink, { color: GAME_COLOR[g] }]}>{GAME_EMOJI[g]} {GAME_LABELS[g]}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* ── Formats ── */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: textSec }]}>Preferred Formats</Text>
-        {currentUser.games.map((game) => (
+        {editGames.map((game) => (
           <View key={game} style={styles.gameFormatBlock}>
             <Text style={[styles.gameFormatTitle, { color: GAME_COLOR[game] }]}>
               {GAME_EMOJI[game]} {GAME_LABELS[game]}
@@ -377,45 +380,38 @@ const styles = StyleSheet.create({
   unsavedBannerText: { fontSize: 13, fontWeight: '700', color: '#E6A817' },
 
   /* Profile header */
-  profileHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24, gap: 16 },
+  profileHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28, gap: 18 },
+  avatarColumn: { alignItems: 'center', gap: 8, flexShrink: 0 },
   avatarCircle: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: '#007AFF',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 144, height: 144, borderRadius: 72, backgroundColor: '#007AFF',
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: 28, fontWeight: '800', color: '#FFF' },
-  profileInfo: { flex: 1, gap: 4 },
+  avatarText: { fontSize: 52, fontWeight: '800', color: '#FFF' },
+  usernameTag: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  profileInfo: { flex: 1, paddingTop: 4 },
+  fieldLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 },
   displayNameInput: {
-    fontSize: 20, fontWeight: '800', borderBottomWidth: 1,
-    paddingVertical: 2, paddingHorizontal: 0,
+    fontSize: 17, fontWeight: '700', borderBottomWidth: 1,
+    paddingVertical: 4, paddingHorizontal: 0,
   },
-  usernameTag: { fontSize: 13, fontWeight: '600' },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  locationPin: { fontSize: 13 },
-  locationInput: { flex: 1, fontSize: 13, borderBottomWidth: 1, paddingVertical: 2, paddingHorizontal: 0 },
+  locationInput: { fontSize: 14, borderBottomWidth: 1, paddingVertical: 4, paddingHorizontal: 0 },
   devBadge: {
     backgroundColor: '#0A2A0A', borderRadius: 6, paddingHorizontal: 8,
-    paddingVertical: 3, alignSelf: 'flex-start', marginTop: 2,
+    paddingVertical: 3, alignSelf: 'flex-start',
   },
   devBadgeText: { fontSize: 10, fontWeight: '800', color: '#34C759', letterSpacing: 1 },
-
-  /* Stats */
-  statsCard: { borderRadius: 16, padding: 16, marginBottom: 24, borderWidth: 1 },
-  statRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  statWrap: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  stat: { flex: 1, alignItems: 'center' },
-  statNum: { fontSize: 22, fontWeight: '800', color: '#FFF' },
-  statLabel: { fontSize: 11, marginTop: 2 },
-  statDivider: { width: 1, height: 36 },
-  progressTrack: { height: 4, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#34C759', borderRadius: 2 },
 
   /* Sections */
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 },
   sectionHint: { fontSize: 11, marginBottom: 10, marginTop: -8 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  gamePill: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1.5 },
+  gamePill: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1.5 },
   gamePillText: { fontSize: 13, fontWeight: '600' },
+  gamePillRemove: { fontSize: 11, fontWeight: '700' },
+  addGamesRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, gap: 6 },
+  addGamesLabel: { fontSize: 12, fontWeight: '600' },
+  addGameLink: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
   gameFormatBlock: { marginBottom: 14 },
   gameFormatTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
   chip: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1.5 },

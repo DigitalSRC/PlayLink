@@ -52,9 +52,14 @@ export default function PlayerProfileScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>← Back</Text>
-        </Pressable>
+        <View style={styles.navRow}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>← Back</Text>
+          </Pressable>
+          <Pressable style={styles.homeBtn} onPress={() => router.replace('/(tabs)/home')}>
+            <Text style={styles.homeBtnText}>🏠 Home</Text>
+          </Pressable>
+        </View>
 
         {/* Avatar + name */}
         <View style={styles.avatarSection}>
@@ -237,12 +242,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 50,
   },
-  backBtn: {
+  navRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 20,
   },
+  backBtn: {},
   backBtnText: {
     color: '#007AFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  homeBtn: {
+    backgroundColor: '#1C1C24',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+  },
+  homeBtnText: {
+    color: '#AAA',
+    fontSize: 14,
     fontWeight: '600',
   },
   avatarSection: {
