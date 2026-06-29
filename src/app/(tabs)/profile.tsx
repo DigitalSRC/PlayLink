@@ -272,7 +272,7 @@ export default function ProfileScreen() {
                 onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}
               >
                 <View style={[styles.rivalAvatar, isChosen && styles.rivalAvatarChosen]}>
-                  <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+                  <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
                 </View>
                 <View style={styles.rivalInfo}>
                   <Text style={styles.rivalName}>{rival.username}</Text>

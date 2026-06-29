@@ -117,7 +117,7 @@ export default function HomeScreen() {
           {rivals.filter((r) => r.id === chosenRivalId).map((rival) => (
             <Pressable key={rival.id} style={[styles.rivalCard, styles.rivalCardMain]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
               <View style={[styles.rivalAvatar, styles.rivalAvatarMain]}>
-                <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+                <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.rivalInfo}>
                 <Text style={styles.rivalName}>{rival.username}</Text>
@@ -138,7 +138,7 @@ export default function HomeScreen() {
               {rivals.filter((r) => r.id !== chosenRivalId).map((rival) => (
                 <Pressable key={rival.id} style={[styles.rivalCard, styles.rivalCardContender]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
                   <View style={[styles.rivalAvatar, styles.rivalAvatarContender]}>
-                    <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+                    <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
                   </View>
                   <View style={styles.rivalInfo}>
                     <Text style={styles.rivalName}>{rival.username}</Text>
@@ -160,7 +160,7 @@ export default function HomeScreen() {
               <Text style={styles.contendersLabel}>FAMILIAR FOE</Text>
               <View style={[styles.rivalCard, styles.rivalCardFamiliarFoe]}>
                 <View style={[styles.rivalAvatar, styles.rivalAvatarFamiliarFoe]}>
-                  <Text style={styles.rivalInitial}>{mostPlayedAgainst.username[0]}</Text>
+                  <Text style={styles.rivalInitial}>{mostPlayedAgainst.username.charAt(0) || '?'}</Text>
                 </View>
                 <View style={styles.rivalInfo}>
                   <Text style={styles.rivalName}>{mostPlayedAgainst.username}</Text>

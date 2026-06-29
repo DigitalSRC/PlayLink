@@ -12,11 +12,13 @@ const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const generateJoinCode = (existingGroups: Group[]): string => {
   const used = new Set(existingGroups.map((g) => g.joinCode));
   let code: string;
+  let attempts = 0;
   do {
     code = Array.from({ length: 6 }, () =>
       CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
     ).join('');
-  } while (used.has(code));
+    attempts++;
+  } while (used.has(code) && attempts < 1000);
   return code;
 };
 

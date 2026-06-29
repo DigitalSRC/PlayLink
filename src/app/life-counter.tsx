@@ -157,6 +157,10 @@ export default function LifeCounter() {
     router.replace('/(tabs)/home');
   };
 
+  if (players.length === 0) {
+    return null;
+  }
+
   // ── Layout helpers ───────────────────────────────────────────────────────
 
   const topPlayers = players.slice(0, Math.floor(players.length / 2));
@@ -241,7 +245,7 @@ export default function LifeCounter() {
                   onPress={() => handleSelectWinner(player.username)}
                 >
                   <View style={styles.winnerAvatar}>
-                    <Text style={styles.winnerInitial}>{player.username[0]}</Text>
+                    <Text style={styles.winnerInitial}>{player.username.charAt(0) || '?'}</Text>
                   </View>
                   <Text style={styles.winnerName}>{player.username}</Text>
                   {player.username === currentUser?.username && (

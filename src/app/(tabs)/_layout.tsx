@@ -33,17 +33,17 @@ export default function TabLayout() {
           backgroundColor: '#0F0F14',
           borderTopColor: '#1C1C24',
           borderTopWidth: 1,
-          height: 72,
-          paddingBottom: 12,
+          height: 94,
+          paddingBottom: 16,
         },
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#555',
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 14,
           fontWeight: '600',
         },
         tabBarIcon: ({ focused }) => (
-          <Text style={{ fontSize: 22 }}>
+          <Text style={{ fontSize: 29 }}>
             {TAB_ICON[route.name]?.[focused ? 'active' : 'inactive'] ?? '●'}
           </Text>
         ),

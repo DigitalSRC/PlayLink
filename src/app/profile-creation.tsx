@@ -194,7 +194,7 @@ export default function ProfileCreation() {
               onPress={() => loginAsExisting(profile)}
             >
               <View style={styles.loginAvatar}>
-                <Text style={styles.loginAvatarText}>{profile.username[0]}</Text>
+                <Text style={styles.loginAvatarText}>{profile.username.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.loginInfo}>
                 <Text style={styles.loginName}>{profile.username}</Text>
@@ -386,7 +386,7 @@ export default function ProfileCreation() {
               }}
             >
               <View style={[styles.rivalAvatar, isPicked && styles.rivalAvatarPicked]}>
-                <Text style={styles.rivalInitial}>{rival.username[0]}</Text>
+                <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.rivalInfo}>
                 <Text style={styles.rivalName}>{rival.username}</Text>
