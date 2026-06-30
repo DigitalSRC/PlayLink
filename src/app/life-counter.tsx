@@ -1,132 +1,172 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+const MENU_H = 48;
+const START_LIFE = 40;
+
+type IntervalRef = React.MutableRefObject<ReturnType<typeof setInterval> | null>;
+
 /**
- * Full-screen single life counter with portrait/landscape toggle.
- * All content — life total, +/− zones, and Rotate button — lives inside one
- * inner View so that everything rotates together as a unit when Rotate is tapped.
- * The Rotate button is dynamically repositioned within the inner so that it
- * always appears at the visual top-right regardless of rotation state:
- *   portrait  → inner position top/right  (naturally top-right)
- *   landscape → inner position top/left   (after 90° CW, inner-left becomes
- *               the visual top and inner-top becomes the visual right)
- * The back button lives outside the inner and stays pinned at the canvas top-left.
+ * Two-player life counter.
+ * The canvas is divided into two equal halves separated by a menu bar.
+ * The top half is rotated 180° so the opposing player reads it right-side-up.
+ * Each half contains a + zone (top), − zone (bottom), centred life total, and a
+ * Rotate button fixed at the player's top-right that rotates all content together.
+ * In landscape the inner is resized to halfH × canvasW so after 90°/270° it fills
+ * its half exactly. The Rotate button stays at top/right inside the inner in all
+ * states; the transform carries it to the correct visual corner automatically.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
- * Edge cases: life total is unbounded; holding a zone fires +10/−10 continuously
- * at 150 ms intervals; the interval is always cleared on PressOut.
+ * Edge cases: life totals are unbounded; Reset restores both to START_LIFE and
+ * clears any landscape rotation; hold interval is always cleared on PressOut.
  */
 export default function LifeCounterScreen() {
   const router = useRouter();
-  const [life, setLife] = useState(40);
-  const [isLandscape, setIsLandscape] = useState(false);
   const [canvas, setCanvas] = useState({ w: 0, h: 0 });
-  const holdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [topLife, setTopLife] = useState(START_LIFE);
+  const [bottomLife, setBottomLife] = useState(START_LIFE);
+  const [topLandscape, setTopLandscape] = useState(false);
+  const [bottomLandscape, setBottomLandscape] = useState(false);
+  const topInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bottomInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const onCanvasLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setCanvas({ w: width, h: height });
   };
 
-  const tap = (delta: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLife(prev => prev + delta);
+  const halfH = canvas.h > 0 ? (canvas.h - MENU_H) / 2 : 0;
+
+  const reset = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setTopLife(START_LIFE);
+    setBottomLife(START_LIFE);
+    setTopLandscape(false);
+    setBottomLandscape(false);
   };
 
-  const startHold = (delta: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setLife(prev => prev + delta);
-    holdInterval.current = setInterval(
-      () => setLife(prev => prev + delta),
-      150,
+  /**
+   * Renders one player's half of the canvas.
+   * isTop=true applies a 180° base rotation so the opposing player reads normally.
+   * Landscape rotation is 270° for the top player, 90° for the bottom player,
+   * so both experience + on their right and − on their left when rotated.
+   * Parameters: life, setLife, isLandscape, setIsLandscape, interval ref, isTop flag.
+   * Returns: a JSX element containing the player's half.
+   * Edge cases: falls back to portrait layout until canvas dimensions are measured.
+   */
+  const renderHalf = (
+    life: number,
+    setLife: React.Dispatch<React.SetStateAction<number>>,
+    isLandscape: boolean,
+    setIsLandscape: React.Dispatch<React.SetStateAction<boolean>>,
+    interval: IntervalRef,
+    isTop: boolean,
+  ) => {
+    const startHold = (delta: number) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setLife(p => p + delta);
+      interval.current = setInterval(() => setLife(p => p + delta), 150);
+    };
+
+    const stopHold = () => {
+      if (interval.current !== null) {
+        clearInterval(interval.current);
+        interval.current = null;
+      }
+    };
+
+    // Top half: base 180°. Landscape adds another 90° from the player's view:
+    //   top landscape  = 180° + 90° (their CW) = 270° screen
+    //   bottom landscape = 90° screen (their CW)
+    const rotateAngle = isLandscape
+      ? (isTop ? '270deg' : '90deg')
+      : (isTop ? '180deg' : null);
+
+    // In landscape, inner is halfH × canvasW so after rotation it fills canvasW × halfH.
+    const innerStyle: object =
+      isLandscape && canvas.w > 0 && halfH > 0
+        ? {
+            position: 'absolute' as const,
+            width: halfH,
+            height: canvas.w,
+            top: (halfH - canvas.w) / 2,
+            left: (canvas.w - halfH) / 2,
+            transform: [{ rotate: rotateAngle! }],
+          }
+        : rotateAngle
+        ? { flex: 1, transform: [{ rotate: rotateAngle }] }
+        : { flex: 1 };
+
+    return (
+      <View style={styles.half}>
+        <View style={[styles.inner, innerStyle]}>
+
+          <Pressable
+            style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLife(p => p + 1); }}
+            onLongPress={() => startHold(10)}
+            onPressOut={stopHold}
+            delayLongPress={400}
+          >
+            <Text style={styles.zoneSymbol}>+</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLife(p => p - 1); }}
+            onLongPress={() => startHold(-10)}
+            onPressOut={stopHold}
+            delayLongPress={400}
+          >
+            <Text style={styles.zoneSymbol}>−</Text>
+          </Pressable>
+
+          <View style={styles.lifeOverlay} pointerEvents="none">
+            <Text style={styles.lifeText}>{life}</Text>
+          </View>
+
+          {/* Rotate button at top/right of inner — transform carries it to the
+              player's visual top-right in every orientation */}
+          <Pressable
+            style={styles.rotateBtn}
+            onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
+          >
+            <Text style={styles.rotateBtnText}>Rotate</Text>
+          </Pressable>
+
+        </View>
+      </View>
     );
   };
-
-  const stopHold = () => {
-    if (holdInterval.current !== null) {
-      clearInterval(holdInterval.current);
-      holdInterval.current = null;
-    }
-  };
-
-  const { w, h } = canvas;
-
-  // Portrait: inner fills canvas via flex.
-  // Landscape: inner natural size is h×w. After 90° CW rotation its visual
-  // footprint becomes w×h, exactly filling the canvas.
-  // Offset centres the inner on the canvas centre point.
-  const innerStyle =
-    isLandscape && w > 0
-      ? ({
-          position: 'absolute' as const,
-          width: h,
-          height: w,
-          top: (h - w) / 2,
-          left: (w - h) / 2,
-          transform: [{ rotate: '90deg' }],
-        } as const)
-      : ({ flex: 1 } as const);
-
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.screen}>
         <View style={styles.canvas} onLayout={onCanvasLayout}>
 
-          {/* ── Rotating inner: all content rotates as one unit ── */}
-          <View style={[styles.inner, innerStyle]}>
+          {renderHalf(topLife, setTopLife, topLandscape, setTopLandscape, topInterval, true)}
 
-            {/* Plus zone — top in portrait, right after CW rotation */}
+          {/* Menu bar — back button left, Reset centred */}
+          <View style={styles.menuBar}>
             <Pressable
-              style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-              onPress={() => tap(1)}
-              onLongPress={() => startHold(10)}
-              onPressOut={stopHold}
-              delayLongPress={400}
+              style={styles.menuBtn}
+              onPress={() => { Haptics.selectionAsync(); router.back(); }}
             >
-              <Text style={styles.zoneSymbol}>+</Text>
+              <Text style={styles.menuBtnText}>‹</Text>
             </Pressable>
 
-            {/* Minus zone — bottom in portrait, left after CW rotation */}
-            <Pressable
-              style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-              onPress={() => tap(-1)}
-              onLongPress={() => startHold(-10)}
-              onPressOut={stopHold}
-              delayLongPress={400}
-            >
-              <Text style={styles.zoneSymbol}>−</Text>
+            <Pressable style={styles.resetBtn} onPress={reset}>
+              <Text style={styles.resetBtnText}>Reset</Text>
             </Pressable>
 
-            {/* Life total centred over both zones; pointer-events disabled so taps fall through */}
-            <View style={styles.lifeOverlay} pointerEvents="none">
-              <Text style={styles.lifeText}>{life}</Text>
-            </View>
-
-            {/* Rotate button — inside inner so it rotates with content.
-                top/right stays fixed in inner coords; the CW rotation carries
-                it to the physical bottom-right, which is top-right from the
-                reading perspective of the rotated counter. */}
-            <Pressable
-              style={styles.rotateBtn}
-              onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
-            >
-              <Text style={styles.rotateBtnText}>Rotate</Text>
-            </Pressable>
-
+            {/* Spacer mirrors back button width so Reset stays centred */}
+            <View style={styles.menuBtn} />
           </View>
-          {/* ── end rotating inner ── */}
 
-          {/* Back — outside inner, always fixed at canvas top-left */}
-          <Pressable
-            style={styles.backBtn}
-            onPress={() => { Haptics.selectionAsync(); router.back(); }}
-          >
-            <Text style={styles.backBtnText}>‹</Text>
-          </Pressable>
+          {renderHalf(bottomLife, setBottomLife, bottomLandscape, setBottomLandscape, bottomInterval, false)}
 
         </View>
       </View>
@@ -149,6 +189,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#3C3C5C',
     borderRadius: 16,
+    overflow: 'hidden',
+    flexDirection: 'column',
+  },
+  half: {
+    flex: 1,
     overflow: 'hidden',
   },
   inner: {
@@ -177,43 +222,57 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   lifeText: {
-    fontSize: 120,
+    fontSize: 80,
     fontWeight: '200',
     color: '#FFFFFF',
     includeFontPadding: false,
   },
   rotateBtn: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 10,
+    right: 10,
     zIndex: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   rotateBtnText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
     fontWeight: '500',
   },
-  backBtn: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    zIndex: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+  menuBar: {
+    height: MENU_H,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#2A2A3A',
+    backgroundColor: '#0D0D18',
+  },
+  menuBtn: {
+    width: 44,
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backBtnText: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.55)',
+  menuBtnText: {
+    fontSize: 22,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '400',
+  },
+  resetBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  resetBtnText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
     fontWeight: '500',
   },
 });
