@@ -1,78 +1,107 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 
 /**
- * Full-screen single life counter.
- * Portrait default: + zone fills the top half, − zone fills the bottom half.
- * Landscape (after tapping ↻): − zone fills the left half, + zone fills the right half,
- * mirroring a clockwise 90° physical rotation of the device.
+ * Full-screen single life counter with portrait/landscape toggle.
+ * All interactive elements live inside one rotating inner container so that
+ * pressing ↻ rotates the life total, +/− symbols, and the rotate button together.
+ * Portrait default: + zone on top half, − zone on bottom half.
+ * Landscape (↻): inner rotated 90° CW so + is on the right, − on the left.
+ * Canvas dimensions are measured via onLayout so the inner can be repositioned
+ * to stay centered and fill the canvas after rotation.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
- * Edge cases: life total can go negative; no lower bound is enforced.
+ * Edge cases: life total is unbounded (can go negative); back button is outside
+ * the rotating container and always stays in place.
  */
 export default function LifeCounterScreen() {
   const router = useRouter();
   const [life, setLife] = useState(40);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [canvas, setCanvas] = useState({ w: 0, h: 0 });
 
-  const bump = (delta: number, heavy = false) => {
-    heavy
-      ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
-      : Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const onCanvasLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setCanvas({ w: width, h: height });
+  };
+
+  const bump = (delta: number) => {
+    Haptics.impactAsync(
+      Math.abs(delta) >= 10
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    );
     setLife(prev => prev + delta);
   };
 
-  // In portrait: zone1 = top (+), zone2 = bottom (−)
-  // In landscape: zone1 = left (−), zone2 = right (+)
-  const zone1Delta  = isLandscape ? -1 : 1;
-  const zone1Label  = isLandscape ? '−' : '+';
-  const zone2Delta  = isLandscape ? 1 : -1;
-  const zone2Label  = isLandscape ? '+' : '−';
+  const { w, h } = canvas;
+
+  // Portrait: inner fills canvas via flex.
+  // Landscape: inner is h×w in natural space so after a 90° CW rotation it
+  // becomes w×h visually — exactly filling the canvas.
+  // Offset so the inner's center stays on the canvas center after repositioning.
+  const innerStyle =
+    isLandscape && w > 0
+      ? ({
+          position: 'absolute' as const,
+          width: h,
+          height: w,
+          top: (h - w) / 2,
+          left: (w - h) / 2,
+          transform: [{ rotate: '90deg' }],
+        } as const)
+      : ({ flex: 1 } as const);
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.canvas, isLandscape && styles.canvasLandscape]}>
+      <View style={styles.canvas} onLayout={onCanvasLayout}>
 
-        {/* Zone 1 — top in portrait, left in landscape */}
+        {/* Back button — outside the rotating inner, always stays top-left */}
         <Pressable
-          style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-          onPress={() => bump(zone1Delta)}
-          onLongPress={() => bump(zone1Delta * 5, true)}
-        >
-          <Text style={styles.zoneSymbol}>{zone1Label}</Text>
-        </Pressable>
-
-        {/* Zone 2 — bottom in portrait, right in landscape */}
-        <Pressable
-          style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-          onPress={() => bump(zone2Delta)}
-          onLongPress={() => bump(zone2Delta * 5, true)}
-        >
-          <Text style={styles.zoneSymbol}>{zone2Label}</Text>
-        </Pressable>
-
-        {/* Life total floats over both zones, never intercepts touches */}
-        <View style={styles.lifeOverlay} pointerEvents="none">
-          <Text style={styles.lifeText}>{life}</Text>
-        </View>
-
-        {/* Back — top-left corner */}
-        <Pressable
-          style={[styles.cornerBtn, styles.cornerTL]}
+          style={styles.backBtn}
           onPress={() => { Haptics.selectionAsync(); router.back(); }}
         >
-          <Text style={styles.cornerBtnText}>‹</Text>
+          <Text style={styles.backBtnText}>‹</Text>
         </Pressable>
 
-        {/* Rotate CW 90° — top-right corner */}
-        <Pressable
-          style={[styles.cornerBtn, styles.cornerTR]}
-          onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
-        >
-          <Text style={styles.cornerBtnText}>↻</Text>
-        </Pressable>
+        {/* ── Rotating inner — everything inside rotates as one unit ── */}
+        <View style={[styles.inner, innerStyle]}>
+
+          {/* Plus zone — top in portrait, right after CW rotation */}
+          <Pressable
+            style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
+            onPress={() => bump(1)}
+            onLongPress={() => bump(10)}
+          >
+            <Text style={styles.zoneSymbol}>+</Text>
+          </Pressable>
+
+          {/* Minus zone — bottom in portrait, left after CW rotation */}
+          <Pressable
+            style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
+            onPress={() => bump(-1)}
+            onLongPress={() => bump(-10)}
+          >
+            <Text style={styles.zoneSymbol}>−</Text>
+          </Pressable>
+
+          {/* Life total floats over zones; pointerEvents="none" lets taps fall through */}
+          <View style={styles.lifeOverlay} pointerEvents="none">
+            <Text style={styles.lifeText}>{life}</Text>
+          </View>
+
+          {/* Rotate button nested here so it rotates with the rest */}
+          <Pressable
+            style={styles.rotateBtn}
+            onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
+          >
+            <Text style={styles.rotateBtnText}>↻</Text>
+          </Pressable>
+
+        </View>
+        {/* ── end rotating inner ── */}
 
       </View>
     </View>
@@ -83,18 +112,35 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#0A0A0F',
-    padding: 16,
+    padding: 20,
   },
   canvas: {
     flex: 1,
-    flexDirection: 'column',
+    backgroundColor: '#111118',
     borderWidth: 2,
-    borderColor: '#2A2A3A',
+    borderColor: '#3C3C5C',
     borderRadius: 16,
     overflow: 'hidden',
   },
-  canvasLandscape: {
-    flexDirection: 'row',
+  backBtn: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backBtnText: {
+    fontSize: 26,
+    color: 'rgba(255,255,255,0.55)',
+    lineHeight: 30,
+  },
+  inner: {
+    flexDirection: 'column',
   },
   zone: {
     flex: 1,
@@ -102,11 +148,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   zoneActive: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   zoneSymbol: {
-    fontSize: 56,
-    color: 'rgba(255,255,255,0.30)',
+    fontSize: 60,
+    color: 'rgba(255,255,255,0.28)',
     fontWeight: '100',
   },
   lifeOverlay: {
@@ -124,8 +170,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     includeFontPadding: false,
   },
-  cornerBtn: {
+  rotateBtn: {
     position: 'absolute',
+    bottom: 14,
+    right: 14,
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -133,10 +181,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cornerTL: { top: 12, left: 12 },
-  cornerTR: { top: 12, right: 12 },
-  cornerBtnText: {
-    fontSize: 22,
+  rotateBtnText: {
+    fontSize: 20,
     color: 'rgba(255,255,255,0.55)',
   },
 });
