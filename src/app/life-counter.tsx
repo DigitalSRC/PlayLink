@@ -239,12 +239,32 @@ export default function LifeCounterScreen() {
   };
 
   // ─── Commander damage overlay ─────────────────────────────────────────────
-  // Mirrors the main counter page layout: header bar + one bordered counter box
-  // per opponent. The entire content is rotated to face the player who opened it.
+  // Panel is a fixed-size rectangle centered on screen. The inner content view
+  // rotates to face the player who opened it (same technique as renderCounter).
+  // Tapping the dimmed backdrop closes the overlay; tapping inside the panel
+  // is consumed by the inner Pressable, preventing backdrop dismissal.
   const renderCmdOverlay = () => {
     if (cmdPanelFor === null) return null;
     const victim = cmdPanelFor;
     const panelAngle = getPlayerAngle(victim, victim === 0);
+    const isLandscapePanel = panelAngle === '90deg' || panelAngle === '270deg';
+
+    const PANEL_W = content.w * 0.80;
+    const PANEL_H = content.h * 0.72;
+
+    // Inner content rotates to face the opening player; landscape swaps dimensions
+    const innerStyle: object = isLandscapePanel
+      ? {
+          position: 'absolute' as const,
+          width: PANEL_H, height: PANEL_W,
+          top: (PANEL_H - PANEL_W) / 2,
+          left: (PANEL_W - PANEL_H) / 2,
+          transform: [{ rotate: panelAngle }],
+          padding: 16,
+        }
+      : panelAngle === '0deg'
+      ? { flex: 1, padding: 16 }
+      : { flex: 1, padding: 16, transform: [{ rotate: panelAngle }] };
 
     // isSelf=true: own-commander damage — never eliminates, never deducts life.
     const renderSection = (attackerIdx: number, isSelf: boolean) => {
@@ -281,46 +301,45 @@ export default function LifeCounterScreen() {
             </View>
           )}
 
-          <View style={styles.cmdCounterRow}>
+          {/* Half-zone counter: left half = −, right half = +, value overlaid */}
+          <View style={styles.cmdCounterBox}>
             <Pressable
-              style={styles.cmdCounterBtn}
+              style={styles.cmdHalfZone}
               onPress={() => adjustCmdDmg(victim, attackerIdx, slot, -1, isSelf)}
               onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, -10, isSelf)}
               delayLongPress={400}
             />
-            <Text style={[styles.cmdCounterVal, elim && styles.cmdCounterValElim]}>{dmg}</Text>
             <Pressable
-              style={styles.cmdCounterBtn}
+              style={styles.cmdHalfZone}
               onPress={() => adjustCmdDmg(victim, attackerIdx, slot, 1, isSelf)}
               onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, 10, isSelf)}
               delayLongPress={400}
             />
+            <View pointerEvents="none" style={styles.cmdValOverlay}>
+              <Text style={[styles.cmdValText, elim && styles.cmdValTextElim]}>{dmg}</Text>
+            </View>
           </View>
         </View>
       );
     };
 
     return (
-      <View style={styles.cmdOverlay}>
-        <View style={[styles.cmdPanel, { transform: [{ rotate: panelAngle }] }]}>
-          <Text style={styles.cmdPanelTitle}>{players[victim].name}</Text>
-          <Text style={styles.cmdPanelSub}>Commander Damage Received</Text>
-
-          {renderSection(victim, true)}
-
-          {players.map((_, attackerIdx) => {
-            if (attackerIdx === victim) return null;
-            return renderSection(attackerIdx, false);
-          })}
-
-          <Pressable
-            style={styles.cmdCloseBtn}
-            onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
-          >
-            <Text style={styles.cmdCloseBtnText}>Close</Text>
-          </Pressable>
-        </View>
-      </View>
+      <Pressable
+        style={styles.cmdOverlay}
+        onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
+      >
+        <Pressable style={[styles.cmdPanel, { width: PANEL_W, height: PANEL_H }]}>
+          <View style={innerStyle}>
+            <Text style={styles.cmdPanelTitle}>{players[victim].name}</Text>
+            <Text style={styles.cmdPanelSub}>Commander Damage Received</Text>
+            {renderSection(victim, true)}
+            {players.map((_, attackerIdx) => {
+              if (attackerIdx === victim) return null;
+              return renderSection(attackerIdx, false);
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
     );
   };
 
@@ -455,11 +474,10 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   cmdPanel: {
-    width: '76%',
     backgroundColor: '#181825',
     borderRadius: 20,
     borderWidth: 2, borderColor: '#5A5A8A',
-    padding: 20,
+    overflow: 'hidden',
   },
   cmdPanelTitle: { fontSize: 20, fontWeight: '600', color: '#FFFFFF', textAlign: 'center' },
   cmdPanelSub: {
@@ -487,17 +505,18 @@ const styles = StyleSheet.create({
   cmdSlotBtnOn: { backgroundColor: 'rgba(108,99,255,0.25)', borderColor: '#6C63FF' },
   cmdSlotBtnText: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
   cmdSlotBtnTextOn: { color: '#A09CF7', fontWeight: '700' },
-  cmdCounterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cmdCounterBtn: {
-    flex: 1, paddingVertical: 14, alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12,
+  cmdCounterBox: {
+    height: 80,
+    flexDirection: 'row',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  cmdCounterVal: { width: 80, textAlign: 'center', fontSize: 44, fontWeight: '200', color: '#FFFFFF' },
-  cmdCounterValElim: { color: '#E05555' },
-  cmdCloseBtn: {
-    marginTop: 8, paddingVertical: 12,
-    borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)',
-    alignItems: 'center',
+  cmdHalfZone: { flex: 1 },
+  cmdValOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
   },
-  cmdCloseBtnText: { fontSize: 15, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
+  cmdValText: { fontSize: 44, fontWeight: '200', color: '#FFFFFF' },
+  cmdValTextElim: { color: '#E05555' },
 });
