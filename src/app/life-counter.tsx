@@ -62,12 +62,17 @@ export default function LifeCounterScreen() {
   const getCmdVal = (victim: number, attacker: number, slot: 0 | 1): number =>
     cmdDmg[victim]?.[attacker]?.[slot] ?? 0;
 
+  // Self-damage (attacker === victim) is excluded from the badge total and elimination check
   const getCmdTotal = (victim: number): number =>
-    Object.values(cmdDmg[victim] ?? {}).reduce((s, [c1, c2]) => s + c1 + c2, 0);
+    Object.entries(cmdDmg[victim] ?? {}).reduce(
+      (s, [k, [c1, c2]]) => (Number(k) === victim ? s : s + c1 + c2), 0,
+    );
 
   const isEliminated = (idx: number): boolean => {
     if (players[idx].life <= 0) return true;
-    return Object.values(cmdDmg[idx] ?? {}).some(([c1, c2]) => c1 >= 21 || c2 >= 21);
+    return Object.entries(cmdDmg[idx] ?? {}).some(
+      ([k, [c1, c2]]) => Number(k) !== idx && (c1 >= 21 || c2 >= 21),
+    );
   };
 
   /**
@@ -77,7 +82,8 @@ export default function LifeCounterScreen() {
    * Returns: void.
    * Edge cases: no-ops when the clamped actualDelta is 0.
    */
-  const adjustCmdDmg = (victim: number, attacker: number, slot: 0 | 1, delta: number) => {
+  // skipLife=true for self-damage rows so own-commander hits don't deduct from life total
+  const adjustCmdDmg = (victim: number, attacker: number, slot: 0 | 1, delta: number, skipLife = false) => {
     Haptics.impactAsync(
       Math.abs(delta) >= 10 ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light,
     );
@@ -92,7 +98,7 @@ export default function LifeCounterScreen() {
       vm[attacker] = pair;
       return { ...prev, [victim]: vm };
     });
-    updateLife(victim, -actualDelta);
+    if (!skipLife) updateLife(victim, -actualDelta);
   };
 
   const togglePartner = (idx: number) => {
@@ -106,6 +112,18 @@ export default function LifeCounterScreen() {
     setCmdDmg({});
     setCmdPanelFor(null);
     setActiveCmd({});
+  };
+
+  /**
+   * Returns the visual rotation angle for a player's counter based on position and landscape state.
+   * Parameters: playerIdx — array index; isTop — whether this player occupies the top half.
+   * Returns: a rotation string ('0deg', '90deg', '180deg', '270deg').
+   * Edge cases: returns '0deg' for the bottom player in portrait (no transform applied).
+   */
+  const getPlayerAngle = (playerIdx: number, isTop: boolean): string => {
+    const { isLandscape } = players[playerIdx];
+    if (isLandscape) return isTop ? '270deg' : '90deg';
+    return isTop ? '180deg' : '0deg';
   };
 
   // ─── Render one player's counter box ──────────────────────────────────────
@@ -224,69 +242,77 @@ export default function LifeCounterScreen() {
   const renderCmdOverlay = () => {
     if (cmdPanelFor === null) return null;
     const victim = cmdPanelFor;
-    // Panel rotates to match the opening player's reading orientation
-    const panelRotation = victim === 0 ? '180deg' : '0deg';
+    const panelAngle = getPlayerAngle(victim, victim === 0);
+
+    // Shared section renderer for self and each opponent.
+    // isSelf=true: own-commander damage — never eliminates, never deducts life.
+    const renderSection = (attackerIdx: number, isSelf: boolean) => {
+      const slot = (activeCmd[attackerIdx] ?? 0) as 0 | 1;
+      const dmg = getCmdVal(victim, attackerIdx, slot);
+      const elim = !isSelf && dmg >= 21;
+      const label = isSelf ? `${players[victim].name} (Self)` : players[attackerIdx].name;
+      const showPartnerToggle = players[attackerIdx].hasPartner;
+
+      return (
+        <View key={`s-${attackerIdx}`} style={styles.cmdSection}>
+          <View style={styles.cmdSectionHeader}>
+            <Text style={styles.cmdAttackerName}>{label}</Text>
+            {elim && (
+              <View style={styles.cmdElimBadge}>
+                <Text style={styles.cmdElimBadgeText}>ELIMINATED</Text>
+              </View>
+            )}
+          </View>
+
+          {showPartnerToggle && (
+            <View style={styles.cmdSlotRow}>
+              {([0, 1] as const).map(s => (
+                <Pressable
+                  key={s}
+                  style={[styles.cmdSlotBtn, slot === s && styles.cmdSlotBtnOn]}
+                  onPress={() => { Haptics.selectionAsync(); setActiveCmd(prev => ({ ...prev, [attackerIdx]: s })); }}
+                >
+                  <Text style={[styles.cmdSlotBtnText, slot === s && styles.cmdSlotBtnTextOn]}>
+                    {s === 0 ? 'Cmd 1' : 'Cmd 2'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.cmdCounterRow}>
+            {/* Buttons have no symbols — invisible tap areas like the main counter zones */}
+            <Pressable
+              style={styles.cmdCounterBtn}
+              onPress={() => adjustCmdDmg(victim, attackerIdx, slot, -1, isSelf)}
+              onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, -10, isSelf)}
+              delayLongPress={400}
+            />
+            <Text style={[styles.cmdCounterVal, elim && styles.cmdCounterValElim]}>{dmg}</Text>
+            <Pressable
+              style={styles.cmdCounterBtn}
+              onPress={() => adjustCmdDmg(victim, attackerIdx, slot, 1, isSelf)}
+              onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, 10, isSelf)}
+              delayLongPress={400}
+            />
+          </View>
+        </View>
+      );
+    };
 
     return (
       <View style={styles.cmdOverlay}>
-        <View style={[styles.cmdPanel, { transform: [{ rotate: panelRotation }] }]}>
+        <View style={[styles.cmdPanel, { transform: [{ rotate: panelAngle }] }]}>
           <Text style={styles.cmdPanelTitle}>{players[victim].name}</Text>
           <Text style={styles.cmdPanelSub}>Commander Damage Received</Text>
 
-          {players.map((attacker, attackerIdx) => {
+          {/* Self-commander row first — own damage is tracked but never eliminates */}
+          {renderSection(victim, true)}
+
+          {/* One row per opponent */}
+          {players.map((_, attackerIdx) => {
             if (attackerIdx === victim) return null;
-            const slot = activeCmd[attackerIdx] ?? 0;
-            const dmg = getCmdVal(victim, attackerIdx, slot);
-            const elim = dmg >= 21;
-
-            return (
-              <View key={attackerIdx} style={styles.cmdSection}>
-                <View style={styles.cmdSectionHeader}>
-                  <Text style={styles.cmdAttackerName}>{attacker.name}</Text>
-                  {elim && (
-                    <View style={styles.cmdElimBadge}>
-                      <Text style={styles.cmdElimBadgeText}>ELIMINATED</Text>
-                    </View>
-                  )}
-                </View>
-
-                {attacker.hasPartner && (
-                  <View style={styles.cmdSlotRow}>
-                    {([0, 1] as const).map(s => (
-                      <Pressable
-                        key={s}
-                        style={[styles.cmdSlotBtn, slot === s && styles.cmdSlotBtnOn]}
-                        onPress={() => { Haptics.selectionAsync(); setActiveCmd(prev => ({ ...prev, [attackerIdx]: s })); }}
-                      >
-                        <Text style={[styles.cmdSlotBtnText, slot === s && styles.cmdSlotBtnTextOn]}>
-                          {s === 0 ? 'Cmd 1' : 'Cmd 2'}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-
-                <View style={styles.cmdCounterRow}>
-                  <Pressable
-                    style={styles.cmdCounterBtn}
-                    onPress={() => adjustCmdDmg(victim, attackerIdx, slot, -1)}
-                    onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, -10)}
-                  >
-                    <Text style={styles.cmdCounterBtnText}>−</Text>
-                  </Pressable>
-                  <Text style={[styles.cmdCounterVal, elim && styles.cmdCounterValElim]}>
-                    {dmg}
-                  </Text>
-                  <Pressable
-                    style={styles.cmdCounterBtn}
-                    onPress={() => adjustCmdDmg(victim, attackerIdx, slot, 1)}
-                    onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, 10)}
-                  >
-                    <Text style={styles.cmdCounterBtnText}>+</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
+            return renderSection(attackerIdx, false);
           })}
 
           <Pressable
@@ -446,11 +472,11 @@ const styles = StyleSheet.create({
   },
   // Panel has its own strong border; rotated to match the opening player's orientation
   cmdPanel: {
-    width: '92%',
+    width: '76%',
     backgroundColor: '#181825',
     borderRadius: 20,
     borderWidth: 2, borderColor: '#5A5A8A',
-    padding: 24,
+    padding: 20,
   },
   cmdPanelTitle: { fontSize: 20, fontWeight: '600', color: '#FFFFFF', textAlign: 'center' },
   cmdPanelSub: {
