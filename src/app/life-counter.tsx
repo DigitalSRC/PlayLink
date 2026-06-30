@@ -237,8 +237,7 @@ export default function LifeCounter() {
     const life = lifeTotals[username] ?? startingLife;
     const isFirst = username === firstPlayer;
     const isDead = life <= 0 || isCmdEliminated(username);
-    // Default to landscape so numbers read along the phone's long edge
-    const isCellRotated = cellRotated[username] ?? true;
+    const isCellRotated = cellRotated[username] ?? false;
     const cmdTotal = getCmdDmgTotal(username);
 
     // Show Rotate button only on cells at the corners of multi-cell rows,
@@ -333,7 +332,7 @@ export default function LifeCounter() {
             style={styles.rotateCellBtn}
             onPress={() => {
               Haptics.selectionAsync();
-              setCellRotated((prev) => ({ ...prev, [username]: !(prev[username] ?? true) }));
+              setCellRotated((prev) => ({ ...prev, [username]: !(prev[username] ?? false) }));
             }}
           >
             <Text style={styles.rotateCellText}>Rotate</Text>
