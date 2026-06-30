@@ -27,33 +27,45 @@ Before changing Expo or routing behavior, read the versioned docs at https://doc
 
 ### Navigation flow
 
-Expo Router file-based routing. Three screens in [src/app/](src/app/):
+Expo Router file-based routing. [src/app/_layout.tsx](src/app/_layout.tsx) wraps the entire app in `AppProvider` and a `<Stack />` with headers hidden globally.
 
 ```
 index (landing / welcome)
-  └─ profile-creation  (collects username, location, bracket)
-       └─ browse-games?username=<value>  (main group management screen)
+  └─ profile-creation  (collects username, games, location, brackets)
+       └─ (tabs)/         ← authenticated zone; redirects to profile-creation if no user
+            ├─ home       (joined groups, upcoming sessions)
+            ├─ browse     (discover and join groups)
+            ├─ stats      (wins/losses/points, rivals)
+            ├─ shop       (placeholder)
+            └─ profile    (user settings, theme, sign-out)
 ```
 
-`_layout.tsx` wraps everything in a bare `<Stack />`. The `username` value collected on the profile-creation screen is passed as a route param to browse-games; it is the only user identity the app carries.
+Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`, `pickup-setup`, `life-counter`, `dev-tools`.
 
 ### State management
 
-There is no global state, context, or external store. `browse-games.tsx` holds all runtime group state in local `useState`. The initial value comes from `HARDCODED_GROUPS` (see below). Every join, leave, create, and edit mutates that array via `setGroups`.
+Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `currentUser` (`UserProfile | null`), `groups` (seeded from `HARDCODED_GROUPS`), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. The tab layout redirects unauthenticated users to `/profile-creation`.
 
 ### Data layer
 
-[src/data/groups.ts](src/data/groups.ts) exports:
-- `PlayerProfile` and `Group` TypeScript interfaces — the canonical data shapes for the entire app.
-- `HARDCODED_GROUPS` — a module-level constant populated with randomly generated groups on first import. Because it uses `Math.random()` at module load time, the list differs on each app restart.
+**[src/data/types.ts](src/data/types.ts)** is the canonical type file. It defines:
+- `UserProfile` — the logged-in user's full identity (games, brackets, noGo rules, wins/losses/points).
+- `GameType` (`'mtg' | 'pokemon' | 'lorcana' | 'onepiece'`) and associated display constants (`GAME_LABELS`, `GAME_EMOJI`, `GAME_COLOR`).
+- `NoGoRule`, `FORMAT_OPTIONS`, `BRACKET_INFO`, `TIME_SLOTS`, `DAYS_OF_WEEK`.
 
-[src/data/random-data.ts](src/data/random-data.ts) holds the string pools (names, locations, times) used by the seed logic.
+**[src/data/groups.ts](src/data/groups.ts)** exports `PlayerProfile`, `Group`, and `HARDCODED_GROUPS` (a static seed list; it does not use `Math.random()`).
+
+**[src/data/seed-profiles.ts](src/data/seed-profiles.ts)** provides the pool of `UserProfile` objects used for rival matching.
+
+[src/data/random-data.ts](src/data/random-data.ts) holds string pools (names, locations, times) used by any future dynamic seeding.
 
 ### Domain utilities
 
-[src/utils/group-utils.ts](src/utils/group-utils.ts) contains all pure business logic functions: `findGroupByUsername`, `isHostForUser`, `isGroupFull`, `canJoinGroup`, `buildNewPlayer`, `normalizePositiveInt`, `removePlayerFromGroup`, `setPlayerAsHost`. These are tested in [src/utils/group-utils.test.ts](src/utils/group-utils.test.ts).
+**[src/utils/group-utils.ts](src/utils/group-utils.ts)** — pure group business logic: `findGroupByUsername`, `isHostForUser`, `isGroupFull`, `canJoinGroup`, `buildNewPlayer`, `normalizePositiveInt`, `removePlayerFromGroup`, `setPlayerAsHost`, `generateJoinCode`, `formatBrackets`. Tested in [src/utils/group-utils.test.ts](src/utils/group-utils.test.ts).
 
-Note: the `browse-games` screen duplicates some join/leave logic inline rather than calling these utilities. When adding new group behavior, put the logic in `group-utils.ts` and test it there.
+**[src/utils/rival-utils.ts](src/utils/rival-utils.ts)** — exports `findRivals`, which ranks seed profiles by win-rate proximity to the current user and always injects Dillon Carroll (id 113) as the first rival with his preferences mirrored from the current user. Tested in [src/utils/rival-utils.test.ts](src/utils/rival-utils.test.ts).
+
+When adding new group or rival behavior, put the logic in the appropriate utils file and test it there — do not inline it in screen components.
 
 ### Styling
 

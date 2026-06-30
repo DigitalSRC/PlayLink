@@ -182,12 +182,12 @@ export default function HomeScreen() {
       {/* Quick Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <Pressable style={styles.pickupCard} onPress={() => router.push('/pickup-setup')}>
+        <Pressable style={styles.pickupCard} onPress={() => router.push({ pathname: '/life-counter', params: { pickup: 'true' } })}>
           <View style={styles.pickupCardLeft}>
             <Text style={styles.pickupCardEmoji}>⚡</Text>
             <View>
               <Text style={styles.pickupCardTitle}>Pickup Game</Text>
-              <Text style={styles.pickupCardSub}>Jump in without a group · 2–8 players</Text>
+              <Text style={styles.pickupCardSub}>Jump in without a group · 2–6 players</Text>
             </View>
           </View>
           <Text style={styles.pickupCardArrow}>→</Text>
