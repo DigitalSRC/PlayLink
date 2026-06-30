@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
-  Alert, Animated, Pressable,
+  Animated, Pressable,
   StatusBar, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { PlayerProfile } from '../data/groups';
@@ -12,18 +12,18 @@ const LIFE_OPTIONS = [20, 25, 30, 40, 60];
 const PLAYER_COUNT_OPTIONS = [2, 3, 4, 5, 6];
 
 /**
- * Full-screen MTG life counter with always-on commander damage, per-cell landscape rotation, and configurable starting life.
+ * Full-screen MTG life counter with always-on commander damage, per-cell orientation control, and configurable starting life.
  * Group mode (groupId param): tracks rounds; pickup mode (pickup='true' or playerNames param): ad-hoc session.
- * Setup modal on launch chooses player count (pickup mode only) and starting life (20/25/30/40/60).
- * Cells default to landscape rotation so life totals read along the phone's long edge.
- * Corner cells show a Rotate button; non-corner cells are fixed in landscape orientation.
- * Commander damage is always tracked and subtracts from the victim's main life total.
+ * Setup modal on launch chooses player count (anonymous pickup only) and starting life (20/25/30/40/60).
+ * All cells default to landscape rotation so life totals read along the phone's long edge.
+ * Top-row cells are always flipped 180° so top-end players see + on their right and − on their left.
+ * Rotate buttons appear only on cells whose row has more than one cell (or both rows have exactly one cell).
+ * Commander damage is always tracked and subtracts from the victim's main life total in real time.
  * At 21 commander damage from any single commander the victim is eliminated regardless of remaining life.
- * Each attacker can add a second (partner) commander tracked separately.
  * Players can track their own commander dealing damage to themselves.
- * Parameters: groupId (group mode), playerNames (comma-separated, named pickup mode), pickup='true' (anonymous pickup).
- * Returns: a full-screen life tracker; close button exits without recording a game.
- * Edge cases: long-press life total to enter a custom value; setup reappears via the reset menu.
+ * Parameters: groupId (group mode), playerNames (comma-separated named pickup), pickup='true' (anonymous pickup).
+ * Returns: a full-screen life tracker; the × button exits without recording a game.
+ * Edge cases: long-press life total to enter a custom value; ↺ in the centre bar reopens the setup modal.
  */
 export default function LifeCounter() {
   const router = useRouter();
@@ -49,7 +49,7 @@ export default function LifeCounter() {
   const [startingLife, setStartingLife] = useState(40);
   const [pickupCount, setPickupCount] = useState(4);
 
-  // Players fixed from params; for anonymous pickup generated on game start
+  // Players are fixed from params; for anonymous pickup they are generated on first Start
   const [players, setPlayers] = useState<PlayerProfile[]>(paramsPlayers);
 
   // ── Life totals ───────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export default function LifeCounter() {
   const [cmdPanelFor, setCmdPanelFor] = useState<string | null>(null);
   const [cmdSecondSlot, setCmdSecondSlot] = useState<Record<string, boolean>>({});
 
-  // ── Per-cell rotation — default true so life reads along phone's long edge ─
+  // ── Per-cell rotation — default true (landscape along long edge) ──────────
   const [cellRotated, setCellRotated] = useState<Record<string, boolean>>({});
 
   // ── Winner picker ─────────────────────────────────────────────────────────
@@ -76,6 +76,9 @@ export default function LifeCounter() {
 
   const pickRandom = (list: PlayerProfile[]) =>
     list.length > 0 ? list[Math.floor(Math.random() * list.length)].username : '';
+
+  // True once the game has started (life totals have been initialised)
+  const isMidGame = Object.keys(lifeTotals).length > 0;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -91,10 +94,15 @@ export default function LifeCounter() {
       }));
       setPlayers(finalPlayers);
     }
-    if (!firstPlayer || isPickupNoNames) setFirstPlayer(pickRandom(finalPlayers));
+    setFirstPlayer(pickRandom(finalPlayers));
     const init: Record<string, number> = {};
     finalPlayers.forEach((p) => { init[p.username] = startingLife; });
     setLifeTotals(init);
+    // Clear commander damage whenever life totals are reset
+    if (isMidGame) {
+      setCmdDmg({});
+      setCmdSecondSlot({});
+    }
     setShowSetup(false);
   };
 
@@ -119,7 +127,7 @@ export default function LifeCounter() {
 
   const adjustCmdDmg = (victim: string, attacker: string, slot: 0 | 1, delta: number) => {
     Haptics.selectionAsync();
-    // Compute clamped actual delta from current snapshot to avoid over-restoring life
+    // Read current snapshot to compute the clamped delta before updating state
     const cur = cmdDmg[victim]?.[attacker] ?? [0, 0];
     const prevVal = slot === 0 ? cur[0] : cur[1];
     const newVal = Math.max(0, prevVal + delta);
@@ -134,7 +142,7 @@ export default function LifeCounter() {
         : [c[0], Math.max(0, c[1] + delta)];
       return { ...prev, [victim]: { ...victimMap, [attacker]: updated } };
     });
-    // Commander damage subtracts from main life total
+    // Commander damage is real damage — subtract from main life total immediately
     setLifeTotals((prev) => ({ ...prev, [victim]: (prev[victim] ?? startingLife) - actualDelta }));
   };
 
@@ -149,33 +157,6 @@ export default function LifeCounter() {
       const pair = cmdDmg[username]?.[p.username] ?? [0, 0];
       return pair[0] >= 21 || pair[1] >= 21;
     });
-
-  const handleReset = () => {
-    Alert.alert('Reset Life Counters', 'Choose how to reset:', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset All',
-        onPress: () => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          const reset: Record<string, number> = {};
-          players.forEach((p) => { reset[p.username] = startingLife; });
-          setLifeTotals(reset);
-          setCmdDmg({});
-        },
-      },
-      {
-        text: 'Reset Mine',
-        onPress: () => {
-          const me = currentUser?.username;
-          if (!me) return;
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setLifeTotals((prev) => ({ ...prev, [me]: startingLife }));
-          setCmdDmg((prev) => { const n = { ...prev }; delete n[me]; return n; });
-        },
-      },
-      { text: 'Change Starting Life', onPress: () => setShowSetup(true) },
-    ]);
-  };
 
   const animateCelebration = () => {
     celebScale.setValue(0.5); celebOpacity.setValue(0);
@@ -233,14 +214,38 @@ export default function LifeCounter() {
   const bottomPlayers = players.slice(Math.floor(players.length / 2));
 
   // ── Render main life-counter cell ─────────────────────────────────────────
+  //
+  // isTopRow   — whether the cell lives in the top half of the screen.
+  //              Top-row cells are ALWAYS flipped 180° so players sitting at
+  //              the top end of the phone see their content right-way-up with
+  //              + on their right and − on their left, matching bottom players.
+  //
+  // indexInRow / rowLength / otherRowLength
+  //              Used to decide whether to show the Rotate button:
+  //              • Show when the row has >1 cell AND this is the first or last cell.
+  //              • Show for both cells in a 2-player game (each row has exactly 1 cell).
+  //              This keeps the button off the single full-width top cell in a
+  //              3-player game (rowLength === 1, otherRowLength > 1).
 
-  const renderCell = (username: string, isTopRow: boolean, isCorner: boolean) => {
+  const renderCell = (
+    username: string,
+    isTopRow: boolean,
+    indexInRow: number,
+    rowLength: number,
+    otherRowLength: number,
+  ) => {
     const life = lifeTotals[username] ?? startingLife;
     const isFirst = username === firstPlayer;
     const isDead = life <= 0 || isCmdEliminated(username);
-    // Default to rotated (landscape) so life reads along the phone's long edge
+    // Default to landscape so numbers read along the phone's long edge
     const isCellRotated = cellRotated[username] ?? true;
     const cmdTotal = getCmdDmgTotal(username);
+
+    // Show Rotate button only on cells at the corners of multi-cell rows,
+    // or on both cells in a 2-player game.
+    const isAtCorner = indexInRow === 0 || indexInRow === rowLength - 1;
+    const showRotateBtn =
+      rowLength > 1 ? isAtCorner : otherRowLength === 1;
 
     return (
       <View
@@ -248,7 +253,8 @@ export default function LifeCounter() {
         style={[
           styles.cell,
           isFirst && styles.cellFirst,
-          isTopRow && !isCellRotated && styles.cellFlipped,
+          // Always flip top-row cells so top-end players read their counter correctly
+          isTopRow && styles.cellFlipped,
         ]}
       >
         {/* Player name — always anchored to physical top of cell */}
@@ -321,8 +327,8 @@ export default function LifeCounter() {
           )}
         </View>
 
-        {/* Rotate button — corner cells only, top right */}
-        {isCorner && (
+        {/* Rotate button — corner cells of multi-cell rows only */}
+        {showRotateBtn && (
           <Pressable
             style={styles.rotateCellBtn}
             onPress={() => {
@@ -334,7 +340,7 @@ export default function LifeCounter() {
           </Pressable>
         )}
 
-        {/* Commander damage widget — always visible, centered at bottom */}
+        {/* Commander damage widget — always visible, centred at bottom */}
         <View style={styles.cmdBtnContainer}>
           <Pressable
             style={styles.cmdBtnMini}
@@ -350,16 +356,22 @@ export default function LifeCounter() {
   };
 
   // ── Render commander damage panel ─────────────────────────────────────────
+  //
+  // Displayed as a semi-transparent overlay so the main counter remains faintly
+  // visible behind it. The grid mirrors the main counter layout so the viewer
+  // (the victim who tapped ⚔️) sees one mini-counter cell per attacker,
+  // including themselves. No top-row flip is applied here because the panel is
+  // always read by a single player from their own angle.
 
   const renderCmdPanel = () => {
     if (!cmdPanelFor) return null;
 
-    // All players can deal commander damage — including self
+    // All players can deal commander damage — including the victim to themselves
     const attackers = players;
-    const topAttackers = attackers.slice(0, Math.ceil(attackers.length / 2));
-    const bottomAttackers = attackers.slice(Math.ceil(attackers.length / 2));
+    const topAttackers = attackers.slice(0, Math.floor(attackers.length / 2));
+    const bottomAttackers = attackers.slice(Math.floor(attackers.length / 2));
 
-    const renderCmdCell = (attacker: PlayerProfile, isCornerCell: boolean) => {
+    const renderCmdCell = (attacker: PlayerProfile) => {
       const pair = cmdDmg[cmdPanelFor]?.[attacker.username] ?? [0, 0];
       const isSelf = attacker.username === cmdPanelFor;
       const cmd1Dead = pair[0] >= 21;
@@ -376,7 +388,7 @@ export default function LifeCounter() {
             </Text>
           </View>
 
-          {/* Commander 1 — landscape: − left, + right */}
+          {/* Commander 1 buttons — landscape: − left, + right */}
           <View style={hasSecond ? styles.cmdTopHalf : styles.halfRow}>
             <Pressable
               style={({ pressed }) => [styles.halfBtn, styles.halfLandMinus, { opacity: pressed ? 0.85 : 0.4 }]}
@@ -405,7 +417,7 @@ export default function LifeCounter() {
             {cmd1Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
           </View>
 
-          {/* Commander 2 section */}
+          {/* Commander 2 — shown once Add Partner is tapped */}
           {hasSecond ? (
             <>
               <View style={styles.cmd2Divider} />
@@ -434,25 +446,24 @@ export default function LifeCounter() {
               </View>
             </>
           ) : (
-            isCornerCell && (
-              <Pressable
-                style={styles.addPartnerBtn}
-                onPress={() => { Haptics.selectionAsync(); setCmdSecondSlot((prev) => ({ ...prev, [attacker.username]: true })); }}
-              >
-                <Text style={styles.addPartnerBtnText}>＋ Partner</Text>
-              </Pressable>
-            )
+            /* Add Partner button — bottom-right corner of each attacker cell */
+            <Pressable
+              style={styles.addPartnerBtn}
+              onPress={() => { Haptics.selectionAsync(); setCmdSecondSlot((prev) => ({ ...prev, [attacker.username]: true })); }}
+            >
+              <Text style={styles.addPartnerBtnText}>＋ Partner</Text>
+            </Pressable>
           )}
         </View>
       );
     };
 
     return (
-      <View style={styles.cmdPanelOverlay}>
-        <StatusBar hidden />
-        {/* Header */}
+      /* Semi-transparent overlay so the main counter remains faintly visible */
+      <View style={styles.cmdOverlay}>
+        {/* Header strip */}
         <View style={styles.cmdPanelHeader}>
-          <Text style={styles.cmdPanelTitle}>⚔️ Cmd Damage → {cmdPanelFor}</Text>
+          <Text style={styles.cmdPanelTitle}>⚔️ Cmd damage → {cmdPanelFor}</Text>
           <Pressable
             style={styles.dividerBtn}
             onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
@@ -460,20 +471,17 @@ export default function LifeCounter() {
             <Text style={styles.dividerBtnText}>✕</Text>
           </Pressable>
         </View>
-        {/* Grid mirrors main life counter layout */}
+
+        {/* Attacker grid — mirrors main life counter layout */}
         <View style={{ flex: 1 }}>
           {topAttackers.length > 0 && (
             <View style={styles.row}>
-              {topAttackers.map((a, i) =>
-                renderCmdCell(a, i === 0 || i === topAttackers.length - 1)
-              )}
+              {topAttackers.map((a) => renderCmdCell(a))}
             </View>
           )}
           {bottomAttackers.length > 0 && (
             <View style={styles.row}>
-              {bottomAttackers.map((a, i) =>
-                renderCmdCell(a, i === 0 || i === bottomAttackers.length - 1)
-              )}
+              {bottomAttackers.map((a) => renderCmdCell(a))}
             </View>
           )}
         </View>
@@ -491,10 +499,12 @@ export default function LifeCounter() {
       {showSetup && (
         <View style={styles.overlay}>
           <View style={styles.setupCard}>
-            <Text style={styles.setupTitle}>Game Setup</Text>
+            <Text style={styles.setupTitle}>
+              {isMidGame ? 'Reset Game' : 'Game Setup'}
+            </Text>
 
-            {/* Player count selector — only for anonymous pickup */}
-            {isPickupNoNames && (
+            {/* Player count — only for anonymous pickup on first setup */}
+            {isPickupNoNames && !isMidGame && (
               <>
                 <Text style={styles.setupLabel}>Number of Players</Text>
                 <View style={styles.lifeOptionRow}>
@@ -528,9 +538,19 @@ export default function LifeCounter() {
               ))}
             </View>
 
-            <View style={{ flexDirection: 'row' }}>
-              <Pressable style={styles.setupStartBtn} onPress={applyStartingLife}>
-                <Text style={styles.setupStartBtnText}>Start Game →</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {isMidGame && (
+                <Pressable
+                  style={styles.customLifeCancel}
+                  onPress={() => { Haptics.selectionAsync(); setShowSetup(false); }}
+                >
+                  <Text style={styles.customLifeCancelText}>Cancel</Text>
+                </Pressable>
+              )}
+              <Pressable style={[styles.setupStartBtn, { flex: 1 }]} onPress={applyStartingLife}>
+                <Text style={styles.setupStartBtnText}>
+                  {isMidGame ? 'Reset & Apply →' : 'Start Game →'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -563,7 +583,7 @@ export default function LifeCounter() {
         </View>
       )}
 
-      {/* ── Commander damage panel ── */}
+      {/* ── Commander damage panel (semi-transparent overlay) ── */}
       {renderCmdPanel()}
 
       {/* ── Winner picker / celebration ── */}
@@ -620,7 +640,7 @@ export default function LifeCounter() {
                       <Text style={styles.setupStartBtnText}>▶ Play Again</Text>
                     </Pressable>
                   </View>
-                  <Pressable style={[styles.addPartnerBtn, { marginTop: 10 }]} onPress={handleFormGroup}>
+                  <Pressable style={[styles.addPartnerBtn, { marginTop: 10, alignSelf: 'stretch' }]} onPress={handleFormGroup}>
                     <Text style={styles.addPartnerBtnText}>Form a Group to Earn Rewards →</Text>
                   </Pressable>
                 </>
@@ -643,14 +663,18 @@ export default function LifeCounter() {
       {topPlayers.length > 0 && (
         <View style={styles.row}>
           {topPlayers.map((p, i) =>
-            renderCell(p.username, true, i === 0 || i === topPlayers.length - 1)
+            renderCell(p.username, true, i, topPlayers.length, bottomPlayers.length)
           )}
         </View>
       )}
 
-      {/* ── Centre bar: reset + close + winner trigger ── */}
+      {/* ── Centre bar: setup/reset · winner · close ── */}
       <View style={styles.divider}>
-        <Pressable style={styles.dividerBtn} onPress={handleReset}>
+        {/* ↺ opens the setup modal so players can reset life totals mid-game */}
+        <Pressable
+          style={styles.dividerBtn}
+          onPress={() => { Haptics.selectionAsync(); setShowSetup(true); }}
+        >
           <Text style={styles.dividerBtnText}>↺</Text>
         </Pressable>
         <Pressable
@@ -666,7 +690,7 @@ export default function LifeCounter() {
 
       <View style={[styles.row, topPlayers.length === 0 && styles.rowFull]}>
         {bottomPlayers.map((p, i) =>
-          renderCell(p.username, false, i === 0 || i === bottomPlayers.length - 1)
+          renderCell(p.username, false, i, bottomPlayers.length, topPlayers.length)
         )}
       </View>
     </View>
@@ -680,6 +704,8 @@ const styles = StyleSheet.create({
 
   /* ── Cell ── */
   cell: { flex: 1, position: 'relative', borderWidth: 0.5, borderColor: '#1E1E2A', overflow: 'hidden' },
+  // Rotate 180° on every top-row cell — combined with the player's own 180° viewpoint
+  // this nets to 0° so top-end players see their counter right-way-up.
   cellFlipped: { transform: [{ rotate: '180deg' }] },
   cellFirst: { borderColor: '#FFD700', borderWidth: 1.5 },
   cellElim: { borderColor: '#FF3B30', borderWidth: 1.5 },
@@ -714,7 +740,7 @@ const styles = StyleSheet.create({
   firstBadgeText: { fontSize: 10, fontWeight: '900', color: '#000', letterSpacing: 1.5 },
   cmdDmgBadgeText: { fontSize: 12, color: '#FF9090', fontWeight: '700' },
 
-  /* Rotate button — corner cells only, top right */
+  /* Rotate button — corner cells of multi-cell rows only, top-right corner */
   rotateCellBtn: {
     position: 'absolute', top: 4, right: 4, zIndex: 10,
     backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 8,
@@ -723,7 +749,7 @@ const styles = StyleSheet.create({
   },
   rotateCellText: { fontSize: 10, fontWeight: '700', color: '#AAA', letterSpacing: 0.5 },
 
-  /* Commander damage trigger widget — always visible, centered at bottom */
+  /* Commander damage trigger widget — always visible, centred at bottom of cell */
   cmdBtnContainer: {
     position: 'absolute', bottom: 8, left: 0, right: 0,
     alignItems: 'center', zIndex: 10,
@@ -731,30 +757,28 @@ const styles = StyleSheet.create({
   cmdBtnMini: {
     width: 46, height: 54, backgroundColor: '#0A0A12',
     borderRadius: 8, borderWidth: 1.5, borderColor: '#8B3A3A',
-    alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   cmdBtnMiniLife: { fontSize: 12, fontWeight: '900', color: '#FF9090', lineHeight: 14 },
   cmdBtnMiniLine: { width: '80%', height: 1, backgroundColor: '#8B3A3A', marginVertical: 3 },
   cmdBtnMiniSword: { fontSize: 14, lineHeight: 16 },
 
-  /* Commander damage panel full-screen overlay */
-  cmdPanelOverlay: {
+  /* Commander damage overlay — semi-transparent so main counter is faintly visible */
+  cmdOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: '#0A0A0F', zIndex: 99,
+    backgroundColor: 'rgba(10,10,15,0.93)', zIndex: 99,
   },
   cmdPanelHeader: {
-    height: 60, backgroundColor: '#050508', flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 0.5, borderColor: '#1E1E2A',
+    height: 60, backgroundColor: '#0A0A12', flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16,
+    borderBottomWidth: 1, borderColor: '#8B3A3A',
   },
-  cmdPanelTitle: { fontSize: 16, fontWeight: '800', color: '#FF9090' },
+  cmdPanelTitle: { fontSize: 15, fontWeight: '800', color: '#FF9090' },
 
-  /* Commander panel cell split for cmd2 */
+  /* Commander panel cell helpers */
   cmdTopHalf: { flex: 0.55, flexDirection: 'row' },
   cmdBottomHalf: { flex: 0.35, flexDirection: 'row' },
-  cmd2Divider: { height: 1, backgroundColor: '#8B3A3A', marginHorizontal: 0 },
+  cmd2Divider: { height: 1, backgroundColor: '#3A1A1A' },
   cmdCenterTop: { bottom: '45%' },
   cmdCenterBottom: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
@@ -767,11 +791,12 @@ const styles = StyleSheet.create({
     borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, letterSpacing: 1,
   },
 
-  /* Partner button — shown in corner cells without cmd2 */
+  /* Add Partner button — bottom-right of attacker cell */
   addPartnerBtn: {
     position: 'absolute', bottom: 8, right: 8, zIndex: 10,
     borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10,
     borderWidth: 1, borderColor: '#3C2C4C', backgroundColor: '#180A28',
+    alignItems: 'center',
   },
   addPartnerBtnText: { fontSize: 10, color: '#9B7FBF', fontWeight: '700' },
 
@@ -799,7 +824,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', zIndex: 99,
   },
 
-  /* Setup card — reused for setup, custom life, winner picker */
+  /* Setup / custom-life / winner card */
   setupCard: {
     backgroundColor: '#1C1C24', borderRadius: 24, padding: 24,
     width: '90%', borderWidth: 1, borderColor: '#2C2C3C',
@@ -820,7 +845,7 @@ const styles = StyleSheet.create({
   lifeOptionText: { fontSize: 18, fontWeight: '800', color: '#555' },
   lifeOptionTextActive: { color: '#34C759' },
 
-  /* Start button — black text on green for clear visibility */
+  /* Start / reset button — black text on green for maximum contrast */
   setupStartBtn: { backgroundColor: '#34C759', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   setupStartBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
 
@@ -837,7 +862,7 @@ const styles = StyleSheet.create({
   },
   customLifeCancelText: { color: '#888', fontWeight: '700', fontSize: 16 },
 
-  /* Winner picker */
+  /* Winner picker / celebration */
   celebEmoji: { fontSize: 48, textAlign: 'center', marginBottom: 8 },
   celebXP: { fontSize: 36, fontWeight: '800', color: '#34C759', textAlign: 'center', marginBottom: 8 },
   celebBtnRow: { flexDirection: 'row', gap: 10, width: '100%' },
