@@ -244,93 +244,8 @@ export default function LifeCounterScreen() {
   const renderCmdOverlay = () => {
     if (cmdPanelFor === null) return null;
     const victim = cmdPanelFor;
-<<<<<<< HEAD
-    const isVictimTop = victim === 0;
-    const panelAngle = getPlayerAngle(victim, isVictimTop);
-
-    return (
-      <View style={styles.cmdOverlay}>
-        {/* cmdContent covers the full overlay and is rotated to match the opening player */}
-        <View style={[styles.cmdContent, { transform: [{ rotate: panelAngle }] }]}>
-
-          {/* Header bar — mirrors the menu bar style; close button at reading-top */}
-          <View style={styles.cmdHeader}>
-            <Text style={styles.cmdHeaderTitle}>Commander Damage</Text>
-            <Pressable
-              style={styles.cmdCloseBtn}
-              onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
-            >
-              <Text style={styles.cmdCloseBtnText}>Close</Text>
-            </Pressable>
-          </View>
-
-          {/* One counter-style box per opponent */}
-          {players.map((attacker, attackerIdx) => {
-            if (attackerIdx === victim) return null;
-            const slot = (activeCmd[attackerIdx] ?? 0) as 0 | 1;
-            const dmg = getCmdVal(victim, attackerIdx, slot);
-            const elim = dmg >= 21;
-
-            return (
-              <View key={attackerIdx} style={styles.cmdPlayerBox}>
-
-                {/* LEFT zone: − */}
-                <Pressable
-                  style={({ pressed }) => [styles.cmdZone, pressed && styles.cmdZoneActive]}
-                  onPress={() => adjustCmdDmg(victim, attackerIdx, slot, -1)}
-                  onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, -10)}
-                  delayLongPress={400}
-                >
-                  <Text style={styles.cmdZoneSymbol}>−</Text>
-                </Pressable>
-
-                {/* RIGHT zone: + */}
-                <Pressable
-                  style={({ pressed }) => [styles.cmdZone, pressed && styles.cmdZoneActive]}
-                  onPress={() => adjustCmdDmg(victim, attackerIdx, slot, 1)}
-                  onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, 10)}
-                  delayLongPress={400}
-                >
-                  <Text style={styles.cmdZoneSymbol}>+</Text>
-                </Pressable>
-
-                {/* Damage number — centered absolute overlay */}
-                <View style={styles.cmdDmgOverlay} pointerEvents="none">
-                  <Text style={[styles.cmdDmgText, elim && styles.cmdDmgTextElim]}>{dmg}</Text>
-                  {elim && <Text style={styles.cmdElimLabel}>ELIMINATED</Text>}
-                </View>
-
-                {/* Attacker name — inner top badge */}
-                <View style={styles.cmdPlayerNameBadge} pointerEvents="none">
-                  <Text style={styles.cmdPlayerNameText}>{attacker.name}</Text>
-                </View>
-
-                {/* Cmd 1 / Cmd 2 toggle at inner bottom — only when attacker has a partner */}
-                {attacker.hasPartner && (
-                  <View style={styles.cmdSlotRow}>
-                    {([0, 1] as const).map(s => (
-                      <Pressable
-                        key={s}
-                        style={[styles.cmdSlotBtn, slot === s && styles.cmdSlotBtnOn]}
-                        onPress={() => {
-                          Haptics.selectionAsync();
-                          setActiveCmd(prev => ({ ...prev, [attackerIdx]: s }));
-                        }}
-                      >
-                        <Text style={[styles.cmdSlotBtnText, slot === s && styles.cmdSlotBtnTextOn]}>
-                          {s === 0 ? 'Cmd 1' : 'Cmd 2'}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-
-              </View>
-            );
-=======
     const panelAngle = getPlayerAngle(victim, victim === 0);
 
-    // Shared section renderer for self and each opponent.
     // isSelf=true: own-commander damage — never eliminates, never deducts life.
     const renderSection = (attackerIdx: number, isSelf: boolean) => {
       const slot = (activeCmd[attackerIdx] ?? 0) as 0 | 1;
@@ -367,7 +282,6 @@ export default function LifeCounterScreen() {
           )}
 
           <View style={styles.cmdCounterRow}>
-            {/* Buttons have no symbols — invisible tap areas like the main counter zones */}
             <Pressable
               style={styles.cmdCounterBtn}
               onPress={() => adjustCmdDmg(victim, attackerIdx, slot, -1, isSelf)}
@@ -392,16 +306,19 @@ export default function LifeCounterScreen() {
           <Text style={styles.cmdPanelTitle}>{players[victim].name}</Text>
           <Text style={styles.cmdPanelSub}>Commander Damage Received</Text>
 
-          {/* Self-commander row first — own damage is tracked but never eliminates */}
           {renderSection(victim, true)}
 
-          {/* One row per opponent */}
           {players.map((_, attackerIdx) => {
             if (attackerIdx === victim) return null;
             return renderSection(attackerIdx, false);
->>>>>>> unitTests
           })}
 
+          <Pressable
+            style={styles.cmdCloseBtn}
+            onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
+          >
+            <Text style={styles.cmdCloseBtnText}>Close</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -530,77 +447,57 @@ const styles = StyleSheet.create({
   },
   resetBtnText: { fontSize: 14, color: 'rgba(255,255,255,0.6)', fontWeight: '500' },
 
-  // ── Commander damage overlay ──────────────────────────────────────────────
+  // ── Commander damage overlay ──
   cmdOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(5,5,12,0.96)',
+    backgroundColor: 'rgba(5,5,12,0.92)',
+    justifyContent: 'center', alignItems: 'center',
     zIndex: 50,
   },
-<<<<<<< HEAD
-  // Full-area content pane; rotated as a unit to face the opening player
-  cmdContent: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    padding: 20, flexDirection: 'column', gap: GAP,
-=======
-  // Panel has its own strong border; rotated to match the opening player's orientation
   cmdPanel: {
     width: '76%',
     backgroundColor: '#181825',
     borderRadius: 20,
     borderWidth: 2, borderColor: '#5A5A8A',
     padding: 20,
->>>>>>> unitTests
   },
-  // Header mirrors the menu bar style; its reading-top position matches the player's orientation
-  cmdHeader: {
-    height: MENU_H,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    backgroundColor: '#0D0D18', borderRadius: 12,
+  cmdPanelTitle: { fontSize: 20, fontWeight: '600', color: '#FFFFFF', textAlign: 'center' },
+  cmdPanelSub: {
+    fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center',
+    marginTop: 2, marginBottom: 16, letterSpacing: 0.5,
   },
-  cmdHeaderTitle: { fontSize: 15, fontWeight: '600', color: 'rgba(255,255,255,0.75)' },
-  cmdCloseBtn: {
-    paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)',
+  cmdSection: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14, padding: 16,
   },
-  cmdCloseBtnText: { fontSize: 14, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
-
-  // Opponent counter box — looks like the main counterBox, same row zone layout
-  cmdPlayerBox: {
-    flex: 1,
-    backgroundColor: '#111118',
-    borderWidth: 2, borderColor: '#3C3C5C', borderRadius: 16,
-    overflow: 'hidden',
-    flexDirection: 'row',
+  cmdSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  cmdAttackerName: { fontSize: 15, fontWeight: '600', color: '#FFFFFF', flex: 1 },
+  cmdElimBadge: {
+    backgroundColor: 'rgba(224,85,85,0.2)', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 3,
   },
-  cmdZone: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  cmdZoneActive: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  cmdZoneSymbol: { fontSize: 60, color: 'rgba(255,255,255,0.28)', fontWeight: '100' },
-
-  cmdDmgOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  cmdDmgText: { fontSize: 80, fontWeight: '200', color: '#FFFFFF', includeFontPadding: false },
-  cmdDmgTextElim: { color: '#E05555' },
-  cmdElimLabel: { fontSize: 11, fontWeight: '600', color: '#E05555', letterSpacing: 1.5, marginTop: 4 },
-
-  cmdPlayerNameBadge: {
-    position: 'absolute', top: 14, left: 0, right: 0, alignItems: 'center',
-  },
-  cmdPlayerNameText: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
-
-  // Cmd 1 / Cmd 2 slot toggle at the inner bottom of the damage box
-  cmdSlotRow: {
-    position: 'absolute', bottom: 12, left: 16, right: 16,
-    flexDirection: 'row', gap: 8,
-  },
+  cmdElimBadgeText: { fontSize: 10, fontWeight: '700', color: '#E05555', letterSpacing: 1 },
+  cmdSlotRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   cmdSlotBtn: {
-    flex: 1, paddingVertical: 8,
+    flex: 1, paddingVertical: 7,
     borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)',
+    alignItems: 'center',
   },
   cmdSlotBtnOn: { backgroundColor: 'rgba(108,99,255,0.25)', borderColor: '#6C63FF' },
   cmdSlotBtnText: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
   cmdSlotBtnTextOn: { color: '#A09CF7', fontWeight: '700' },
+  cmdCounterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cmdCounterBtn: {
+    flex: 1, paddingVertical: 14, alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12,
+  },
+  cmdCounterVal: { width: 80, textAlign: 'center', fontSize: 44, fontWeight: '200', color: '#FFFFFF' },
+  cmdCounterValElim: { color: '#E05555' },
+  cmdCloseBtn: {
+    marginTop: 8, paddingVertical: 12,
+    borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center',
+  },
+  cmdCloseBtnText: { fontSize: 15, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
 });
