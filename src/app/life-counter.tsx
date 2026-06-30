@@ -2,52 +2,58 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
-  Alert, Animated, Pressable, ScrollView,
+  Alert, Animated, Pressable,
   StatusBar, StyleSheet, Text, TextInput, View,
 } from 'react-native';
+import { PlayerProfile } from '../data/groups';
 import { useApp } from '../context/AppContext';
 
 const LIFE_OPTIONS = [20, 25, 30, 40, 60];
+const PLAYER_COUNT_OPTIONS = [2, 3, 4, 5, 6];
 
 /**
- * Full-screen MTG life counter with commander damage, per-cell landscape rotation, and configurable starting life.
- * Group mode (groupId param): tracks rounds; pickup mode (playerNames param): ad-hoc session.
- * Setup modal on launch chooses starting life (20/25/30/40/60) and enables commander damage tracking.
- * Each cell has a "Rotate" button that flips its content -90° so life reads along the phone's long edge.
- * When rotated: − on left, + on right; player name always anchored to the physical top edge.
- * Commander damage defaults to one commander per attacker; a per-attacker button adds a second (partner).
- * Parameters: groupId (group mode) or playerNames (comma-separated list, pickup mode).
+ * Full-screen MTG life counter with always-on commander damage, per-cell landscape rotation, and configurable starting life.
+ * Group mode (groupId param): tracks rounds; pickup mode (pickup='true' or playerNames param): ad-hoc session.
+ * Setup modal on launch chooses player count (pickup mode only) and starting life (20/25/30/40/60).
+ * Cells default to landscape rotation so life totals read along the phone's long edge.
+ * Corner cells show a Rotate button; non-corner cells are fixed in landscape orientation.
+ * Commander damage is always tracked and subtracts from the victim's main life total.
+ * At 21 commander damage from any single commander the victim is eliminated regardless of remaining life.
+ * Each attacker can add a second (partner) commander tracked separately.
+ * Players can track their own commander dealing damage to themselves.
+ * Parameters: groupId (group mode), playerNames (comma-separated, named pickup mode), pickup='true' (anonymous pickup).
  * Returns: a full-screen life tracker; close button exits without recording a game.
- * Edge cases: empty player list returns null; long-press life total to enter a custom value.
+ * Edge cases: long-press life total to enter a custom value; setup reappears via the reset menu.
  */
 export default function LifeCounter() {
   const router = useRouter();
-  const { groupId, playerNames } = useLocalSearchParams<{ groupId?: string; playerNames?: string }>();
+  const { groupId, playerNames, pickup } = useLocalSearchParams<{
+    groupId?: string;
+    playerNames?: string;
+    pickup?: string;
+  }>();
   const { groups, setGroups, currentUser, awardPoints } = useApp();
 
-  const isPickup = !!playerNames && !groupId;
+  const isPickup = pickup === 'true' || (!!playerNames && !groupId);
+  const isPickupNoNames = isPickup && !playerNames;
   const group = !isPickup ? groups.find((g) => g.id === Number(groupId)) : undefined;
 
-  const pickupPlayerList = playerNames
+  const paramsPlayers: PlayerProfile[] = playerNames
     ? playerNames.split(',').map((name, idx) => ({
         id: idx, username: name.trim(), bracket: 2, location: '', role: 'Member',
       }))
-    : [];
-
-  const players = group?.players ?? pickupPlayerList;
+    : group?.players ?? [];
 
   // ── Setup ─────────────────────────────────────────────────────────────────
   const [showSetup, setShowSetup] = useState(true);
   const [startingLife, setStartingLife] = useState(40);
-  const [cmdMode, setCmdMode] = useState(false);
+  const [pickupCount, setPickupCount] = useState(4);
+
+  // Players fixed from params; for anonymous pickup generated on game start
+  const [players, setPlayers] = useState<PlayerProfile[]>(paramsPlayers);
 
   // ── Life totals ───────────────────────────────────────────────────────────
-  const [lifeTotals, setLifeTotals] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    players.forEach((p) => { init[p.username] = 40; });
-    return init;
-  });
-
+  const [lifeTotals, setLifeTotals] = useState<Record<string, number>>({});
   const [customLifeFor, setCustomLifeFor] = useState<string | null>(null);
   const [customLifeInput, setCustomLifeInput] = useState('');
 
@@ -56,29 +62,38 @@ export default function LifeCounter() {
   const [cmdPanelFor, setCmdPanelFor] = useState<string | null>(null);
   const [cmdSecondSlot, setCmdSecondSlot] = useState<Record<string, boolean>>({});
 
-  // ── Per-cell rotation ─────────────────────────────────────────────────────
+  // ── Per-cell rotation — default true so life reads along phone's long edge ─
   const [cellRotated, setCellRotated] = useState<Record<string, boolean>>({});
 
   // ── Winner picker ─────────────────────────────────────────────────────────
   const [showWinnerPicker, setShowWinnerPicker] = useState(false);
   const [pickerPhase, setPickerPhase] = useState<'winner' | 'celebrate'>('winner');
   const [roundWinner, setRoundWinner] = useState<string | null>(null);
+  const [firstPlayer, setFirstPlayer] = useState('');
 
   const celebScale = useRef(new Animated.Value(0)).current;
   const celebOpacity = useRef(new Animated.Value(0)).current;
 
-  const pickRandom = () =>
-    players.length > 0 ? players[Math.floor(Math.random() * players.length)].username : '';
-
-  const [firstPlayer, setFirstPlayer] = useState<string>(pickRandom);
-
-  if (players.length === 0) return null;
+  const pickRandom = (list: PlayerProfile[]) =>
+    list.length > 0 ? list[Math.floor(Math.random() * list.length)].username : '';
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const applyStartingLife = () => {
+    let finalPlayers = players;
+    if (isPickupNoNames) {
+      finalPlayers = Array.from({ length: pickupCount }, (_, i) => ({
+        id: i,
+        username: `Player ${i + 1}`,
+        bracket: 2,
+        location: '',
+        role: 'Member' as PlayerProfile['role'],
+      }));
+      setPlayers(finalPlayers);
+    }
+    if (!firstPlayer || isPickupNoNames) setFirstPlayer(pickRandom(finalPlayers));
     const init: Record<string, number> = {};
-    players.forEach((p) => { init[p.username] = startingLife; });
+    finalPlayers.forEach((p) => { init[p.username] = startingLife; });
     setLifeTotals(init);
     setShowSetup(false);
   };
@@ -104,22 +119,36 @@ export default function LifeCounter() {
 
   const adjustCmdDmg = (victim: string, attacker: string, slot: 0 | 1, delta: number) => {
     Haptics.selectionAsync();
+    // Compute clamped actual delta from current snapshot to avoid over-restoring life
+    const cur = cmdDmg[victim]?.[attacker] ?? [0, 0];
+    const prevVal = slot === 0 ? cur[0] : cur[1];
+    const newVal = Math.max(0, prevVal + delta);
+    const actualDelta = newVal - prevVal;
+    if (actualDelta === 0) return;
+
     setCmdDmg((prev) => {
       const victimMap = prev[victim] ?? {};
-      const cur = victimMap[attacker] ?? [0, 0];
-      const updated: [number, number] = [
-        slot === 0 ? Math.max(0, cur[0] + delta) : cur[0],
-        slot === 1 ? Math.max(0, cur[1] + delta) : cur[1],
-      ];
+      const c = victimMap[attacker] ?? [0, 0];
+      const updated: [number, number] = slot === 0
+        ? [Math.max(0, c[0] + delta), c[1]]
+        : [c[0], Math.max(0, c[1] + delta)];
       return { ...prev, [victim]: { ...victimMap, [attacker]: updated } };
     });
+    // Commander damage subtracts from main life total
+    setLifeTotals((prev) => ({ ...prev, [victim]: (prev[victim] ?? startingLife) - actualDelta }));
   };
 
-  const getCmdDmgTotal = (victim: string): number =>
-    players.filter((p) => p.username !== victim).reduce((sum, p) => {
-      const pair = cmdDmg[victim]?.[p.username] ?? [0, 0];
+  const getCmdDmgTotal = (username: string): number =>
+    players.reduce((sum, p) => {
+      const pair = cmdDmg[username]?.[p.username] ?? [0, 0];
       return sum + pair[0] + pair[1];
     }, 0);
+
+  const isCmdEliminated = (username: string): boolean =>
+    players.some((p) => {
+      const pair = cmdDmg[username]?.[p.username] ?? [0, 0];
+      return pair[0] >= 21 || pair[1] >= 21;
+    });
 
   const handleReset = () => {
     Alert.alert('Reset Life Counters', 'Choose how to reset:', [
@@ -144,10 +173,7 @@ export default function LifeCounter() {
           setCmdDmg((prev) => { const n = { ...prev }; delete n[me]; return n; });
         },
       },
-      {
-        text: 'Change Starting Life',
-        onPress: () => setShowSetup(true),
-      },
+      { text: 'Change Starting Life', onPress: () => setShowSetup(true) },
     ]);
   };
 
@@ -188,7 +214,7 @@ export default function LifeCounter() {
   };
 
   const handlePlayAgain = () => {
-    setFirstPlayer(pickRandom());
+    setFirstPlayer(pickRandom(players));
     const reset: Record<string, number> = {};
     players.forEach((p) => { reset[p.username] = startingLife; });
     setLifeTotals(reset);
@@ -202,17 +228,19 @@ export default function LifeCounter() {
     router.replace({ pathname: '/(tabs)/browse', params: { openCreate: '1' } });
   };
 
-  // ── Render cell ───────────────────────────────────────────────────────────
-
+  // ── Grid layout ───────────────────────────────────────────────────────────
   const topPlayers = players.slice(0, Math.floor(players.length / 2));
   const bottomPlayers = players.slice(Math.floor(players.length / 2));
 
-  const renderCell = (username: string, isTopRow: boolean) => {
+  // ── Render main life-counter cell ─────────────────────────────────────────
+
+  const renderCell = (username: string, isTopRow: boolean, isCorner: boolean) => {
     const life = lifeTotals[username] ?? startingLife;
     const isFirst = username === firstPlayer;
-    const isDead = life <= 0;
-    const isCellRotated = cellRotated[username] ?? false;
-    const cmdDmgTotal = getCmdDmgTotal(username);
+    const isDead = life <= 0 || isCmdEliminated(username);
+    // Default to rotated (landscape) so life reads along the phone's long edge
+    const isCellRotated = cellRotated[username] ?? true;
+    const cmdTotal = getCmdDmgTotal(username);
 
     return (
       <View
@@ -223,12 +251,11 @@ export default function LifeCounter() {
           isTopRow && !isCellRotated && styles.cellFlipped,
         ]}
       >
-        {/* Player name — always anchored to physical top of the cell */}
+        {/* Player name — always anchored to physical top of cell */}
         <View style={styles.nameBar} pointerEvents="none">
           <Text style={styles.playerName} numberOfLines={1}>{username}</Text>
         </View>
 
-        {/* +/- halves */}
         {isCellRotated ? (
           /* Landscape: − left, + right */
           <View style={styles.halfRow}>
@@ -271,13 +298,9 @@ export default function LifeCounter() {
           </View>
         )}
 
-        {/* Life total + badges — centred, rotated -90° when in landscape mode */}
+        {/* Life total + badges */}
         <View style={styles.cellCenter} pointerEvents="box-none">
-          <Pressable
-            onLongPress={() => openCustomLife(username)}
-            delayLongPress={600}
-            hitSlop={16}
-          >
+          <Pressable onLongPress={() => openCustomLife(username)} delayLongPress={600} hitSlop={16}>
             <Text style={[
               styles.lifeTotal,
               isDead && styles.lifeDead,
@@ -291,37 +314,174 @@ export default function LifeCounter() {
               <Text style={styles.firstBadgeText}>GOES FIRST</Text>
             </View>
           )}
-          {cmdMode && cmdDmgTotal > 0 && (
+          {cmdTotal > 0 && (
             <Text style={[styles.cmdDmgBadgeText, isCellRotated && { transform: [{ rotate: '-90deg' }] }]}>
-              ⚔️ {cmdDmgTotal}
+              ⚔️ {cmdTotal}
             </Text>
           )}
         </View>
 
-        {/* Rotate button — top right, always */}
-        <Pressable
-          style={styles.rotateCellBtn}
-          onPress={() => { Haptics.selectionAsync(); setCellRotated((prev) => ({ ...prev, [username]: !prev[username] })); }}
-        >
-          <Text style={styles.rotateCellText}>Rotate</Text>
-        </Pressable>
-
-        {/* Commander damage button — mini life counter widget */}
-        {cmdMode && (
+        {/* Rotate button — corner cells only, top right */}
+        {isCorner && (
           <Pressable
-            style={styles.cmdBtn}
-            onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(username); }}
+            style={styles.rotateCellBtn}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setCellRotated((prev) => ({ ...prev, [username]: !(prev[username] ?? true) }));
+            }}
           >
-            <View style={styles.cmdBtnMini}>
-              <Text style={styles.cmdBtnMiniLife}>{life}</Text>
-              <View style={styles.cmdBtnMiniLine} />
-              <Text style={styles.cmdBtnMiniSword}>⚔️</Text>
-            </View>
+            <Text style={styles.rotateCellText}>Rotate</Text>
           </Pressable>
         )}
+
+        {/* Commander damage widget — always visible, centered at bottom */}
+        <View style={styles.cmdBtnContainer}>
+          <Pressable
+            style={styles.cmdBtnMini}
+            onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(username); }}
+          >
+            <Text style={styles.cmdBtnMiniSword}>⚔️</Text>
+            <View style={styles.cmdBtnMiniLine} />
+            <Text style={styles.cmdBtnMiniLife}>{cmdTotal > 0 ? cmdTotal : '—'}</Text>
+          </Pressable>
+        </View>
       </View>
     );
   };
+
+  // ── Render commander damage panel ─────────────────────────────────────────
+
+  const renderCmdPanel = () => {
+    if (!cmdPanelFor) return null;
+
+    // All players can deal commander damage — including self
+    const attackers = players;
+    const topAttackers = attackers.slice(0, Math.ceil(attackers.length / 2));
+    const bottomAttackers = attackers.slice(Math.ceil(attackers.length / 2));
+
+    const renderCmdCell = (attacker: PlayerProfile, isCornerCell: boolean) => {
+      const pair = cmdDmg[cmdPanelFor]?.[attacker.username] ?? [0, 0];
+      const isSelf = attacker.username === cmdPanelFor;
+      const cmd1Dead = pair[0] >= 21;
+      const cmd2Dead = pair[1] >= 21;
+      const eliminated = cmd1Dead || cmd2Dead;
+      const hasSecond = cmdSecondSlot[attacker.username] ?? false;
+
+      return (
+        <View key={attacker.username} style={[styles.cell, eliminated && styles.cellElim]}>
+          {/* Attacker name */}
+          <View style={styles.nameBar} pointerEvents="none">
+            <Text style={[styles.playerName, isSelf && styles.selfLabel]} numberOfLines={1}>
+              {isSelf ? 'SELF' : attacker.username}
+            </Text>
+          </View>
+
+          {/* Commander 1 — landscape: − left, + right */}
+          <View style={hasSecond ? styles.cmdTopHalf : styles.halfRow}>
+            <Pressable
+              style={({ pressed }) => [styles.halfBtn, styles.halfLandMinus, { opacity: pressed ? 0.85 : 0.4 }]}
+              onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 0, -1)}
+              onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustCmdDmg(cmdPanelFor, attacker.username, 0, -5); }}
+              delayLongPress={400}
+            >
+              <Text style={styles.halfLabel}>−</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.halfBtn, styles.halfLandPlus, { opacity: pressed ? 0.85 : 0.4 }]}
+              onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 0, +1)}
+              onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustCmdDmg(cmdPanelFor, attacker.username, 0, +5); }}
+              delayLongPress={400}
+            >
+              <Text style={styles.halfLabel}>+</Text>
+            </Pressable>
+          </View>
+
+          {/* Commander 1 value */}
+          <View style={[styles.cellCenter, hasSecond && styles.cmdCenterTop]} pointerEvents="none">
+            <Text style={[styles.lifeTotal, styles.lifeTotalLandscape, cmd1Dead && styles.lifeDead]}>
+              {pair[0]}
+            </Text>
+            <Text style={styles.cmdSlotLabel}>CMD 1</Text>
+            {cmd1Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
+          </View>
+
+          {/* Commander 2 section */}
+          {hasSecond ? (
+            <>
+              <View style={styles.cmd2Divider} />
+              <View style={styles.cmdBottomHalf}>
+                <Pressable
+                  style={({ pressed }) => [styles.halfBtn, styles.halfLandMinus, { opacity: pressed ? 0.85 : 0.4 }]}
+                  onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 1, -1)}
+                  onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustCmdDmg(cmdPanelFor, attacker.username, 1, -5); }}
+                  delayLongPress={400}
+                >
+                  <Text style={styles.halfLabel}>−</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.halfBtn, styles.halfLandPlus, { opacity: pressed ? 0.85 : 0.4 }]}
+                  onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 1, +1)}
+                  onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); adjustCmdDmg(cmdPanelFor, attacker.username, 1, +5); }}
+                  delayLongPress={400}
+                >
+                  <Text style={styles.halfLabel}>+</Text>
+                </Pressable>
+              </View>
+              <View style={styles.cmdCenterBottom} pointerEvents="none">
+                <Text style={[styles.cmdCmd2Val, cmd2Dead && styles.lifeDead]}>{pair[1]}</Text>
+                <Text style={styles.cmdSlotLabel}>CMD 2</Text>
+                {cmd2Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
+              </View>
+            </>
+          ) : (
+            isCornerCell && (
+              <Pressable
+                style={styles.addPartnerBtn}
+                onPress={() => { Haptics.selectionAsync(); setCmdSecondSlot((prev) => ({ ...prev, [attacker.username]: true })); }}
+              >
+                <Text style={styles.addPartnerBtnText}>＋ Partner</Text>
+              </Pressable>
+            )
+          )}
+        </View>
+      );
+    };
+
+    return (
+      <View style={styles.cmdPanelOverlay}>
+        <StatusBar hidden />
+        {/* Header */}
+        <View style={styles.cmdPanelHeader}>
+          <Text style={styles.cmdPanelTitle}>⚔️ Cmd Damage → {cmdPanelFor}</Text>
+          <Pressable
+            style={styles.dividerBtn}
+            onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
+          >
+            <Text style={styles.dividerBtnText}>✕</Text>
+          </Pressable>
+        </View>
+        {/* Grid mirrors main life counter layout */}
+        <View style={{ flex: 1 }}>
+          {topAttackers.length > 0 && (
+            <View style={styles.row}>
+              {topAttackers.map((a, i) =>
+                renderCmdCell(a, i === 0 || i === topAttackers.length - 1)
+              )}
+            </View>
+          )}
+          {bottomAttackers.length > 0 && (
+            <View style={styles.row}>
+              {bottomAttackers.map((a, i) =>
+                renderCmdCell(a, i === 0 || i === bottomAttackers.length - 1)
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  // ── Main render ───────────────────────────────────────────────────────────
 
   return (
     <View style={styles.container}>
@@ -332,6 +492,26 @@ export default function LifeCounter() {
         <View style={styles.overlay}>
           <View style={styles.setupCard}>
             <Text style={styles.setupTitle}>Game Setup</Text>
+
+            {/* Player count selector — only for anonymous pickup */}
+            {isPickupNoNames && (
+              <>
+                <Text style={styles.setupLabel}>Number of Players</Text>
+                <View style={styles.lifeOptionRow}>
+                  {PLAYER_COUNT_OPTIONS.map((n) => (
+                    <Pressable
+                      key={n}
+                      style={[styles.lifeOptionBtn, pickupCount === n && styles.lifeOptionBtnActive]}
+                      onPress={() => { Haptics.selectionAsync(); setPickupCount(n); }}
+                    >
+                      <Text style={[styles.lifeOptionText, pickupCount === n && styles.lifeOptionTextActive]}>
+                        {n}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
 
             <Text style={styles.setupLabel}>Starting Life Total</Text>
             <View style={styles.lifeOptionRow}>
@@ -348,22 +528,11 @@ export default function LifeCounter() {
               ))}
             </View>
 
-            <Pressable
-              style={styles.cmdToggleRow}
-              onPress={() => { Haptics.selectionAsync(); setCmdMode((v) => !v); }}
-            >
-              <View style={[styles.cmdToggle, cmdMode && styles.cmdToggleOn]}>
-                <View style={[styles.cmdToggleThumb, cmdMode && styles.cmdToggleThumbOn]} />
-              </View>
-              <View style={styles.cmdToggleInfo}>
-                <Text style={styles.cmdToggleLabel}>Commander Damage Tracking</Text>
-                <Text style={styles.cmdToggleHint}>21 from one commander = eliminated</Text>
-              </View>
-            </Pressable>
-
-            <Pressable style={styles.setupStartBtn} onPress={applyStartingLife}>
-              <Text style={styles.setupStartBtnText}>Start Game →</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row' }}>
+              <Pressable style={styles.setupStartBtn} onPress={applyStartingLife}>
+                <Text style={styles.setupStartBtnText}>Start Game →</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       )}
@@ -386,7 +555,7 @@ export default function LifeCounter() {
               <Pressable style={styles.customLifeCancel} onPress={() => setCustomLifeFor(null)}>
                 <Text style={styles.customLifeCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.setupStartBtn} onPress={confirmCustomLife}>
+              <Pressable style={[styles.setupStartBtn, { flex: 1 }]} onPress={confirmCustomLife}>
                 <Text style={styles.setupStartBtnText}>Set</Text>
               </Pressable>
             </View>
@@ -395,86 +564,7 @@ export default function LifeCounter() {
       )}
 
       {/* ── Commander damage panel ── */}
-      {cmdPanelFor && (
-        <View style={styles.overlay}>
-          <View style={styles.setupCard}>
-            <Text style={styles.setupTitle}>⚔️ Commander Damage</Text>
-            <Text style={styles.setupLabel}>{cmdPanelFor} received from:</Text>
-            <ScrollView style={styles.cmdScroll} showsVerticalScrollIndicator={false}>
-              {players.filter((p) => p.username !== cmdPanelFor).map((attacker) => {
-                const pair = cmdDmg[cmdPanelFor]?.[attacker.username] ?? [0, 0];
-                const cmd1Dead = pair[0] >= 21;
-                const cmd2Dead = pair[1] >= 21;
-                const hasSecond = cmdSecondSlot[attacker.username] ?? false;
-                const eliminated = cmd1Dead || cmd2Dead;
-                return (
-                  <View
-                    key={attacker.username}
-                    style={[styles.cmdAttackerRow, eliminated && styles.cmdAttackerElim]}
-                  >
-                    <Text style={[styles.cmdAttackerName, eliminated && styles.cmdAttackerNameElim]}>
-                      {attacker.username}{eliminated ? '  ☠️' : ''}
-                    </Text>
-
-                    {/* Commander 1 — always shown */}
-                    <View style={styles.cmdSlotBlock}>
-                      <Text style={styles.cmdSlotLabel}>Commander 1</Text>
-                      <View style={styles.cmdSlotRow}>
-                        <Pressable style={styles.cmdAdjBtn}
-                          onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 0, -1)}>
-                          <Text style={styles.cmdAdjBtnText}>−</Text>
-                        </Pressable>
-                        <Text style={[styles.cmdSlotVal, cmd1Dead && styles.cmdSlotValDead]}>
-                          {pair[0]}
-                        </Text>
-                        <Pressable style={styles.cmdAdjBtn}
-                          onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 0, +1)}>
-                          <Text style={styles.cmdAdjBtnText}>+</Text>
-                        </Pressable>
-                        {cmd1Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
-                      </View>
-                    </View>
-
-                    {/* Commander 2 — shown only after tapping Add Partner */}
-                    {hasSecond ? (
-                      <View style={styles.cmdSlotBlock}>
-                        <Text style={styles.cmdSlotLabel}>Commander 2 (Partner)</Text>
-                        <View style={styles.cmdSlotRow}>
-                          <Pressable style={styles.cmdAdjBtn}
-                            onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 1, -1)}>
-                            <Text style={styles.cmdAdjBtnText}>−</Text>
-                          </Pressable>
-                          <Text style={[styles.cmdSlotVal, cmd2Dead && styles.cmdSlotValDead]}>
-                            {pair[1]}
-                          </Text>
-                          <Pressable style={styles.cmdAdjBtn}
-                            onPress={() => adjustCmdDmg(cmdPanelFor, attacker.username, 1, +1)}>
-                            <Text style={styles.cmdAdjBtnText}>+</Text>
-                          </Pressable>
-                          {cmd2Dead && <Text style={styles.cmdDeadLabel}>ELIM</Text>}
-                        </View>
-                      </View>
-                    ) : (
-                      <Pressable
-                        style={styles.addPartnerBtn}
-                        onPress={() => {
-                          Haptics.selectionAsync();
-                          setCmdSecondSlot((prev) => ({ ...prev, [attacker.username]: true }));
-                        }}
-                      >
-                        <Text style={styles.addPartnerBtnText}>＋ Add Partner Commander</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                );
-              })}
-            </ScrollView>
-            <Pressable style={styles.setupStartBtn} onPress={() => setCmdPanelFor(null)}>
-              <Text style={styles.setupStartBtnText}>Done</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
+      {renderCmdPanel()}
 
       {/* ── Winner picker / celebration ── */}
       {showWinnerPicker && (
@@ -526,7 +616,7 @@ export default function LifeCounter() {
                     <Pressable style={styles.customLifeCancel} onPress={handlePickupDone}>
                       <Text style={styles.customLifeCancelText}>Done</Text>
                     </Pressable>
-                    <Pressable style={styles.setupStartBtn} onPress={handlePlayAgain}>
+                    <Pressable style={[styles.setupStartBtn, { flex: 1 }]} onPress={handlePlayAgain}>
                       <Text style={styles.setupStartBtnText}>▶ Play Again</Text>
                     </Pressable>
                   </View>
@@ -539,7 +629,7 @@ export default function LifeCounter() {
                   <Pressable style={styles.customLifeCancel} onPress={handleEndSession}>
                     <Text style={styles.customLifeCancelText}>End Session</Text>
                   </Pressable>
-                  <Pressable style={styles.setupStartBtn} onPress={handlePlayAnotherRound}>
+                  <Pressable style={[styles.setupStartBtn, { flex: 1 }]} onPress={handlePlayAnotherRound}>
                     <Text style={styles.setupStartBtnText}>▶ Another Round</Text>
                   </Pressable>
                 </View>
@@ -552,7 +642,9 @@ export default function LifeCounter() {
       {/* ── Life counter grid ── */}
       {topPlayers.length > 0 && (
         <View style={styles.row}>
-          {topPlayers.map((p) => renderCell(p.username, true))}
+          {topPlayers.map((p, i) =>
+            renderCell(p.username, true, i === 0 || i === topPlayers.length - 1)
+          )}
         </View>
       )}
 
@@ -573,7 +665,9 @@ export default function LifeCounter() {
       </View>
 
       <View style={[styles.row, topPlayers.length === 0 && styles.rowFull]}>
-        {bottomPlayers.map((p) => renderCell(p.username, false))}
+        {bottomPlayers.map((p, i) =>
+          renderCell(p.username, false, i === 0 || i === bottomPlayers.length - 1)
+        )}
       </View>
     </View>
   );
@@ -588,6 +682,7 @@ const styles = StyleSheet.create({
   cell: { flex: 1, position: 'relative', borderWidth: 0.5, borderColor: '#1E1E2A', overflow: 'hidden' },
   cellFlipped: { transform: [{ rotate: '180deg' }] },
   cellFirst: { borderColor: '#FFD700', borderWidth: 1.5 },
+  cellElim: { borderColor: '#FF3B30', borderWidth: 1.5 },
 
   /* Player name bar — absolute, always at physical top of cell */
   nameBar: {
@@ -595,6 +690,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', paddingTop: 6, paddingHorizontal: 40,
   },
   playerName: { fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.5 },
+  selfLabel: { color: '#FFD700' },
 
   /* +/- half buttons */
   halfCol: { flex: 1, flexDirection: 'column' },
@@ -618,7 +714,7 @@ const styles = StyleSheet.create({
   firstBadgeText: { fontSize: 10, fontWeight: '900', color: '#000', letterSpacing: 1.5 },
   cmdDmgBadgeText: { fontSize: 12, color: '#FF9090', fontWeight: '700' },
 
-  /* Rotate button */
+  /* Rotate button — corner cells only, top right */
   rotateCellBtn: {
     position: 'absolute', top: 4, right: 4, zIndex: 10,
     backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 8,
@@ -627,19 +723,57 @@ const styles = StyleSheet.create({
   },
   rotateCellText: { fontSize: 10, fontWeight: '700', color: '#AAA', letterSpacing: 0.5 },
 
-  /* Commander damage button — mini life counter widget */
-  cmdBtn: {
-    position: 'absolute', bottom: 8, left: 8, zIndex: 10,
+  /* Commander damage trigger widget — always visible, centered at bottom */
+  cmdBtnContainer: {
+    position: 'absolute', bottom: 8, left: 0, right: 0,
+    alignItems: 'center', zIndex: 10,
   },
   cmdBtnMini: {
-    width: 46, height: 58, backgroundColor: '#0A0A12',
+    width: 46, height: 54, backgroundColor: '#0A0A12',
     borderRadius: 8, borderWidth: 1.5, borderColor: '#8B3A3A',
     alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
-  cmdBtnMiniLife: { fontSize: 14, fontWeight: '900', color: '#FFF', lineHeight: 16 },
-  cmdBtnMiniLine: { width: '80%', height: 1, backgroundColor: '#8B3A3A', marginVertical: 4 },
+  cmdBtnMiniLife: { fontSize: 12, fontWeight: '900', color: '#FF9090', lineHeight: 14 },
+  cmdBtnMiniLine: { width: '80%', height: 1, backgroundColor: '#8B3A3A', marginVertical: 3 },
   cmdBtnMiniSword: { fontSize: 14, lineHeight: 16 },
+
+  /* Commander damage panel full-screen overlay */
+  cmdPanelOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#0A0A0F', zIndex: 99,
+  },
+  cmdPanelHeader: {
+    height: 60, backgroundColor: '#050508', flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 0.5, borderColor: '#1E1E2A',
+  },
+  cmdPanelTitle: { fontSize: 16, fontWeight: '800', color: '#FF9090' },
+
+  /* Commander panel cell split for cmd2 */
+  cmdTopHalf: { flex: 0.55, flexDirection: 'row' },
+  cmdBottomHalf: { flex: 0.35, flexDirection: 'row' },
+  cmd2Divider: { height: 1, backgroundColor: '#8B3A3A', marginHorizontal: 0 },
+  cmdCenterTop: { bottom: '45%' },
+  cmdCenterBottom: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    height: '35%', alignItems: 'center', justifyContent: 'center', gap: 2,
+  },
+  cmdCmd2Val: { fontSize: 36, fontWeight: '900', color: '#FFF', transform: [{ rotate: '-90deg' }] },
+  cmdSlotLabel: { fontSize: 9, color: '#666', fontWeight: '700', letterSpacing: 1 },
+  cmdDeadLabel: {
+    fontSize: 9, fontWeight: '800', color: '#FF3B30', backgroundColor: '#3A0808',
+    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, letterSpacing: 1,
+  },
+
+  /* Partner button — shown in corner cells without cmd2 */
+  addPartnerBtn: {
+    position: 'absolute', bottom: 8, right: 8, zIndex: 10,
+    borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10,
+    borderWidth: 1, borderColor: '#3C2C4C', backgroundColor: '#180A28',
+  },
+  addPartnerBtnText: { fontSize: 10, color: '#9B7FBF', fontWeight: '700' },
 
   /* Centre divider bar */
   divider: {
@@ -665,7 +799,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', zIndex: 99,
   },
 
-  /* Setup card — reused for setup, custom life, commander panel, winner picker */
+  /* Setup card — reused for setup, custom life, winner picker */
   setupCard: {
     backgroundColor: '#1C1C24', borderRadius: 24, padding: 24,
     width: '90%', borderWidth: 1, borderColor: '#2C2C3C',
@@ -686,20 +820,9 @@ const styles = StyleSheet.create({
   lifeOptionText: { fontSize: 18, fontWeight: '800', color: '#555' },
   lifeOptionTextActive: { color: '#34C759' },
 
-  cmdToggleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20,
-    padding: 14, backgroundColor: '#111118', borderRadius: 14, borderWidth: 1, borderColor: '#2C2C3C',
-  },
-  cmdToggle: { width: 48, height: 28, borderRadius: 14, backgroundColor: '#2C2C3C', justifyContent: 'center', paddingHorizontal: 3 },
-  cmdToggleOn: { backgroundColor: '#34C759' },
-  cmdToggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF' },
-  cmdToggleThumbOn: { transform: [{ translateX: 20 }] },
-  cmdToggleInfo: { flex: 1 },
-  cmdToggleLabel: { fontSize: 14, fontWeight: '700', color: '#FFF', marginBottom: 2 },
-  cmdToggleHint: { fontSize: 12, color: '#888' },
-
-  setupStartBtn: { backgroundColor: '#34C759', borderRadius: 14, paddingVertical: 16, alignItems: 'center', flex: 1 },
-  setupStartBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  /* Start button — black text on green for clear visibility */
+  setupStartBtn: { backgroundColor: '#34C759', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  setupStartBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
 
   /* Custom life input */
   customLifeInput: {
@@ -713,36 +836,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#2C2C38',
   },
   customLifeCancelText: { color: '#888', fontWeight: '700', fontSize: 16 },
-
-  /* Commander damage panel */
-  cmdScroll: { maxHeight: 320, marginBottom: 14 },
-  cmdAttackerRow: {
-    backgroundColor: '#111118', borderRadius: 14, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: '#2C2C3C',
-  },
-  cmdAttackerElim: { borderColor: '#FF3B30', backgroundColor: '#1F0808' },
-  cmdAttackerName: { fontSize: 14, fontWeight: '700', color: '#FFF', marginBottom: 12 },
-  cmdAttackerNameElim: { color: '#FF3B30' },
-  cmdSlotBlock: { marginBottom: 10 },
-  cmdSlotLabel: { fontSize: 10, color: '#666', fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
-  cmdSlotRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cmdAdjBtn: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: '#2C2C3C',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cmdAdjBtnText: { fontSize: 20, color: '#FFF', fontWeight: '200' },
-  cmdSlotVal: { fontSize: 26, fontWeight: '900', color: '#FFF', minWidth: 40, textAlign: 'center' },
-  cmdSlotValDead: { color: '#FF3B30' },
-  cmdDeadLabel: {
-    fontSize: 9, fontWeight: '800', color: '#FF3B30', backgroundColor: '#3A0808',
-    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, letterSpacing: 1,
-  },
-  addPartnerBtn: {
-    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#3C2C4C', backgroundColor: '#180A28',
-    alignItems: 'center',
-  },
-  addPartnerBtnText: { fontSize: 12, color: '#9B7FBF', fontWeight: '700' },
 
   /* Winner picker */
   celebEmoji: { fontSize: 48, textAlign: 'center', marginBottom: 8 },
