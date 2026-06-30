@@ -70,12 +70,6 @@ export default function LifeCounterScreen() {
         } as const)
       : ({ flex: 1 } as const);
 
-  // After a CW 90° rotation the inner's left edge becomes the visual top and
-  // the inner's top edge becomes the visual right. So the Rotate button must
-  // sit at top/left of the inner in landscape to appear at visual top-right.
-  const rotateBtnEdge = isLandscape
-    ? styles.rotateBtnLandscape
-    : styles.rotateBtnPortrait;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -112,10 +106,12 @@ export default function LifeCounterScreen() {
               <Text style={styles.lifeText}>{life}</Text>
             </View>
 
-            {/* Rotate button — inside inner so label rotates with content;
-                position swaps between portrait and landscape to stay at visual top-right */}
+            {/* Rotate button — inside inner so it rotates with content.
+                top/right stays fixed in inner coords; the CW rotation carries
+                it to the physical bottom-right, which is top-right from the
+                reading perspective of the rotated counter. */}
             <Pressable
-              style={[styles.rotateBtn, rotateBtnEdge]}
+              style={styles.rotateBtn}
               onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
             >
               <Text style={styles.rotateBtnText}>Rotate</Text>
@@ -188,6 +184,8 @@ const styles = StyleSheet.create({
   },
   rotateBtn: {
     position: 'absolute',
+    top: 12,
+    right: 12,
     zIndex: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -195,14 +193,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  rotateBtnPortrait: {
-    top: 12,
-    right: 12,
-  },
-  rotateBtnLandscape: {
-    top: 12,
-    left: 12,
   },
   rotateBtnText: {
     fontSize: 14,
