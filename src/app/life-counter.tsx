@@ -1,47 +1,63 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 /**
  * Full-screen single life counter with portrait/landscape toggle.
- * All interactive elements (life total, +/− zones) live inside one rotating
- * inner container. The back and rotate controls sit outside the inner as
- * fixed overlays so they remain accessible regardless of rotation state.
- * SafeAreaView with edges={['top']} ensures the status bar / notch area is
- * never covered by the canvas.
+ * All content — life total, +/− zones, and Rotate button — lives inside one
+ * inner View so that everything rotates together as a unit when Rotate is tapped.
+ * The Rotate button is dynamically repositioned within the inner so that it
+ * always appears at the visual top-right regardless of rotation state:
+ *   portrait  → inner position top/right  (naturally top-right)
+ *   landscape → inner position top/left   (after 90° CW, inner-left becomes
+ *               the visual top and inner-top becomes the visual right)
+ * The back button lives outside the inner and stays pinned at the canvas top-left.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
- * Edge cases: life total is unbounded; tapping rotate while canvas dimensions
- * are still 0 is safe — landscape mode defers until onLayout fires.
+ * Edge cases: life total is unbounded; holding a zone fires +10/−10 continuously
+ * at 150 ms intervals; the interval is always cleared on PressOut.
  */
 export default function LifeCounterScreen() {
   const router = useRouter();
   const [life, setLife] = useState(40);
   const [isLandscape, setIsLandscape] = useState(false);
   const [canvas, setCanvas] = useState({ w: 0, h: 0 });
+  const holdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const onCanvasLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setCanvas({ w: width, h: height });
   };
 
-  const bump = (delta: number) => {
-    Haptics.impactAsync(
-      Math.abs(delta) >= 10
-        ? Haptics.ImpactFeedbackStyle.Medium
-        : Haptics.ImpactFeedbackStyle.Light,
-    );
+  const tap = (delta: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLife(prev => prev + delta);
+  };
+
+  const startHold = (delta: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLife(prev => prev + delta);
+    holdInterval.current = setInterval(
+      () => setLife(prev => prev + delta),
+      150,
+    );
+  };
+
+  const stopHold = () => {
+    if (holdInterval.current !== null) {
+      clearInterval(holdInterval.current);
+      holdInterval.current = null;
+    }
   };
 
   const { w, h } = canvas;
 
   // Portrait: inner fills canvas via flex.
-  // Landscape: inner is h×w in natural space; after 90° CW rotation its visual
-  // footprint becomes w×h, filling the canvas exactly.
-  // The offset keeps the inner's centre on the canvas centre.
+  // Landscape: inner natural size is h×w. After 90° CW rotation its visual
+  // footprint becomes w×h, exactly filling the canvas.
+  // Offset centres the inner on the canvas centre point.
   const innerStyle =
     isLandscape && w > 0
       ? ({
@@ -54,19 +70,28 @@ export default function LifeCounterScreen() {
         } as const)
       : ({ flex: 1 } as const);
 
+  // After a CW 90° rotation the inner's left edge becomes the visual top and
+  // the inner's top edge becomes the visual right. So the Rotate button must
+  // sit at top/left of the inner in landscape to appear at visual top-right.
+  const rotateBtnEdge = isLandscape
+    ? styles.rotateBtnLandscape
+    : styles.rotateBtnPortrait;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.screen}>
         <View style={styles.canvas} onLayout={onCanvasLayout}>
 
-          {/* ── Rotating inner: life total + zone taps rotate together ── */}
+          {/* ── Rotating inner: all content rotates as one unit ── */}
           <View style={[styles.inner, innerStyle]}>
 
             {/* Plus zone — top in portrait, right after CW rotation */}
             <Pressable
               style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-              onPress={() => bump(1)}
-              onLongPress={() => bump(10)}
+              onPress={() => tap(1)}
+              onLongPress={() => startHold(10)}
+              onPressOut={stopHold}
+              delayLongPress={400}
             >
               <Text style={styles.zoneSymbol}>+</Text>
             </Pressable>
@@ -74,34 +99,37 @@ export default function LifeCounterScreen() {
             {/* Minus zone — bottom in portrait, left after CW rotation */}
             <Pressable
               style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-              onPress={() => bump(-1)}
-              onLongPress={() => bump(-10)}
+              onPress={() => tap(-1)}
+              onLongPress={() => startHold(-10)}
+              onPressOut={stopHold}
+              delayLongPress={400}
             >
               <Text style={styles.zoneSymbol}>−</Text>
             </Pressable>
 
-            {/* Life total centred over both zones; pointerEvents="none" lets taps through */}
+            {/* Life total centred over both zones; pointer-events disabled so taps fall through */}
             <View style={styles.lifeOverlay} pointerEvents="none">
               <Text style={styles.lifeText}>{life}</Text>
             </View>
 
+            {/* Rotate button — inside inner so label rotates with content;
+                position swaps between portrait and landscape to stay at visual top-right */}
+            <Pressable
+              style={[styles.rotateBtn, rotateBtnEdge]}
+              onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
+            >
+              <Text style={styles.rotateBtnText}>Rotate</Text>
+            </Pressable>
+
           </View>
           {/* ── end rotating inner ── */}
 
-          {/* Back — fixed top-left, never rotates */}
+          {/* Back — outside inner, always fixed at canvas top-left */}
           <Pressable
-            style={[styles.fixedBtn, styles.fixedBtnLeft]}
+            style={styles.backBtn}
             onPress={() => { Haptics.selectionAsync(); router.back(); }}
           >
-            <Text style={styles.fixedBtnText}>‹</Text>
-          </Pressable>
-
-          {/* Rotate — fixed top-right, never rotates */}
-          <Pressable
-            style={[styles.fixedBtn, styles.fixedBtnRight]}
-            onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
-          >
-            <Text style={styles.fixedBtnText}>Rotate</Text>
+            <Text style={styles.backBtnText}>‹</Text>
           </Pressable>
 
         </View>
@@ -158,9 +186,33 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     includeFontPadding: false,
   },
-  fixedBtn: {
+  rotateBtn: {
+    position: 'absolute',
+    zIndex: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rotateBtnPortrait: {
+    top: 12,
+    right: 12,
+  },
+  rotateBtnLandscape: {
+    top: 12,
+    left: 12,
+  },
+  rotateBtnText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '500',
+  },
+  backBtn: {
     position: 'absolute',
     top: 12,
+    left: 12,
     zIndex: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -169,13 +221,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fixedBtnLeft: {
-    left: 12,
-  },
-  fixedBtnRight: {
-    right: 12,
-  },
-  fixedBtnText: {
+  backBtnText: {
     fontSize: 16,
     color: 'rgba(255,255,255,0.55)',
     fontWeight: '500',
