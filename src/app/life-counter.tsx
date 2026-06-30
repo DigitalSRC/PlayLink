@@ -2,19 +2,19 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 /**
  * Full-screen single life counter with portrait/landscape toggle.
- * All interactive elements live inside one rotating inner container so that
- * pressing ↻ rotates the life total, +/− symbols, and the rotate button together.
- * Portrait default: + zone on top half, − zone on bottom half.
- * Landscape (↻): inner rotated 90° CW so + is on the right, − on the left.
- * Canvas dimensions are measured via onLayout so the inner can be repositioned
- * to stay centered and fill the canvas after rotation.
+ * All interactive elements (life total, +/− zones) live inside one rotating
+ * inner container. The back and rotate controls sit outside the inner as
+ * fixed overlays so they remain accessible regardless of rotation state.
+ * SafeAreaView with edges={['top']} ensures the status bar / notch area is
+ * never covered by the canvas.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
- * Edge cases: life total is unbounded (can go negative); back button is outside
- * the rotating container and always stays in place.
+ * Edge cases: life total is unbounded; tapping rotate while canvas dimensions
+ * are still 0 is safe — landscape mode defers until onLayout fires.
  */
 export default function LifeCounterScreen() {
   const router = useRouter();
@@ -39,9 +39,9 @@ export default function LifeCounterScreen() {
   const { w, h } = canvas;
 
   // Portrait: inner fills canvas via flex.
-  // Landscape: inner is h×w in natural space so after a 90° CW rotation it
-  // becomes w×h visually — exactly filling the canvas.
-  // Offset so the inner's center stays on the canvas center after repositioning.
+  // Landscape: inner is h×w in natural space; after 90° CW rotation its visual
+  // footprint becomes w×h, filling the canvas exactly.
+  // The offset keeps the inner's centre on the canvas centre.
   const innerStyle =
     isLandscape && w > 0
       ? ({
@@ -55,63 +55,68 @@ export default function LifeCounterScreen() {
       : ({ flex: 1 } as const);
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.canvas} onLayout={onCanvasLayout}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.screen}>
+        <View style={styles.canvas} onLayout={onCanvasLayout}>
 
-        {/* Back button — outside the rotating inner, always stays top-left */}
-        <Pressable
-          style={styles.backBtn}
-          onPress={() => { Haptics.selectionAsync(); router.back(); }}
-        >
-          <Text style={styles.backBtnText}>‹</Text>
-        </Pressable>
+          {/* ── Rotating inner: life total + zone taps rotate together ── */}
+          <View style={[styles.inner, innerStyle]}>
 
-        {/* ── Rotating inner — everything inside rotates as one unit ── */}
-        <View style={[styles.inner, innerStyle]}>
+            {/* Plus zone — top in portrait, right after CW rotation */}
+            <Pressable
+              style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
+              onPress={() => bump(1)}
+              onLongPress={() => bump(10)}
+            >
+              <Text style={styles.zoneSymbol}>+</Text>
+            </Pressable>
 
-          {/* Plus zone — top in portrait, right after CW rotation */}
-          <Pressable
-            style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-            onPress={() => bump(1)}
-            onLongPress={() => bump(10)}
-          >
-            <Text style={styles.zoneSymbol}>+</Text>
-          </Pressable>
+            {/* Minus zone — bottom in portrait, left after CW rotation */}
+            <Pressable
+              style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
+              onPress={() => bump(-1)}
+              onLongPress={() => bump(-10)}
+            >
+              <Text style={styles.zoneSymbol}>−</Text>
+            </Pressable>
 
-          {/* Minus zone — bottom in portrait, left after CW rotation */}
-          <Pressable
-            style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
-            onPress={() => bump(-1)}
-            onLongPress={() => bump(-10)}
-          >
-            <Text style={styles.zoneSymbol}>−</Text>
-          </Pressable>
+            {/* Life total centred over both zones; pointerEvents="none" lets taps through */}
+            <View style={styles.lifeOverlay} pointerEvents="none">
+              <Text style={styles.lifeText}>{life}</Text>
+            </View>
 
-          {/* Life total floats over zones; pointerEvents="none" lets taps fall through */}
-          <View style={styles.lifeOverlay} pointerEvents="none">
-            <Text style={styles.lifeText}>{life}</Text>
           </View>
+          {/* ── end rotating inner ── */}
 
-          {/* Rotate button nested here so it rotates with the rest */}
+          {/* Back — fixed top-left, never rotates */}
           <Pressable
-            style={styles.rotateBtn}
+            style={[styles.fixedBtn, styles.fixedBtnLeft]}
+            onPress={() => { Haptics.selectionAsync(); router.back(); }}
+          >
+            <Text style={styles.fixedBtnText}>‹</Text>
+          </Pressable>
+
+          {/* Rotate — fixed top-right, never rotates */}
+          <Pressable
+            style={[styles.fixedBtn, styles.fixedBtnRight]}
             onPress={() => { Haptics.selectionAsync(); setIsLandscape(p => !p); }}
           >
-            <Text style={styles.rotateBtnText}>↻</Text>
+            <Text style={styles.fixedBtnText}>Rotate</Text>
           </Pressable>
 
         </View>
-        {/* ── end rotating inner ── */}
-
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#0A0A0F',
+  },
+  screen: {
+    flex: 1,
     padding: 20,
   },
   canvas: {
@@ -121,23 +126,6 @@ const styles = StyleSheet.create({
     borderColor: '#3C3C5C',
     borderRadius: 16,
     overflow: 'hidden',
-  },
-  backBtn: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    zIndex: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backBtnText: {
-    fontSize: 26,
-    color: 'rgba(255,255,255,0.55)',
-    lineHeight: 30,
   },
   inner: {
     flexDirection: 'column',
@@ -170,19 +158,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     includeFontPadding: false,
   },
-  rotateBtn: {
+  fixedBtn: {
     position: 'absolute',
-    bottom: 14,
-    right: 14,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    top: 12,
+    zIndex: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  rotateBtnText: {
-    fontSize: 20,
+  fixedBtnLeft: {
+    left: 12,
+  },
+  fixedBtnRight: {
+    right: 12,
+  },
+  fixedBtnText: {
+    fontSize: 16,
     color: 'rgba(255,255,255,0.55)',
+    fontWeight: '500',
   },
 });
