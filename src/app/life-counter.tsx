@@ -37,6 +37,22 @@ const GRADIENT_BAND_COLORS: string[] = Array.from({ length: GRADIENT_BANDS }, (_
   return `rgba(${r},${g},${b},${GRADIENT_ALPHA})`;
 });
 
+// Commander popup background: white with a light-gray center, approximated as a grid
+// of flat cells whose alpha increases toward the center (a "radial" vignette without
+// a gradient library). Percentage-based cell sizing, so it scales with the panel.
+const CMD_BG_GRID = 10;
+const CMD_BG_MAX_ALPHA = 0.16;
+const CMD_BG_GRAY: [number, number, number] = [120, 120, 130];
+const CMD_BG_ROWS: string[][] = Array.from({ length: CMD_BG_GRID }, (_, row) =>
+  Array.from({ length: CMD_BG_GRID }, (_, col) => {
+    const nx = (col + 0.5) / CMD_BG_GRID - 0.5;
+    const ny = (row + 0.5) / CMD_BG_GRID - 0.5;
+    const dist = Math.sqrt(nx * nx + ny * ny) / Math.SQRT2 * 2; // ~0 center, ~1 corner
+    const alpha = CMD_BG_MAX_ALPHA * Math.max(0, 1 - dist);
+    return `rgba(${CMD_BG_GRAY[0]},${CMD_BG_GRAY[1]},${CMD_BG_GRAY[2]},${alpha.toFixed(3)})`;
+  }),
+);
+
 interface Player {
   name: string;
   life: number;
@@ -59,11 +75,12 @@ const makeInitialPlayers = (): Player[] => [
  * at the inner's top-left (nested so it transforms with the counter). The commander
  * damage button is a static square centered just below the life total — it never
  * resizes and never displays a damage total. Pressing it opens a square popup panel
- * (screen width minus 10px) centered on screen, headed by two static lines
- * ("Commander"/"Damage") followed by a fixed 3x2 grid of up to 6 squares — one per
- * player including the victim's own "Self" square — with empty slots reserved when
- * fewer than 6 players exist. The panel is rotated to match the orientation of the
- * counter that opened it, so the whole grid always reads in that same orientation.
+ * (sized off the smaller of screen width/height, minus 10px) centered on screen,
+ * headed by two static lines ("Commander"/"Damage") followed by a fixed 3x2 grid of
+ * up to 6 squares — one per player including the victim's own "Self" square, pinned
+ * to the bottom-center slot so it always lands nearest the opening player once the
+ * panel is rotated to their own counter's orientation — with empty slots reserved
+ * when fewer than 6 players exist.
  * cmdDmg[victim][attacker] = [cmd1, cmd2]; any single slot ≥ 21 eliminates the victim.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
@@ -285,8 +302,9 @@ export default function LifeCounterScreen() {
     const panelAngle = getPlayerAngle(victim, victim === 0);
     const isLandscapePanel = panelAngle === '90deg' || panelAngle === '270deg';
 
-    // Square panel spanning almost the full screen width (5px margin each side)
-    const PANEL_SIZE = content.w - 10;
+    // Square panel sized off whichever screen dimension is smaller (minus a 5px
+    // margin each side) so it never overflows on a wide/short (landscape) screen.
+    const PANEL_SIZE = Math.min(content.w, content.h) - 10;
     const PANEL_W = PANEL_SIZE;
     const PANEL_H = PANEL_SIZE;
 
@@ -354,10 +372,26 @@ export default function LifeCounterScreen() {
       );
     };
 
-    // Self always fills the first slot; GRID_SLOTS stays fixed at 6 regardless of
-    // player count so the grid's geometry never reflows as players are added/removed.
+    // 3x2 grid, slots numbered left-to-right/top-to-bottom (0,1,2 top row; 3,4,5
+    // bottom row) in the *unrotated* local frame. Self is pinned to the bottom-center
+    // slot: since the whole panel rotates to match the opening player's own counter
+    // orientation, local-bottom always ends up on the edge nearest that player — e.g.
+    // for Player 2 (bottom of the main screen, unrotated) local-bottom stays visually
+    // at the bottom; for Player 1 (top of the main screen, rotated 180°) local-bottom
+    // flips to visually the top, which is the edge nearest Player 1's own seat. Other
+    // players fill the top row first (so today's single opponent lands "on top",
+    // mirroring their position on the main two-player screen), then the remaining
+    // bottom-row slots. GRID_SLOTS stays fixed at 6 so the layout never reflows as
+    // players are added/removed.
     const GRID_SLOTS = 6;
-    const attackerOrder = [victim, ...players.map((_, i) => i).filter(i => i !== victim)];
+    const SELF_SLOT = 4;
+    const OPPONENT_SLOT_ORDER = [1, 0, 2, 3, 5];
+    const otherPlayers = players.map((_, i) => i).filter(i => i !== victim);
+    const attackerOrder: (number | undefined)[] = new Array(GRID_SLOTS).fill(undefined);
+    attackerOrder[SELF_SLOT] = victim;
+    otherPlayers.forEach((attackerIdx, i) => {
+      if (i < OPPONENT_SLOT_ORDER.length) attackerOrder[OPPONENT_SLOT_ORDER[i]] = attackerIdx;
+    });
 
     return (
       <Pressable
@@ -365,6 +399,16 @@ export default function LifeCounterScreen() {
         onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(null); }}
       >
         <Pressable style={[styles.cmdPanel, { width: PANEL_W, height: PANEL_H }]}>
+          {/* White base with a light-gray center vignette; static, not rotated */}
+          <View style={styles.cmdPanelBg} pointerEvents="none">
+            {CMD_BG_ROWS.map((row, r) => (
+              <View key={r} style={styles.cmdPanelBgRow}>
+                {row.map((color, c) => (
+                  <View key={c} style={[styles.cmdPanelBgCell, { backgroundColor: color }]} />
+                ))}
+              </View>
+            ))}
+          </View>
           <View style={innerStyle}>
             <Text style={styles.cmdHeaderLine}>Commander</Text>
             <Text style={styles.cmdHeaderLine}>Damage</Text>
@@ -484,21 +528,23 @@ const styles = StyleSheet.create({
   partnerToggleText: { fontSize: 12, color: 'rgba(0,0,0,0.45)', fontWeight: '600' },
   partnerToggleTextOn: { color: '#6FC96F' },
 
-  // Commander button — centered, just below the life total
+  // Commander button — centered, anchored a fixed distance above the box's bottom
+  // edge (rather than a top % offset) so doubling its size can't clip against the
+  // box's overflow:hidden edge on a short box.
   cmdArea: {
     position: 'absolute',
-    top: '70%', left: 0, right: 0,
+    bottom: 16, left: 0, right: 0,
     alignItems: 'center',
   },
   // Fixed square, never resizes and never shows a commander-damage total
   cmdBtn: {
-    width: 64, height: 64,
+    width: 128, height: 128,
     justifyContent: 'center', alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: 20,
     borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)',
     backgroundColor: 'rgba(0,0,0,0.07)',
   },
-  cmdBtnIcon: { fontSize: 32, color: 'rgba(0,0,0,0.75)' },
+  cmdBtnIcon: { fontSize: 64, color: 'rgba(0,0,0,0.75)' },
 
   // ── Menu bar — standalone element between the two counter boxes ──
   menuBar: {
@@ -523,14 +569,19 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   cmdPanel: {
-    backgroundColor: '#181825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 2, borderColor: '#5A5A8A',
     overflow: 'hidden',
   },
+  // Static (unrotated) light-gray-center vignette sitting behind the rotated content —
+  // a radial fade looks the same regardless of rotation, so it doesn't need to rotate.
+  cmdPanelBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  cmdPanelBgRow: { flex: 1, flexDirection: 'row' },
+  cmdPanelBgCell: { flex: 1 },
   // Two static header lines, then a fixed 3x2 grid of up to 6 squares (one per
   // player, self included) filling the remaining space evenly.
-  cmdHeaderLine: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', lineHeight: 26 },
+  cmdHeaderLine: { fontSize: 22, fontWeight: '700', color: '#111118', textAlign: 'center', lineHeight: 26 },
   cmdGrid: {
     flex: 1,
     marginTop: 16,
@@ -541,8 +592,8 @@ const styles = StyleSheet.create({
   cmdSquare: {
     flex: 1,
     borderRadius: 12,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.14)',
+    backgroundColor: 'rgba(0,0,0,0.05)',
     overflow: 'hidden',
   },
   cmdSquareElim: { borderColor: '#E05555', backgroundColor: 'rgba(224,85,85,0.12)' },
@@ -550,18 +601,18 @@ const styles = StyleSheet.create({
   cmdSquareHalf: { flex: 1 },
   cmdSquareLabel: {
     position: 'absolute', top: 6, left: 2, right: 2,
-    textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '600',
+    textAlign: 'center', fontSize: 10, color: 'rgba(0,0,0,0.5)', fontWeight: '600',
   },
   cmdSquareSlotToggle: {
     position: 'absolute', top: 4, right: 4, zIndex: 5,
     paddingHorizontal: 5, paddingVertical: 2,
-    borderRadius: 8, backgroundColor: 'rgba(108,99,255,0.25)',
+    borderRadius: 8, backgroundColor: 'rgba(108,99,255,0.2)',
   },
-  cmdSquareSlotToggleText: { fontSize: 9, color: '#A09CF7', fontWeight: '700' },
+  cmdSquareSlotToggleText: { fontSize: 9, color: '#5A4FD9', fontWeight: '700' },
   cmdSquareValOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center',
   },
-  cmdSquareValText: { fontSize: 28, fontWeight: '200', color: '#FFFFFF' },
+  cmdSquareValText: { fontSize: 28, fontWeight: '200', color: '#111118' },
   cmdSquareValTextElim: { color: '#E05555' },
 });
