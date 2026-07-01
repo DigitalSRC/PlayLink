@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
   },
   // Fixed square, never resizes and never shows a commander-damage total
   cmdBtn: {
-    width: 128, height: 128,
+    width: 110, height: 110,
     justifyContent: 'center', alignItems: 'center',
     borderRadius: 20,
     borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)',
@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap',
     justifyContent: 'space-between', alignContent: 'space-between',
   },
-  cmdGridCell: { width: '31%', aspectRatio: 1 },
+  cmdGridCell: { width: '31%', height: '31%', aspectRatio: 1 },
   cmdSquare: {
     flex: 1,
     borderRadius: 12,
