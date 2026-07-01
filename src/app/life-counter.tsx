@@ -8,6 +8,35 @@ const MENU_H = 44;
 const GAP = 8;
 const START_LIFE = 40;
 
+// Long-press hold tuning: each tick moves life by exactly 1 (fine control, no overshoot).
+// The first repeat waits as long as the initial long-press threshold did, then each
+// subsequent wait shrinks by HOLD_ACCEL (exponential speedup), floored at HOLD_MIN_DELAY.
+const HOLD_TICK_STEP = 1;
+const HOLD_INITIAL_DELAY = 400; // matches Pressable's delayLongPress
+const HOLD_MIN_DELAY = 40;
+const HOLD_ACCEL = 0.82;
+
+// Extremely faint − (red) → center (white) → + (green) fill, banded as flat-color
+// strips since React Native has no built-in gradient primitive.
+const GRADIENT_BANDS = 20;
+const GRADIENT_ALPHA = 0.05;
+const GRADIENT_RED: [number, number, number] = [255, 70, 70];
+const GRADIENT_WHITE: [number, number, number] = [255, 255, 255];
+const GRADIENT_GREEN: [number, number, number] = [70, 220, 120];
+const lerpChannel = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+const lerpColor = (
+  c1: [number, number, number], c2: [number, number, number], t: number,
+): [number, number, number] => [
+  lerpChannel(c1[0], c2[0], t), lerpChannel(c1[1], c2[1], t), lerpChannel(c1[2], c2[2], t),
+];
+const GRADIENT_BAND_COLORS: string[] = Array.from({ length: GRADIENT_BANDS }, (_, i) => {
+  const t = i / (GRADIENT_BANDS - 1);
+  const [r, g, b] = t <= 0.5
+    ? lerpColor(GRADIENT_RED, GRADIENT_WHITE, t / 0.5)
+    : lerpColor(GRADIENT_WHITE, GRADIENT_GREEN, (t - 0.5) / 0.5);
+  return `rgba(${r},${g},${b},${GRADIENT_ALPHA})`;
+});
+
 interface Player {
   name: string;
   life: number;
@@ -15,7 +44,7 @@ interface Player {
   hasPartner: boolean;
 }
 
-type IntervalRef = React.MutableRefObject<ReturnType<typeof setInterval> | null>;
+type IntervalRef = React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
 
 const makeInitialPlayers = (): Player[] => [
   { name: 'Player 1', life: START_LIFE, isLandscape: false, hasPartner: false },
@@ -28,11 +57,11 @@ const makeInitialPlayers = (): Player[] => [
  * so − sits on the left and + on the right from the player's reading perspective;
  * rotation transforms preserve this for all orientations. The Partner checkbox lives
  * at the inner's top-left (nested so it transforms with the counter). The commander
- * damage button is centered just below the life total. Pressing it opens a full-screen
- * overlay that mirrors the main counter layout — each opponent gets their own bordered
- * counter box with the same row +/− layout; the entire overlay is rotated to match the
- * orientation of the counter that opened it. cmdDmg[victim][attacker] = [cmd1, cmd2];
- * any single slot ≥ 21 eliminates the victim.
+ * damage button is a static square centered just below the life total — it never
+ * resizes and never displays a damage total. Pressing it opens a square popup panel
+ * centered on screen; the panel is rotated to match the orientation of the counter
+ * that opened it, so the (Self) row always reads in that same orientation.
+ * cmdDmg[victim][attacker] = [cmd1, cmd2]; any single slot ≥ 21 eliminates the victim.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
  * Edge cases: life totals are unbounded below; Reset restores START_LIFE and clears
@@ -45,8 +74,8 @@ export default function LifeCounterScreen() {
   const [cmdDmg, setCmdDmg] = useState<Record<number, Record<number, [number, number]>>>({});
   const [cmdPanelFor, setCmdPanelFor] = useState<number | null>(null);
   const [activeCmd, setActiveCmd] = useState<Record<number, 0 | 1>>({});
-  const interval0 = useRef<ReturnType<typeof setInterval> | null>(null);
-  const interval1 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const interval0 = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interval1 = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervals: IntervalRef[] = [interval0, interval1];
 
   const onContentLayout = (e: LayoutChangeEvent) => {
@@ -61,12 +90,6 @@ export default function LifeCounterScreen() {
 
   const getCmdVal = (victim: number, attacker: number, slot: 0 | 1): number =>
     cmdDmg[victim]?.[attacker]?.[slot] ?? 0;
-
-  // Self-damage (attacker === victim) is excluded from the badge total and elimination check
-  const getCmdTotal = (victim: number): number =>
-    Object.entries(cmdDmg[victim] ?? {}).reduce(
-      (s, [k, [c1, c2]]) => (Number(k) === victim ? s : s + c1 + c2), 0,
-    );
 
   const isEliminated = (idx: number): boolean => {
     if (players[idx].life <= 0) return true;
@@ -130,16 +153,24 @@ export default function LifeCounterScreen() {
   const renderCounter = (playerIdx: number, isTop: boolean, interval: IntervalRef) => {
     const { name, life, isLandscape, hasPartner } = players[playerIdx];
     const elim = isEliminated(playerIdx);
-    const cmdTotal = getCmdTotal(playerIdx);
     const rotateAngle = getPlayerAngle(playerIdx, isTop);
 
-    const startHold = (delta: number) => {
+    // First tick fires with the long press itself; the next tick waits the same
+    // HOLD_INITIAL_DELAY before repeating, then each wait shrinks by HOLD_ACCEL so
+    // the repeat rate ramps up the longer the hold continues.
+    const startHold = (direction: 1 | -1) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      updateLife(playerIdx, delta);
-      interval.current = setInterval(() => updateLife(playerIdx, delta), 150);
+      updateLife(playerIdx, direction * HOLD_TICK_STEP);
+      let wait = HOLD_INITIAL_DELAY;
+      const tick = () => {
+        updateLife(playerIdx, direction * HOLD_TICK_STEP);
+        wait = Math.max(HOLD_MIN_DELAY, wait * HOLD_ACCEL);
+        interval.current = setTimeout(tick, wait);
+      };
+      interval.current = setTimeout(tick, wait);
     };
     const stopHold = () => {
-      if (interval.current !== null) { clearInterval(interval.current); interval.current = null; }
+      if (interval.current !== null) { clearTimeout(interval.current); interval.current = null; }
     };
 
     // Portrait non-top: no transform; portrait top: 180°; landscape: 90°/270°
@@ -161,11 +192,18 @@ export default function LifeCounterScreen() {
       <View style={styles.counterBox}>
         <View style={[styles.inner, innerStyle]}>
 
+          {/* Extremely faint − (red) → center (white) → + (green) fill */}
+          <View style={styles.gradientOverlay} pointerEvents="none">
+            {GRADIENT_BAND_COLORS.map((color, i) => (
+              <View key={i} style={[styles.gradientBand, { backgroundColor: color }]} />
+            ))}
+          </View>
+
           {/* LEFT zone: − */}
           <Pressable
             style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); updateLife(playerIdx, -1); }}
-            onLongPress={() => startHold(-10)}
+            onLongPress={() => startHold(-1)}
             onPressOut={stopHold}
             delayLongPress={400}
           >
@@ -176,7 +214,7 @@ export default function LifeCounterScreen() {
           <Pressable
             style={({ pressed }) => [styles.zone, pressed && styles.zoneActive]}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); updateLife(playerIdx, 1); }}
-            onLongPress={() => startHold(10)}
+            onLongPress={() => startHold(1)}
             onPressOut={stopHold}
             delayLongPress={400}
           >
@@ -218,18 +256,13 @@ export default function LifeCounterScreen() {
             <Text style={[styles.partnerToggleText, hasPartner && styles.partnerToggleTextOn]}>P</Text>
           </Pressable>
 
-          {/* Commander damage button — centered just below the life total */}
+          {/* Commander damage button — static square, never shows damage totals */}
           <View style={styles.cmdArea} pointerEvents="box-none">
             <Pressable
               style={styles.cmdBtn}
               onPress={() => { Haptics.selectionAsync(); setCmdPanelFor(playerIdx); }}
             >
               <Text style={styles.cmdBtnIcon}>⚔</Text>
-              {cmdTotal > 0 && (
-                <View style={styles.cmdTotalBadge}>
-                  <Text style={styles.cmdTotalText}>{cmdTotal}</Text>
-                </View>
-              )}
             </Pressable>
           </View>
 
@@ -239,20 +272,24 @@ export default function LifeCounterScreen() {
   };
 
   // ─── Commander damage overlay ─────────────────────────────────────────────
-  // Panel is a fixed-size rectangle centered on screen. The inner content view
-  // rotates to face the player who opened it (same technique as renderCounter).
-  // Tapping the dimmed backdrop closes the overlay; tapping inside the panel
-  // is consumed by the inner Pressable, preventing backdrop dismissal.
+  // Panel is a fixed-size square, centered on screen via cmdOverlay's flex centering.
+  // The inner content view rotates to face the player who opened it (same technique
+  // as renderCounter). Tapping the dimmed backdrop closes the overlay; tapping inside
+  // the panel is consumed by the inner Pressable, preventing backdrop dismissal.
   const renderCmdOverlay = () => {
     if (cmdPanelFor === null) return null;
     const victim = cmdPanelFor;
     const panelAngle = getPlayerAngle(victim, victim === 0);
     const isLandscapePanel = panelAngle === '90deg' || panelAngle === '270deg';
 
-    const PANEL_W = content.w * 0.80;
-    const PANEL_H = content.h * 0.72;
+    // Square panel, sized to fit within whichever screen dimension is smaller
+    const PANEL_SIZE = Math.min(content.w, content.h) * 0.82;
+    const PANEL_W = PANEL_SIZE;
+    const PANEL_H = PANEL_SIZE;
 
-    // Inner content rotates to face the opening player; landscape swaps dimensions
+    // Inner content rotates to face the opening player — the same getPlayerAngle
+    // used for that player's own life-total box, so the (Self) row always reads
+    // in the same orientation as their own counter.
     const innerStyle: object = isLandscapePanel
       ? {
           position: 'absolute' as const,
@@ -386,6 +423,13 @@ const styles = StyleSheet.create({
   },
   // Row direction: left zone = −, right zone = +; rotations preserve this for all orientations
   inner: { flexDirection: 'row' },
+  // Sits behind the zones/text as an inert banded fill; rotates with `inner` so red always
+  // lands on the reading-left (−) side and green on the reading-right (+) side.
+  gradientOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    flexDirection: 'row',
+  },
+  gradientBand: { flex: 1 },
   zone: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   zoneActive: { backgroundColor: 'rgba(255,255,255,0.06)' },
   zoneSymbol: { fontSize: 60, color: 'rgba(255,255,255,0.28)', fontWeight: '100' },
@@ -437,19 +481,15 @@ const styles = StyleSheet.create({
     top: '70%', left: 0, right: 0,
     alignItems: 'center',
   },
+  // Fixed square, never resizes and never shows a commander-damage total
   cmdBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 20, paddingVertical: 10,
-    borderRadius: 14,
+    width: 64, height: 64,
+    justifyContent: 'center', alignItems: 'center',
+    borderRadius: 10,
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
     backgroundColor: 'rgba(255,255,255,0.07)',
   },
-  cmdBtnIcon: { fontSize: 54, color: 'rgba(255,255,255,0.75)' },
-  cmdTotalBadge: {
-    backgroundColor: 'rgba(224,85,85,0.25)',
-    borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1,
-  },
-  cmdTotalText: { fontSize: 12, color: '#E05555', fontWeight: '600' },
+  cmdBtnIcon: { fontSize: 32, color: 'rgba(255,255,255,0.75)' },
 
   // ── Menu bar — standalone element between the two counter boxes ──
   menuBar: {
