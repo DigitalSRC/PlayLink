@@ -59,8 +59,11 @@ const makeInitialPlayers = (): Player[] => [
  * at the inner's top-left (nested so it transforms with the counter). The commander
  * damage button is a static square centered just below the life total — it never
  * resizes and never displays a damage total. Pressing it opens a square popup panel
- * centered on screen; the panel is rotated to match the orientation of the counter
- * that opened it, so the (Self) row always reads in that same orientation.
+ * (screen width minus 10px) centered on screen, headed by two static lines
+ * ("Commander"/"Damage") followed by a fixed 3x2 grid of up to 6 squares — one per
+ * player including the victim's own "Self" square — with empty slots reserved when
+ * fewer than 6 players exist. The panel is rotated to match the orientation of the
+ * counter that opened it, so the whole grid always reads in that same orientation.
  * cmdDmg[victim][attacker] = [cmd1, cmd2]; any single slot ≥ 21 eliminates the victim.
  * Parameters: none.
  * Returns: a React element occupying the full screen.
@@ -282,14 +285,14 @@ export default function LifeCounterScreen() {
     const panelAngle = getPlayerAngle(victim, victim === 0);
     const isLandscapePanel = panelAngle === '90deg' || panelAngle === '270deg';
 
-    // Square panel, sized to fit within whichever screen dimension is smaller
-    const PANEL_SIZE = Math.min(content.w, content.h) * 0.82;
+    // Square panel spanning almost the full screen width (5px margin each side)
+    const PANEL_SIZE = content.w - 10;
     const PANEL_W = PANEL_SIZE;
     const PANEL_H = PANEL_SIZE;
 
     // Inner content rotates to face the opening player — the same getPlayerAngle
-    // used for that player's own life-total box, so the (Self) row always reads
-    // in the same orientation as their own counter.
+    // used for that player's own life-total box, so the whole grid (including the
+    // Self square) always reads in the same orientation as their own counter.
     const innerStyle: object = isLandscapePanel
       ? {
           position: 'absolute' as const,
@@ -303,62 +306,58 @@ export default function LifeCounterScreen() {
       ? { flex: 1, padding: 16 }
       : { flex: 1, padding: 16, transform: [{ rotate: panelAngle }] };
 
-    // isSelf=true: own-commander damage — never eliminates, never deducts life.
-    const renderSection = (attackerIdx: number, isSelf: boolean) => {
+    // One square per attacker (self included). isSelf=true: own-commander damage —
+    // never eliminates, never deducts life. Squares are small, so the partner slot
+    // toggle is a compact "C1"/"C2" pill instead of the full two-button row.
+    const renderSquare = (attackerIdx: number, isSelf: boolean) => {
       const slot = (activeCmd[attackerIdx] ?? 0) as 0 | 1;
       const dmg = getCmdVal(victim, attackerIdx, slot);
       const elim = !isSelf && dmg >= 21;
-      const label = isSelf ? `${players[victim].name} (Self)` : players[attackerIdx].name;
+      const label = isSelf ? 'Self' : players[attackerIdx].name;
       const showPartnerToggle = players[attackerIdx].hasPartner;
 
       return (
-        <View key={`s-${attackerIdx}`} style={styles.cmdSection}>
-          <View style={styles.cmdSectionHeader}>
-            <Text style={styles.cmdAttackerName}>{label}</Text>
-            {elim && (
-              <View style={styles.cmdElimBadge}>
-                <Text style={styles.cmdElimBadgeText}>ELIMINATED</Text>
-              </View>
-            )}
-          </View>
-
-          {showPartnerToggle && (
-            <View style={styles.cmdSlotRow}>
-              {([0, 1] as const).map(s => (
-                <Pressable
-                  key={s}
-                  style={[styles.cmdSlotBtn, slot === s && styles.cmdSlotBtnOn]}
-                  onPress={() => { Haptics.selectionAsync(); setActiveCmd(prev => ({ ...prev, [attackerIdx]: s })); }}
-                >
-                  <Text style={[styles.cmdSlotBtnText, slot === s && styles.cmdSlotBtnTextOn]}>
-                    {s === 0 ? 'Cmd 1' : 'Cmd 2'}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* Half-zone counter: left half = −, right half = +, value overlaid */}
-          <View style={styles.cmdCounterBox}>
+        <View style={[styles.cmdSquare, elim && styles.cmdSquareElim]}>
+          <View style={styles.cmdSquareZones}>
             <Pressable
-              style={styles.cmdHalfZone}
+              style={styles.cmdSquareHalf}
               onPress={() => adjustCmdDmg(victim, attackerIdx, slot, -1, isSelf)}
               onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, -10, isSelf)}
               delayLongPress={400}
             />
             <Pressable
-              style={styles.cmdHalfZone}
+              style={styles.cmdSquareHalf}
               onPress={() => adjustCmdDmg(victim, attackerIdx, slot, 1, isSelf)}
               onLongPress={() => adjustCmdDmg(victim, attackerIdx, slot, 10, isSelf)}
               delayLongPress={400}
             />
-            <View pointerEvents="none" style={styles.cmdValOverlay}>
-              <Text style={[styles.cmdValText, elim && styles.cmdValTextElim]}>{dmg}</Text>
-            </View>
+          </View>
+
+          <Text style={styles.cmdSquareLabel} numberOfLines={1} pointerEvents="none">{label}</Text>
+
+          {showPartnerToggle && (
+            <Pressable
+              style={styles.cmdSquareSlotToggle}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setActiveCmd(prev => ({ ...prev, [attackerIdx]: slot === 0 ? 1 : 0 }));
+              }}
+            >
+              <Text style={styles.cmdSquareSlotToggleText}>{slot === 0 ? 'C1' : 'C2'}</Text>
+            </Pressable>
+          )}
+
+          <View pointerEvents="none" style={styles.cmdSquareValOverlay}>
+            <Text style={[styles.cmdSquareValText, elim && styles.cmdSquareValTextElim]}>{dmg}</Text>
           </View>
         </View>
       );
     };
+
+    // Self always fills the first slot; GRID_SLOTS stays fixed at 6 regardless of
+    // player count so the grid's geometry never reflows as players are added/removed.
+    const GRID_SLOTS = 6;
+    const attackerOrder = [victim, ...players.map((_, i) => i).filter(i => i !== victim)];
 
     return (
       <Pressable
@@ -367,13 +366,21 @@ export default function LifeCounterScreen() {
       >
         <Pressable style={[styles.cmdPanel, { width: PANEL_W, height: PANEL_H }]}>
           <View style={innerStyle}>
-            <Text style={styles.cmdPanelTitle}>{players[victim].name}</Text>
-            <Text style={styles.cmdPanelSub}>Commander Damage Received</Text>
-            {renderSection(victim, true)}
-            {players.map((_, attackerIdx) => {
-              if (attackerIdx === victim) return null;
-              return renderSection(attackerIdx, false);
-            })}
+            <Text style={styles.cmdHeaderLine}>Commander</Text>
+            <Text style={styles.cmdHeaderLine}>Damage</Text>
+            <View style={styles.cmdGrid}>
+              {Array.from({ length: GRID_SLOTS }, (_, i) => {
+                const attackerIdx = attackerOrder[i];
+                if (attackerIdx === undefined) {
+                  return <View key={`empty-${i}`} style={styles.cmdGridCell} />;
+                }
+                return (
+                  <View key={attackerIdx} style={styles.cmdGridCell}>
+                    {renderSquare(attackerIdx, attackerIdx === victim)}
+                  </View>
+                );
+              })}
+            </View>
           </View>
         </Pressable>
       </Pressable>
@@ -415,9 +422,11 @@ const styles = StyleSheet.create({
   contentArea: { flex: 1, flexDirection: 'column', gap: GAP },
 
   // ── Each counter is its own independent bordered box ──
+  // White fill (was dark) with the faint red/white/green gradientOverlay layered on
+  // top; every text/icon color below is the dark-on-white inverse of what it used to be.
   counterBox: {
     flex: 1,
-    backgroundColor: '#111118',
+    backgroundColor: '#FFFFFF',
     borderWidth: 2, borderColor: '#3C3C5C', borderRadius: 16,
     overflow: 'hidden',
   },
@@ -431,29 +440,29 @@ const styles = StyleSheet.create({
   },
   gradientBand: { flex: 1 },
   zone: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  zoneActive: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  zoneSymbol: { fontSize: 60, color: 'rgba(255,255,255,0.28)', fontWeight: '100' },
+  zoneActive: { backgroundColor: 'rgba(0,0,0,0.06)' },
+  zoneSymbol: { fontSize: 60, color: 'rgba(0,0,0,0.28)', fontWeight: '100' },
 
   lifeOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center',
   },
-  lifeText: { fontSize: 80, fontWeight: '200', color: '#FFFFFF', includeFontPadding: false },
-  lifeTextDead: { color: 'rgba(255,255,255,0.3)' },
+  lifeText: { fontSize: 80, fontWeight: '200', color: '#111118', includeFontPadding: false },
+  lifeTextDead: { color: 'rgba(0,0,0,0.3)' },
   eliminatedLabel: { fontSize: 11, fontWeight: '600', color: '#E05555', letterSpacing: 1.5, marginTop: 4 },
 
   playerNameBadge: {
     position: 'absolute', top: 14, left: 0, right: 0, alignItems: 'center',
   },
-  playerNameText: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
+  playerNameText: { fontSize: 13, color: 'rgba(0,0,0,0.45)', fontWeight: '500' },
 
   // Rotate — inner top-right
   rotateBtn: {
     position: 'absolute', top: 10, right: 10, zIndex: 10,
     paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.08)',
   },
-  rotateBtnText: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  rotateBtnText: { fontSize: 12, color: 'rgba(0,0,0,0.5)', fontWeight: '500' },
 
   // Partner toggle — inner top-left, nested so it transforms with the counter
   partnerToggle: {
@@ -461,18 +470,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 10, paddingVertical: 6,
     borderRadius: 12,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.14)',
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
   partnerToggleOn: { borderColor: '#6FC96F', backgroundColor: 'rgba(111,201,111,0.1)' },
   partnerCheck: {
     width: 14, height: 14, borderRadius: 3,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)',
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center', alignItems: 'center',
   },
   partnerCheckOn: { borderColor: '#6FC96F', backgroundColor: '#6FC96F' },
   partnerCheckMark: { fontSize: 9, color: '#000', fontWeight: '800' },
-  partnerToggleText: { fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
+  partnerToggleText: { fontSize: 12, color: 'rgba(0,0,0,0.45)', fontWeight: '600' },
   partnerToggleTextOn: { color: '#6FC96F' },
 
   // Commander button — centered, just below the life total
@@ -486,10 +495,10 @@ const styles = StyleSheet.create({
     width: 64, height: 64,
     justifyContent: 'center', alignItems: 'center',
     borderRadius: 10,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.07)',
   },
-  cmdBtnIcon: { fontSize: 32, color: 'rgba(255,255,255,0.75)' },
+  cmdBtnIcon: { fontSize: 32, color: 'rgba(0,0,0,0.75)' },
 
   // ── Menu bar — standalone element between the two counter boxes ──
   menuBar: {
@@ -519,44 +528,40 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: '#5A5A8A',
     overflow: 'hidden',
   },
-  cmdPanelTitle: { fontSize: 20, fontWeight: '600', color: '#FFFFFF', textAlign: 'center' },
-  cmdPanelSub: {
-    fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center',
-    marginTop: 2, marginBottom: 16, letterSpacing: 0.5,
+  // Two static header lines, then a fixed 3x2 grid of up to 6 squares (one per
+  // player, self included) filling the remaining space evenly.
+  cmdHeaderLine: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', lineHeight: 26 },
+  cmdGrid: {
+    flex: 1,
+    marginTop: 16,
+    flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'space-between', alignContent: 'space-between',
   },
-  cmdSection: {
-    marginBottom: 16,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 14, padding: 16,
-  },
-  cmdSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  cmdAttackerName: { fontSize: 15, fontWeight: '600', color: '#FFFFFF', flex: 1 },
-  cmdElimBadge: {
-    backgroundColor: 'rgba(224,85,85,0.2)', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  cmdElimBadgeText: { fontSize: 10, fontWeight: '700', color: '#E05555', letterSpacing: 1 },
-  cmdSlotRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  cmdSlotBtn: {
-    flex: 1, paddingVertical: 7,
-    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-  },
-  cmdSlotBtnOn: { backgroundColor: 'rgba(108,99,255,0.25)', borderColor: '#6C63FF' },
-  cmdSlotBtnText: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
-  cmdSlotBtnTextOn: { color: '#A09CF7', fontWeight: '700' },
-  cmdCounterBox: {
-    height: 80,
-    flexDirection: 'row',
+  cmdGridCell: { width: '31%', aspectRatio: 1 },
+  cmdSquare: {
+    flex: 1,
     borderRadius: 12,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  cmdHalfZone: { flex: 1 },
-  cmdValOverlay: {
+  cmdSquareElim: { borderColor: '#E05555', backgroundColor: 'rgba(224,85,85,0.12)' },
+  cmdSquareZones: { flex: 1, flexDirection: 'row' },
+  cmdSquareHalf: { flex: 1 },
+  cmdSquareLabel: {
+    position: 'absolute', top: 6, left: 2, right: 2,
+    textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '600',
+  },
+  cmdSquareSlotToggle: {
+    position: 'absolute', top: 4, right: 4, zIndex: 5,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderRadius: 8, backgroundColor: 'rgba(108,99,255,0.25)',
+  },
+  cmdSquareSlotToggleText: { fontSize: 9, color: '#A09CF7', fontWeight: '700' },
+  cmdSquareValOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center',
   },
-  cmdValText: { fontSize: 44, fontWeight: '200', color: '#FFFFFF' },
-  cmdValTextElim: { color: '#E05555' },
+  cmdSquareValText: { fontSize: 28, fontWeight: '200', color: '#FFFFFF' },
+  cmdSquareValTextElim: { color: '#E05555' },
 });
