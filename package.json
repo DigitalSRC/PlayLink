@@ -49,8 +49,5 @@
     "lint": "expo lint",
     "test": "jest --runInBand"
   },
-  "jest": {
-    "preset": "jest-expo"
-  },
   "private": true
 }
