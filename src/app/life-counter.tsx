@@ -19,7 +19,7 @@ const HOLD_ACCEL = 0.82;
 // Extremely faint − (red) → center (white) → + (green) fill, banded as flat-color
 // strips since React Native has no built-in gradient primitive.
 const GRADIENT_BANDS = 20;
-const GRADIENT_ALPHA = 0.05;
+const GRADIENT_ALPHA = 0.028;
 const GRADIENT_RED: [number, number, number] = [255, 70, 70];
 const GRADIENT_WHITE: [number, number, number] = [255, 255, 255];
 const GRADIENT_GREEN: [number, number, number] = [70, 220, 120];
