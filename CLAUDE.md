@@ -155,9 +155,10 @@ Three more things have been removed from `development`/`main` for the same reaso
 ### What to do at the start of every session
 
 1. Run `git branch -a` to orient yourself — know what branches exist.
-2. Ask the user which feature to work on if it is not obvious from context.
-3. Check out (or create) the appropriate branch before touching any files — a `feature/<function>` sub-branch off the relevant top-level feature branch for feature work, never off `main`.
-4. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the developer to explicitly ask for a release.
+2. Treat `development` as the source of truth for the current state of the project, and check it even if the session starts on a different branch. Other branches (especially `main`) can silently lag behind — `main`'s copy of this file and its workflow model once drifted out of date until a session caught it by diffing against `development` and reconciled it. When a branch's docs or code disagree with `development`, `development` wins unless the developer says otherwise; flag the drift and ask before assuming which side is correct.
+3. Ask the user which feature to work on if it is not obvious from context.
+4. Check out (or create) the appropriate branch before touching any files — a `feature/<function>` sub-branch off the relevant top-level feature branch for feature work, never off `main`.
+5. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the developer to explicitly ask for a release.
 
 ## Working conventions
 
