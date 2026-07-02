@@ -17,6 +17,11 @@ import { formatBrackets } from '../utils/group-utils';
 const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can start a game
 const MIN_PLAYERS_OTHER = 2;            // minimum attendees required to start any game format
 
+// Game sessions (life counter) are still in development on the `life-counter` branch and are
+// deliberately kept off main until that feature is finished — see CLAUDE.md git workflow.
+// Flip this once life-counter is merged back in to restore the Start Game / Life Counter flow.
+const GAME_SESSIONS_ENABLED = false;
+
 /**
  * Group detail screen showing the full roster, settings, and host controls for a single group.
  * Handles join, leave, host transfer, and group edits with haptic and visual feedback on each action.
@@ -69,24 +74,17 @@ export default function GroupDetail() {
     g.players.some((p) => p.username === displayUser)
   );
 
+  // The time-lock/headcount-lock branches below are unreachable while GAME_SESSIONS_ENABLED is
+  // false; they're intentionally left in place (rather than deleted) since the life-counter
+  // branch's copy of this file still has the working router.push('/life-counter') target, and
+  // that's what will replace this whole function body once the feature is merged back in.
   const handleStartGame = () => {
     if (!isHost) return;
-    if (timeLocked) {
-      Alert.alert(
-        'Too Soon',
-        `Groups must exist for at least 30 minutes before starting. ${minutesRemaining} min remaining.`
-      );
+    if (!GAME_SESSIONS_ENABLED) {
+      Haptics.selectionAsync();
+      Alert.alert('Coming Soon', 'Starting a game session is coming in a future update.');
       return;
     }
-    if (headcountLocked) {
-      Alert.alert(
-        'Not Enough Players',
-        `You need at least ${minPlayers} players to start. You currently have ${group.players.length}.`
-      );
-      return;
-    }
-    Haptics.selectionAsync();
-    router.push({ pathname: '/life-counter', params: { groupId: group.id } });
   };
 
   const handleJoin = () => {
@@ -356,16 +354,18 @@ export default function GroupDetail() {
                   </Pressable>
                   {!group.confirmed && (
                     <Pressable
-                      style={[styles.confirmBtn, confirmBlocked && styles.confirmBtnLocked]}
+                      style={[styles.confirmBtn, (confirmBlocked || !GAME_SESSIONS_ENABLED) && styles.confirmBtnLocked]}
                       onPress={handleStartGame}
                     >
-                      <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
-                        {group.roundsPlayed > 0 ? `Start Round ${group.roundsPlayed + 1}` : 'Start Game'}
+                      <Text style={[styles.confirmBtnText, (confirmBlocked || !GAME_SESSIONS_ENABLED) && styles.confirmBtnTextLocked]}>
+                        {!GAME_SESSIONS_ENABLED
+                          ? 'Coming Soon'
+                          : group.roundsPlayed > 0 ? `Start Round ${group.roundsPlayed + 1}` : 'Start Game'}
                       </Text>
                     </Pressable>
                   )}
                 </View>
-                {!group.confirmed && confirmBlocked && (
+                {!group.confirmed && GAME_SESSIONS_ENABLED && confirmBlocked && (
                   <Text style={styles.confirmLockNote}>
                     {[
                       timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
@@ -410,19 +410,6 @@ export default function GroupDetail() {
             )}
           </Pressable>
         ))}
-
-        {/* Life Counter — MTG groups only, visible to all members */}
-        {isInGroup && group.gameType === 'mtg' && (
-          <Pressable
-            style={styles.lifeCounterBtn}
-            onPress={() => {
-              Haptics.selectionAsync();
-              router.push({ pathname: '/life-counter', params: { groupId: group.id } });
-            }}
-          >
-            <Text style={styles.lifeCounterBtnText}>⚔️  Life Counter</Text>
-          </Pressable>
-        )}
 
         {/* Join / Leave */}
         <View style={styles.actionSection}>
@@ -992,20 +979,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#FFF',
-  },
-  lifeCounterBtn: {
-    backgroundColor: '#1A0A00',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#8B3A3A',
-    marginBottom: 12,
-  },
-  lifeCounterBtnText: {
-    color: '#C0605A',
-    fontWeight: '700',
-    fontSize: 15,
-    letterSpacing: 0.5,
   },
 });

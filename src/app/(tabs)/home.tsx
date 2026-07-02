@@ -179,20 +179,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Quick Actions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <Pressable style={styles.pickupCard} onPress={() => router.push({ pathname: '/life-counter', params: { pickup: 'true' } })}>
-          <View style={styles.pickupCardLeft}>
-            <Text style={styles.pickupCardEmoji}>⚡</Text>
-            <View>
-              <Text style={styles.pickupCardTitle}>Pickup Game</Text>
-              <Text style={styles.pickupCardSub}>Jump in without a group · 2–6 players</Text>
-            </View>
-          </View>
-          <Text style={styles.pickupCardArrow}>→</Text>
-        </Pressable>
-      </View>
     </ScrollView>
   );
 }
@@ -479,38 +465,5 @@ const styles = StyleSheet.create({
   },
   familiarFoeBadgeText: {
     color: '#8B7FEF',
-  },
-  pickupCard: {
-    backgroundColor: '#0A1F0A',
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1.5,
-    borderColor: '#34C759',
-  },
-  pickupCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  pickupCardEmoji: {
-    fontSize: 28,
-  },
-  pickupCardTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFF',
-    marginBottom: 2,
-  },
-  pickupCardSub: {
-    fontSize: 12,
-    color: '#34C759',
-  },
-  pickupCardArrow: {
-    fontSize: 18,
-    color: '#34C759',
-    fontWeight: '700',
   },
 });
