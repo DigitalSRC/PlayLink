@@ -154,10 +154,20 @@ As of this document's creation, the active top-level feature branches are:
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
   `development`/`main` until finished; see [CLAUDE.md](../CLAUDE.md) for the specific
   flag (`GAME_SESSIONS_ENABLED`) gating its entry points on `development`/`main`.
-- **`rival-system`** — ongoing work on rival matching/display beyond what's already
-  shipped in `src/utils/rival-utils.ts`.
+- **`rival-system`** — the entire rival-matching feature (`src/data/seed-profiles.ts` and
+  everything downstream of it), in-progress and excluded from `development`/`main`/`shop`/
+  `life-counter` until finished; see [CLAUDE.md](../CLAUDE.md) for the `RIVAL_POOL`
+  placeholder pattern gating it. `src/utils/rival-utils.ts` is the one exception — a
+  generic, already-shipped domain utility that stays on every branch regardless.
 - **`shop`** — build-out of the shop tab, currently a placeholder screen on
   `development`/`main`.
+- **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
+  Excluded from every other branch except `unitTests`/`test/<feature>`; see
+  [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
+
+Mock group data (`HARDCODED_GROUPS` in `src/data/groups.ts`) has no dedicated top-level
+branch — it's seed/test data standing in for a real backend, not an in-progress feature, so
+it lives only on `unitTests`/`test/<feature>`; see [CLAUDE.md](../CLAUDE.md).
 
 This list will grow as new top-level features start and shrink only when a feature ships
 (merges into `development`) or is explicitly abandoned by the developer.

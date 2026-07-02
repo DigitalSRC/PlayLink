@@ -40,13 +40,15 @@ index (landing / welcome)
             └─ profile    (user settings, theme, sign-out)
 ```
 
-Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`, `dev-tools`.
+Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`.
 
 `pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-the-mvp) — they've been removed from `main`/`development` until that feature is finished (see Git workflow below). `group-detail`'s "Start Game" button is temporarily disabled (`GAME_SESSIONS_ENABLED = false`) as a result.
 
+`dev-tools` also exists as a root-stack screen, but only on the dedicated `dev-tools` branch (and `unitTests`/`test/<feature>`) — see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below.
+
 ### State management
 
-Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `currentUser` (`UserProfile | null`), `groups` (seeded from `HARDCODED_GROUPS`), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. The tab layout redirects unauthenticated users to `/profile-creation`.
+Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `currentUser` (`UserProfile | null`), `groups` (seeded from `HARDCODED_GROUPS` on `unitTests`/`test/<feature>`; seeded empty on `development`/`main` — see below), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. The tab layout redirects unauthenticated users to `/profile-creation`.
 
 ### Data layer
 
@@ -55,9 +57,9 @@ Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). 
 - `GameType` (`'mtg' | 'pokemon' | 'lorcana' | 'onepiece'`) and associated display constants (`GAME_LABELS`, `GAME_EMOJI`, `GAME_COLOR`).
 - `NoGoRule`, `FORMAT_OPTIONS`, `BRACKET_INFO`, `TIME_SLOTS`, `DAYS_OF_WEEK`.
 
-**[src/data/groups.ts](src/data/groups.ts)** exports `PlayerProfile`, `Group`, and `HARDCODED_GROUPS` (a static seed list; it does not use `Math.random()`).
+**[src/data/groups.ts](src/data/groups.ts)** exports `PlayerProfile` and `Group` everywhere. `HARDCODED_GROUPS` (a static seed list; it does not use `Math.random()`) exists only on `unitTests`/`test/<feature>` — removed from `development`/`main` (see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below).
 
-**[src/data/seed-profiles.ts](src/data/seed-profiles.ts)** provides the pool of `UserProfile` objects used for rival matching.
+**[src/data/seed-profiles.ts](src/data/seed-profiles.ts)** provides the pool of `UserProfile` objects used for rival matching. Exists only on `rival-system`, `unitTests`, and `test/<feature>` — removed from `development`/`main`/`shop`/`life-counter` along with the rest of rival matching (see below).
 
 [src/data/random-data.ts](src/data/random-data.ts) holds string pools (names, locations, times) used by any future dynamic seeding.
 
@@ -122,6 +124,14 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 
 - `life-counter` itself only advances to `development` when the developer explicitly says the feature is ready to come back — do not do this proactively, even if `life-counter` has been sitting untouched for a while.
 - `main`/`development` currently have life-counter's route and its entry points (group-detail's "Start Game" button, the secondary "Life Counter" button, and home's "Quick Actions" pickup card) removed/disabled behind a `GAME_SESSIONS_ENABLED` flag in [src/app/group-detail.tsx](src/app/group-detail.tsx). Restoring the feature means reverting that removal (or manually re-wiring) in addition to merging `life-counter` in — the merge alone will not restore the entry points, by design (see the removal commit's message for why).
+
+### Rival matching, Dev Tools, and mock group data (features gated off `development`/`main`)
+
+Three more things have been removed from `development`/`main` for the same reason as life-counter — they're unfinished, or they're seed/mock data standing in for a real backend rather than shippable content. Restoring any of them requires the developer's explicit go-ahead, same bar as life-counter — merging the source branch back in alone will not restore the entry points.
+
+- **Rival matching** (`src/data/seed-profiles.ts` and the parts of `profile-creation.tsx`, `stats.tsx`, and `player-profile.tsx` that consumed it). `seed-profiles.ts` exists only on `rival-system`, `unitTests`, and `test/<feature>`. On `development`/`main`/`shop`/`life-counter`, those three files each define a local, empty `RIVAL_POOL: UserProfile[]` placeholder in its place, so rival computation, the leaderboard, and profile lookups keep compiling and degrade safely instead of breaking. `rival-utils.ts` is unaffected — `findRivals` is generic and has no `SEED_PROFILES` dependency, so it stays a permanent, always-shipped domain utility.
+- **Dev Tools** (`src/app/dev-tools.tsx`). Removed from every branch except the dedicated `dev-tools` branch and `unitTests`/`test/<feature>`. On `development`/`main`, `(tabs)/profile.tsx`'s Dev Tools badge is gated behind `DEV_TOOLS_ENABLED = false`; the button's `router.push('/dev-tools')` call was deleted outright rather than flag-gated, because Expo Router's typed routes (`app.json` → `experiments.typedRoutes`) type-check route strings against files that exist — a runtime flag can't keep a deleted route compiling.
+- **Mock group data** (`HARDCODED_GROUPS` in `src/data/groups.ts`). Removed from every branch except `unitTests`/`test/<feature>` — it's the seed data behind Browse/Home/Group Detail, standing in for a real backend, not shippable content. `AppContext.tsx` seeds `groups` as `[]` instead. The `Group`/`PlayerProfile` types stay everywhere.
 
 ### Commit rules
 
