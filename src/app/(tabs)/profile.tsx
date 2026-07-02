@@ -24,6 +24,19 @@ import {
 
 const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
 
+// Dev Tools (src/app/dev-tools.tsx) is a testing scaffold, not part of the shipped MVP
+// surface. Its working copy now lives on the dedicated `dev-tools` branch (and is still
+// present, unchanged, on `unitTests`/`test/<feature>`) but has been removed from
+// development/main — see CLAUDE.md git workflow. DEV_TOOLS_ENABLED documents that removal and
+// gates the "DEVELOPER" badge below; it can't also gate the Dev Tools button itself, because
+// that button's router.push('/dev-tools') call had to be deleted outright below (not just
+// wrapped in a runtime check) — Expo Router's typedRoutes (app.json ->
+// experiments.typedRoutes) type-checks route strings against files that exist in src/app/, so
+// a call to a deleted route can't compile even behind `if (false)`. Restoring Dev Tools means
+// re-adding dev-tools.tsx first (so the route re-appears in the generated types), then
+// flipping this flag and re-adding the button (see this commit's diff).
+const DEV_TOOLS_ENABLED = false;
+
 /**
  * Profile tab — personal info, stats, game preferences, rivals, settings, and dev tools.
  * Header row shows an avatar circle on the left and display name / username / location on the right.
@@ -149,7 +162,7 @@ export default function ProfileScreen() {
             placeholder="Your area"
             placeholderTextColor={textSec}
           />
-          {currentUser.isDeveloper && (
+          {DEV_TOOLS_ENABLED && currentUser.isDeveloper && (
             <View style={[styles.devBadge, { marginTop: 10 }]}>
               <Text style={styles.devBadgeText}>🔧 DEVELOPER</Text>
             </View>
@@ -366,15 +379,8 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {currentUser.isDeveloper && (
-          <Pressable
-            style={[styles.devToolsBtn, { backgroundColor: card, borderColor: border }]}
-            onPress={() => router.push('/dev-tools')}
-          >
-            <Text style={styles.devToolsBtnText}>🔧 Developer Tools</Text>
-            <Text style={styles.devToolsArrow}>→</Text>
-          </Pressable>
-        )}
+        {/* Dev Tools entry point removed along with src/app/dev-tools.tsx — see
+            DEV_TOOLS_ENABLED above and CLAUDE.md git workflow. */}
       </View>
 
       {/* ── Save / Discard / Restart ── */}
