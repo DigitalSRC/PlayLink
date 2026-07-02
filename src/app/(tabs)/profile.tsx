@@ -21,6 +21,7 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
+import { useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
 
@@ -39,6 +40,7 @@ export default function ProfileScreen() {
     setCurrentUser, clearCurrentUser, setChosenRivalId,
     theme, setTheme,
   } = useApp();
+  const { bg, card, border, textPrimary, textSecondary: textSec } = useThemeColors();
 
   if (!currentUser) return null;
 
@@ -109,11 +111,6 @@ export default function ProfileScreen() {
   ];
 
   const isDark = theme === 'dark';
-  const bg = isDark ? '#0F0F14' : '#F2F2F7';
-  const card = isDark ? '#1C1C24' : '#FFFFFF';
-  const border = isDark ? '#2C2C38' : '#E0E0E8';
-  const textPrimary = isDark ? '#FFFFFF' : '#000000';
-  const textSec = isDark ? '#888' : '#666';
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: bg }]} contentContainerStyle={styles.content}>
