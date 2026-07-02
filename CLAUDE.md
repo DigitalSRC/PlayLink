@@ -40,7 +40,9 @@ index (landing / welcome)
             └─ profile    (user settings, theme, sign-out)
 ```
 
-Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`, `pickup-setup`, `life-counter`, `dev-tools`.
+Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`, `dev-tools`.
+
+`pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-alpha-10) — they've been removed from `main`/`Dev` until that feature is finished (see Git workflow below). `group-detail`'s "Start Game" button is temporarily disabled (`GAME_SESSIONS_ENABLED = false`) as a result.
 
 ### State management
 
@@ -78,15 +80,39 @@ These rules apply unconditionally. Do not skip them, do not ask whether to follo
 ### Branch structure
 
 ```
-main          ← production-only; merged into only from unitTests after tests pass
-unitTests     ← integration point; feature branches merge here first
-feature/*     ← one branch per feature, created fresh each time
+main          ← RELEASE ONLY. What ships to Alpha/external testers. Advances only when
+                the user explicitly says to cut a release — never automatically, never
+                as a side effect of finishing a feature. Tagged at each release point
+                (e.g. `alpha-1.0`).
+Dev           ← ongoing integration branch (this was called `main` before the Alpha 1.0
+                split — all pre-Alpha history lives here). Every finished, tested feature
+                lands here. This is the "front of the queue" for the next release, but is
+                NOT itself shippable until the user says so.
+unitTests     ← integration/staging point; feature branches merge here first, tests are
+                written/run here before promotion to Dev.
+feature/*     ← one branch per feature, created fresh each time, off unitTests.
+life-counter  ← long-lived feature-family branch (see below). Not on Dev or main.
 ```
 
-- **`main` is read-only for direct work.** Never commit directly to main. It receives merges only from `unitTests` after all tests pass.
-- **`unitTests` is the staging branch.** Every completed feature branch merges into `unitTests`. Unit tests for that feature are written and run on this branch before anything reaches main.
+- **`main` is release-only and off-limits for all routine work.** Never commit to it directly, and never merge `Dev` or `unitTests` into it without the user explicitly asking to cut a release. Finishing a feature, passing tests, or merging into `Dev` does **not** imply permission to touch `main` — treat every `Dev → main` merge as requiring fresh, explicit authorization, same bar as a force-push.
+- **`Dev` is the default integration target** for everything that used to go to `main` under the old two-tier model. When these instructions (or older muscle memory) say "merge to main," that now means `Dev`, unless the user is explicitly talking about cutting a release.
+- **`unitTests` is the staging branch.** Every completed feature branch merges into `unitTests`. Unit tests for that feature are written and run on this branch before anything reaches `Dev`.
 - **Each feature gets its own branch**, named `feature/<short-description>` (e.g. `feature/login-existing-profile`). Create it from the current tip of `unitTests`.
 - **Branches are never deleted.** Keep all branches so work can be resumed or reverted later.
+
+### The `life-counter` branch (feature under active development, excluded from Alpha 1.0)
+
+Life counter is not a finished feature and must not reach `Dev` or `main` until the user gives
+an explicit go-ahead. It has its own long-lived integration branch, parallel to `unitTests`:
+
+```
+feature/life-counter-*  →  life-counter  →  unitTests  →  Dev  →  main (explicit release only)
+```
+
+- Any new life-counter work gets its own `feature/life-counter-<short-description>` branch, created from the current tip of `life-counter` (not `unitTests`).
+- Finished life-counter feature branches merge into `life-counter`.
+- `life-counter` itself merges into `unitTests` (then flows on to `Dev`) only when the user explicitly says the feature is ready to come back — do not do this proactively, even if `life-counter` has been sitting untouched for a while.
+- `main`/`Dev` currently have life-counter's route and its two entry points (group-detail's "Start Game" button, the secondary "Life Counter" button, and home's "Quick Actions" pickup card) removed/disabled behind a `GAME_SESSIONS_ENABLED` flag in [src/app/group-detail.tsx](src/app/group-detail.tsx). Restoring the feature means reverting that removal (or manually re-wiring) in addition to merging `life-counter` in — the merge alone will not restore the entry points, by design (see the removal commit's message for why).
 
 ### Commit rules
 
@@ -101,15 +127,15 @@ feature/*     ← one branch per feature, created fresh each time
 3. Implement the feature. Commit on the feature branch when done.
 4. `git checkout unitTests && git merge feature/<name>` — bring the feature into staging.
 5. Write or update unit tests on `unitTests` for the new behavior.
-6. `npm test` — all tests must pass before anything merges to main.
-7. `git checkout main && git merge unitTests` — only after tests are green.
+6. `npm test` — all tests must pass before anything merges onward.
+7. `git checkout Dev && git merge unitTests` — only after tests are green. Do **not** merge to `main` here — that's a separate, explicitly-requested release step.
 
 ### What to do at the start of every session
 
 1. Run `git branch -a` to orient yourself — know what branches exist.
 2. Ask the user which feature to work on if it is not obvious from context.
-3. Check out (or create) the appropriate feature branch before touching any files.
-4. Never assume it is acceptable to work on `main` directly, even for a "small" fix.
+3. Check out (or create) the appropriate feature branch before touching any files — off `unitTests` normally, off `life-counter` for life-counter work.
+4. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the user to explicitly ask for a release.
 
 ## Working conventions
 
