@@ -10,7 +10,7 @@ PlayLink is an Expo Router app (v56) built with React Native and TypeScript. Use
 
 - `npm install` — install dependencies
 - `npm start` / `npx expo start` — start the dev server (add `--android`, `--ios`, or `--web` to target a platform)
-- `npm test` — run all Jest tests
+- `npm test` — run all Jest tests (only meaningful on `unitTests` or a `test/<feature>` branch — test files are never present on `development`/`main`, see Git workflow below)
 - `npx jest --testPathPattern=group-utils` — run a single test file by path fragment
 - `npx jest -t "normalizes invalid"` — run tests matching a name pattern
 - `npm run lint` — run ESLint via expo lint
@@ -63,11 +63,11 @@ Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). 
 
 ### Domain utilities
 
-**[src/utils/group-utils.ts](src/utils/group-utils.ts)** — pure group business logic: `findGroupByUsername`, `isHostForUser`, `isGroupFull`, `canJoinGroup`, `buildNewPlayer`, `normalizePositiveInt`, `removePlayerFromGroup`, `setPlayerAsHost`, `generateJoinCode`, `formatBrackets`. Tested in [src/utils/group-utils.test.ts](src/utils/group-utils.test.ts).
+**[src/utils/group-utils.ts](src/utils/group-utils.ts)** — pure group business logic: `findGroupByUsername`, `isHostForUser`, `isGroupFull`, `canJoinGroup`, `buildNewPlayer`, `normalizePositiveInt`, `removePlayerFromGroup`, `setPlayerAsHost`, `generateJoinCode`, `formatBrackets`. Unit tested in `src/utils/group-utils.test.ts` on the `unitTests` branch (test files don't live on `development`/`main` — see Git workflow below).
 
-**[src/utils/rival-utils.ts](src/utils/rival-utils.ts)** — exports `findRivals`, which ranks seed profiles by win-rate proximity to the current user and always injects Dillon Carroll (id 113) as the first rival with his preferences mirrored from the current user. Tested in [src/utils/rival-utils.test.ts](src/utils/rival-utils.test.ts).
+**[src/utils/rival-utils.ts](src/utils/rival-utils.ts)** — exports `findRivals`, which ranks seed profiles by win-rate proximity to the current user and always injects Dillon Carroll (id 113) as the first rival with his preferences mirrored from the current user. Unit tested in `src/utils/rival-utils.test.ts` on the `unitTests` branch (same rule — not on `development`/`main`).
 
-When adding new group or rival behavior, put the logic in the appropriate utils file and test it there — do not inline it in screen components.
+When adding new group or rival behavior, put the logic in the appropriate utils file — do not inline it in screen components. Write or update its tests on the `unitTests`/`test/<feature>` lane (§2.5 of the workflow doc), not directly on `development` or `main`.
 
 ### Styling
 
@@ -104,10 +104,11 @@ test/<feature>       ← created fresh per test cycle as a merge of `unitTests` 
 ```
 
 - **`main` is release-only and off-limits for all routine work.** Never commit to it directly, and never merge into it without the developer explicitly asking to cut a release. Finishing a feature, passing tests, or merging into `development` does **not** imply permission to touch `main` — treat every `development → main` merge as requiring fresh, explicit authorization, same bar as a force-push.
-- **`development` is the default integration target.** When older instructions or commit messages say "merge to main," that now means `development`, unless the developer is explicitly talking about cutting a release.
-- **Top-level feature branches fork from `development`, not from `main` and not from `unitTests`.** Name them after the feature with no prefix: `life-counter`, `rival-system`, `shop`. See §5 of the full workflow doc for the current list.
+- **`development` is the default integration target, but merging into it is never automatic.** A green `test/<feature>` run is necessary but **not sufficient** — do not run `git checkout development && git merge <feature>` just because tests passed. Merging into `development` additionally requires the developer (or another developer) to explicitly confirm the feature is ready to land there. If that confirmation hasn't been given, stop after the tests pass and say so instead of merging. When older instructions or commit messages say "merge to main," that now means `development`, unless the developer is explicitly talking about cutting a release.
+- **Top-level feature branches still fork from `development`** — that part of the model is unchanged. Name them after the feature with no prefix: `life-counter`, `rival-system`, `shop`. See §5 of the full workflow doc for the current list. (The confirmation gate above is about what's allowed to merge back *into* `development`, not about where new branches originate from it.)
 - **Sub-work within a feature** uses `feature/<specific-function>` branched off that feature's own branch (e.g. `feature/rotate-button` off `life-counter`), merging back into it.
-- **Testing is a separate lane**, not a step inside `development`. `unitTests` stays synced with `development`; `test/<feature>` is a throwaway-and-recreate merge of `unitTests` + the feature branch, used to write and run tests. Passing promotes the tests into `unitTests` and the feature into `development`; failing sends work back to the feature branch and `test/<feature>` gets recreated later.
+- **Testing is a separate lane**, not a step inside `development`. `unitTests` stays synced with `development`; `test/<feature>` is a throwaway-and-recreate merge of `unitTests` + the feature branch, used to write and run tests. Passing tests promotes the tests into `unitTests` — it does **not** by itself promote the feature into `development`; that still needs explicit developer confirmation. Failing tests sends work back to the feature branch and `test/<feature>` gets recreated later.
+- **`development` and `main` never contain test files.** No `*.test.ts` (or other test-suite files) may exist on either branch. `unitTests` and `test/<feature>` are the only branches where test files live. If a merge into `development` or a commit to `main` would introduce a test file, strip it out first — see §2.6 of the full workflow doc.
 - **Branches are not deleted as routine practice.** (A one-time cleanup happened when this document was written, removing branches whose entire history was already absorbed into `development` — see git log. That was a rare, explicit, developer-approved exception, not a standing policy.)
 
 ### The `life-counter` branch (feature under active development, excluded from the MVP)
@@ -136,9 +137,10 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 4. `git checkout <feature> && git merge feature/<function>` — bring it into the feature branch.
 5. When the feature is ready to test: `git checkout unitTests && git merge development` (stay current), then `git checkout -b test/<feature> && git merge <feature>`.
 6. Write/update unit tests on `test/<feature>`. `npm test` — all tests must pass.
-7. On pass: merge the test additions back into `unitTests`, then `git checkout development && git merge <feature>`.
-8. On fail: go back to step 2–4 on the feature branch; recreate `test/<feature>` later and retry step 6.
-9. Do **not** merge to `main` at any point in this flow — that's a separate, explicitly-requested release step only.
+7. On pass: merge the test additions back into `unitTests`. Do **not** merge into `development` yet — passing tests only clears the way to ask.
+8. Ask the developer (or confirm another developer has already signed off) that the feature is ready for `development`. Only after that explicit confirmation: `git checkout development && git merge <feature>`. Before merging, double-check the feature branch carries no test files into `development` (see §2.6 of the workflow doc) — strip any out first.
+9. On fail: go back to step 2–4 on the feature branch; recreate `test/<feature>` later and retry step 6.
+10. Do **not** merge to `main` at any point in this flow — that's a separate, explicitly-requested release step only.
 
 ### What to do at the start of every session
 
@@ -151,7 +153,7 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 
 - Prefer small, focused changes that fit the existing React Native patterns instead of introducing new libraries or architecture.
 - Preserve the existing navigation flow; route params and screen names must remain consistent.
-- When modifying group-related logic, keep the `PlayerProfile` and `Group` types in [src/data/groups.ts](src/data/groups.ts) intact and update tests in [src/utils/group-utils.test.ts](src/utils/group-utils.test.ts) when behavior changes.
+- When modifying group-related logic, keep the `PlayerProfile` and `Group` types in [src/data/groups.ts](src/data/groups.ts) intact and update the tests in `src/utils/group-utils.test.ts` on the `unitTests`/`test/<feature>` lane when behavior changes — not on `development`/`main`.
 - Avoid editing content in [example/](example/) unless the task specifically requires it.
 
 ## Documentation requirement

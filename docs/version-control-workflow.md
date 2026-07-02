@@ -26,9 +26,10 @@ other branch exists to protect `main` from unfinished, untested, or unreviewed w
 main                    Release only. Tagged at every release (e.g. v0.1.0-mvp).
   ↑  explicit release approval only
 development             Integration branch. Everything destined for production
-  │                      lands here once its tests pass. Never shippable on its
+  │                      lands here once its tests pass AND a developer has
+  │                      explicitly confirmed it's ready. Never shippable on its
   │                      own — it's the front of the queue, not the release.
-  ↑  merge after tests pass on test/<feature>
+  ↑  merge only after tests pass on test/<feature> AND explicit developer confirmation
 <feature>                Top-level feature branch, forked from development.
   │                       Named after the feature itself — no "feature/" prefix
   │                       at this tier (e.g. life-counter, rival-system, shop).
@@ -56,11 +57,18 @@ unitTests                Kept up to date with development at all times.
 
 ### 2.2 `development` — integration branch
 
-- Everything that has passed its `test/<feature>` cycle lands here.
+- Everything that has passed its `test/<feature>` cycle **and** has been explicitly
+  confirmed ready by the developer (or another developer) lands here. A green
+  `test/<feature>` run is necessary but not sufficient by itself — do not merge into
+  `development` just because tests passed. Wait for the explicit go-ahead, then merge.
 - This is what the old two-tier model called `main`. If you see references to "merge to
   main" in older commit messages or muscle memory, they mean `development` now.
 - Still not committed to directly — even integration-ready work arrives via a merge from
-  a completed `test/<feature>` cycle, not a direct commit.
+  a completed `test/<feature>` cycle (after confirmation), not a direct commit.
+- Branches still fork *from* `development` as normal (see §2.3) — the confirmation
+  requirement above governs what's allowed to merge back *into* `development`, not where
+  new top-level feature branches originate.
+- Contains no test files — see §2.6.
 
 ### 2.3 Top-level feature branches — `<feature-name>`, no prefix
 
@@ -88,8 +96,12 @@ unitTests                Kept up to date with development at all times.
   merge of `unitTests` (latest) and `<feature>` (latest) — e.g. `test/life-counter` =
   `unitTests` + `life-counter`.
 - Write and run tests on `test/<feature>`.
-  - **Tests pass:** merge the new/updated tests back into `unitTests`, then merge
-    `<feature>` into `development`. The feature is now part of the integration branch.
+  - **Tests pass:** merge the new/updated tests back into `unitTests`. This does **not**
+    by itself put the feature into `development` — passing tests only clears the way to
+    ask. Merging `<feature>` into `development` additionally requires the developer (or
+    another developer) to explicitly confirm the feature is ready. Only after that
+    confirmation, merge `<feature>` into `development` (stripping any test files first —
+    see §2.6).
   - **Tests fail:** development continues on `<feature>` (and its `feature/*`
     sub-branches) to fix the issues. `test/<feature>` is recreated (or updated) from the
     fixed `<feature>` branch and the cycle repeats. `development` is not touched until
@@ -97,6 +109,21 @@ unitTests                Kept up to date with development at all times.
 - Testing and feature development happen in tandem, not sequentially — you don't have to
   fully "finish" a feature before starting to test parts of it; `test/<feature>` just has
   to be recreated from the latest `<feature>` tip each time you want a fresh test pass.
+
+### 2.6 No test files on `development` or `main`
+
+- `development` and `main` never contain test files (`*.test.ts` or any other test-suite
+  file). `unitTests` and `test/<feature>` are the only branches where test files are
+  allowed to exist.
+- This applies retroactively as well as going forward: if a test file is ever found on
+  `development` or `main`, remove it in a dedicated commit rather than leaving it in
+  place "because it's already there."
+- When merging a feature into `development` (step 2.2/2.5), check the merge doesn't
+  reintroduce test files that only belong on `unitTests`/`test/<feature>` — strip them
+  from the feature branch's merge if needed.
+- `npm test` / `npx jest ...` are therefore only meaningful when run on `unitTests` or a
+  `test/<feature>` branch — running them on `development` or `main` will find nothing to
+  run.
 
 ---
 
@@ -117,6 +144,7 @@ unitTests                Kept up to date with development at all times.
 | Work on one piece of an existing feature | that feature's branch | `feature/<specific-function>` |
 | Test a feature that's ready | merge of `unitTests` + `<feature>` | `test/<feature>` |
 | Fix something found during testing | the feature branch (or its `feature/*` sub-branch) | continue there, don't branch from `test/<feature>` |
+| Merge a tested feature into `development` | — | not automatic on green tests; requires explicit developer (or other-developer) confirmation the feature is ready — then merge, with no test files carried in (§2.6) |
 | Cut a release | — | not a branch action; ask the developer, then merge `development` → `main` and tag it |
 
 ## 5. Current top-level feature branches
