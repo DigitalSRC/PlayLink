@@ -42,7 +42,7 @@ index (landing / welcome)
 
 Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`, `dev-tools`.
 
-`pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-alpha-10) — they've been removed from `main`/`Dev` until that feature is finished (see Git workflow below). `group-detail`'s "Start Game" button is temporarily disabled (`GAME_SESSIONS_ENABLED = false`) as a result.
+`pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-the-mvp) — they've been removed from `main`/`development` until that feature is finished (see Git workflow below). `group-detail`'s "Start Game" button is temporarily disabled (`GAME_SESSIONS_ENABLED = false`) as a result.
 
 ### State management
 
@@ -84,15 +84,14 @@ needs to not violate it.
 ### Branch structure
 
 ```
-main                 ← RELEASE ONLY. What ships to Alpha/external testers. Advances only
-                       when the developer explicitly says to cut a release — never
-                       automatically, never as a side effect of finishing a feature or
-                       passing tests. Tagged at each release point (e.g. `alpha-1.0`).
+main                 ← RELEASE ONLY. What ships to MVP testers. Advances only when the
+                       developer explicitly says to cut a release — never automatically,
+                       never as a side effect of finishing a feature or passing tests.
+                       Tagged at each release point (e.g. `v0.1.0-mvp`).
 development          ← integration branch. Everything finished and tested lands here. This
                        is the "front of the queue" for the next release, but is NOT itself
                        shippable until the developer says so. (This was called `main` before
-                       the Alpha 1.0 split, then briefly `Dev` — all pre-Alpha history lives
-                       here.)
+                       the MVP split, then briefly `Dev` — all pre-MVP history lives here.)
 <feature>            ← top-level feature branch, forked from `development`, named after the
                        feature itself with NO `feature/` prefix at this tier (e.g.
                        `life-counter`, `rival-system`, `shop`).
@@ -111,7 +110,7 @@ test/<feature>       ← created fresh per test cycle as a merge of `unitTests` 
 - **Testing is a separate lane**, not a step inside `development`. `unitTests` stays synced with `development`; `test/<feature>` is a throwaway-and-recreate merge of `unitTests` + the feature branch, used to write and run tests. Passing promotes the tests into `unitTests` and the feature into `development`; failing sends work back to the feature branch and `test/<feature>` gets recreated later.
 - **Branches are not deleted as routine practice.** (A one-time cleanup happened when this document was written, removing branches whose entire history was already absorbed into `development` — see git log. That was a rare, explicit, developer-approved exception, not a standing policy.)
 
-### The `life-counter` branch (feature under active development, excluded from Alpha 1.0)
+### The `life-counter` branch (feature under active development, excluded from the MVP)
 
 Life counter is not a finished feature and must not reach `development` or `main` until the
 developer gives an explicit go-ahead.

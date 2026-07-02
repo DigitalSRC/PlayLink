@@ -59,7 +59,7 @@ git checkout -b feature/your-change life-counter
 
 | Branch | Purpose |
 |---|---|
-| `main` | Release only. Ships to Alpha/external testers. Tagged at every release (e.g. `alpha-1.0`). Never commit here, never merge here without an explicit release request. |
+| `main` | Release only. Ships to MVP testers. Tagged at every release (e.g. `v0.1.0-mvp`). Never commit here, never merge here without an explicit release request. |
 | `development` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
 | `<feature>` (no prefix) | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `rival-system`, `shop`). |
 | `feature/<function>` | Sub-branch of a top-level feature branch, scoped to one specific piece of work, merges back into it. |

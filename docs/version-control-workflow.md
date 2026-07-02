@@ -11,7 +11,7 @@ document is the full, detailed reference those rules point back to.
 
 ## 1. Guiding principle
 
-**`main` is the product.** It is what ships to Alpha testers and, later, real users. Every
+**`main` is the product.** It is what ships to MVP testers and, later, real users. Every
 other branch exists to protect `main` from unfinished, untested, or unreviewed work.
 
 > `main` only ever changes when a human developer explicitly says "cut a release." Never
@@ -23,7 +23,7 @@ other branch exists to protect `main` from unfinished, untested, or unreviewed w
 ## 2. Branch tiers
 
 ```
-main                    Release only. Tagged at every release (e.g. alpha-1.0).
+main                    Release only. Tagged at every release (e.g. v0.1.0-mvp).
   ↑  explicit release approval only
 development             Integration branch. Everything destined for production
   │                      lands here once its tests pass. Never shippable on its
@@ -50,7 +50,7 @@ unitTests                Kept up to date with development at all times.
 
 - Never commit directly.
 - Never merge into it without the developer explicitly asking for a release cut.
-- Tag every release point (`alpha-1.0`, `alpha-1.1`, `beta-1.0`, ...) so any past release
+- Tag every release point (`v0.1.0-mvp`, `v0.2.0-mvp`, `v1.0.0-beta`, ...) so any past release
   can be found by name, not by digging through `development`'s history.
 - Contains no in-progress feature work, no testing scaffolding, nothing unreviewed.
 
