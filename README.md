@@ -47,22 +47,28 @@ These are stored in a gitignored file that each developer creates locally.
 
 ## Branch and workflow setup
 
-This project uses a three-tier branch model. When you clone the repo, make sure all three
-branches are available locally:
+This project uses a layered branch model built around one rule: **`main` only changes when
+a developer explicitly cuts a release.** Everything else exists to protect it.
 
 ```bash
-git checkout main
-git checkout unitTests
-git checkout -b feature/your-first-feature unitTests
+git checkout main          # release only — never commit here directly
+git checkout development   # integration branch — everything ready lands here
+git checkout life-counter  # example top-level feature branch
+git checkout -b feature/your-change life-counter
 ```
 
 | Branch | Purpose |
 |---|---|
-| `main` | Production only. Never commit here directly. |
-| `unitTests` | Staging. All feature branches merge here; tests run here before anything hits main. |
-| `feature/*` | One branch per feature, branched off `unitTests`. Never deleted. |
+| `main` | Release only. Ships to Alpha/external testers. Tagged at every release (e.g. `alpha-1.0`). Never commit here, never merge here without an explicit release request. |
+| `development` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
+| `<feature>` (no prefix) | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `rival-system`, `shop`). |
+| `feature/<function>` | Sub-branch of a top-level feature branch, scoped to one specific piece of work, merges back into it. |
+| `unitTests` | Kept in sync with `development`; feeds the `test/<feature>` cycle. |
+| `test/<feature>` | Created fresh per test cycle as `unitTests` + `<feature>`; tests are written and run here before promotion. |
 
-See `CLAUDE.md` for the full step-by-step workflow Claude Code follows on every session.
+Full details, diagrams, and the pass/fail testing cycle are documented in
+[`docs/version-control-workflow.md`](docs/version-control-workflow.md). `CLAUDE.md` has the
+condensed, mandatory version of the same rules that Claude Code follows every session.
 
 ---
 
@@ -101,8 +107,13 @@ src/
     rival-utils.ts      Rival matching algorithm
     group-utils.test.ts Unit tests
 docs/
-  documentation-prompt.txt  Function documentation standard
+  documentation-prompt.txt     Function documentation standard
+  version-control-workflow.md  Full branching/testing/release workflow reference
 ```
+
+`life-counter.tsx` and `pickup-setup.tsx` exist as screens too, but only on the
+`life-counter` branch — they're excluded from `main`/`development` until that feature is
+finished (see the branch workflow above).
 
 ---
 

@@ -77,42 +77,51 @@ All styles use React Native `StyleSheet.create` defined at the bottom of each sc
 
 These rules apply unconditionally. Do not skip them, do not ask whether to follow them — just follow them.
 
+**Full reference:** [docs/version-control-workflow.md](docs/version-control-workflow.md) is
+the authoritative, detailed document. This section is the condensed summary an AI session
+needs to not violate it.
+
 ### Branch structure
 
 ```
-main          ← RELEASE ONLY. What ships to Alpha/external testers. Advances only when
-                the user explicitly says to cut a release — never automatically, never
-                as a side effect of finishing a feature. Tagged at each release point
-                (e.g. `alpha-1.0`).
-Dev           ← ongoing integration branch (this was called `main` before the Alpha 1.0
-                split — all pre-Alpha history lives here). Every finished, tested feature
-                lands here. This is the "front of the queue" for the next release, but is
-                NOT itself shippable until the user says so.
-unitTests     ← integration/staging point; feature branches merge here first, tests are
-                written/run here before promotion to Dev.
-feature/*     ← one branch per feature, created fresh each time, off unitTests.
-life-counter  ← long-lived feature-family branch (see below). Not on Dev or main.
+main                 ← RELEASE ONLY. What ships to Alpha/external testers. Advances only
+                       when the developer explicitly says to cut a release — never
+                       automatically, never as a side effect of finishing a feature or
+                       passing tests. Tagged at each release point (e.g. `alpha-1.0`).
+development          ← integration branch. Everything finished and tested lands here. This
+                       is the "front of the queue" for the next release, but is NOT itself
+                       shippable until the developer says so. (This was called `main` before
+                       the Alpha 1.0 split, then briefly `Dev` — all pre-Alpha history lives
+                       here.)
+<feature>            ← top-level feature branch, forked from `development`, named after the
+                       feature itself with NO `feature/` prefix at this tier (e.g.
+                       `life-counter`, `rival-system`, `shop`).
+feature/<function>   ← sub-branch of a top-level feature branch (forked from it, never from
+                       `development` or `main`), named after the specific piece of work.
+                       Merges back into the top-level feature branch it came from.
+unitTests            ← standing branch, kept up to date with `development`.
+test/<feature>       ← created fresh per test cycle as a merge of `unitTests` + `<feature>`.
+                       Tests are written/run here.
 ```
 
-- **`main` is release-only and off-limits for all routine work.** Never commit to it directly, and never merge `Dev` or `unitTests` into it without the user explicitly asking to cut a release. Finishing a feature, passing tests, or merging into `Dev` does **not** imply permission to touch `main` — treat every `Dev → main` merge as requiring fresh, explicit authorization, same bar as a force-push.
-- **`Dev` is the default integration target** for everything that used to go to `main` under the old two-tier model. When these instructions (or older muscle memory) say "merge to main," that now means `Dev`, unless the user is explicitly talking about cutting a release.
-- **`unitTests` is the staging branch.** Every completed feature branch merges into `unitTests`. Unit tests for that feature are written and run on this branch before anything reaches `Dev`.
-- **Each feature gets its own branch**, named `feature/<short-description>` (e.g. `feature/login-existing-profile`). Create it from the current tip of `unitTests`.
-- **Branches are never deleted.** Keep all branches so work can be resumed or reverted later.
+- **`main` is release-only and off-limits for all routine work.** Never commit to it directly, and never merge into it without the developer explicitly asking to cut a release. Finishing a feature, passing tests, or merging into `development` does **not** imply permission to touch `main` — treat every `development → main` merge as requiring fresh, explicit authorization, same bar as a force-push.
+- **`development` is the default integration target.** When older instructions or commit messages say "merge to main," that now means `development`, unless the developer is explicitly talking about cutting a release.
+- **Top-level feature branches fork from `development`, not from `main` and not from `unitTests`.** Name them after the feature with no prefix: `life-counter`, `rival-system`, `shop`. See §5 of the full workflow doc for the current list.
+- **Sub-work within a feature** uses `feature/<specific-function>` branched off that feature's own branch (e.g. `feature/rotate-button` off `life-counter`), merging back into it.
+- **Testing is a separate lane**, not a step inside `development`. `unitTests` stays synced with `development`; `test/<feature>` is a throwaway-and-recreate merge of `unitTests` + the feature branch, used to write and run tests. Passing promotes the tests into `unitTests` and the feature into `development`; failing sends work back to the feature branch and `test/<feature>` gets recreated later.
+- **Branches are not deleted as routine practice.** (A one-time cleanup happened when this document was written, removing branches whose entire history was already absorbed into `development` — see git log. That was a rare, explicit, developer-approved exception, not a standing policy.)
 
 ### The `life-counter` branch (feature under active development, excluded from Alpha 1.0)
 
-Life counter is not a finished feature and must not reach `Dev` or `main` until the user gives
-an explicit go-ahead. It has its own long-lived integration branch, parallel to `unitTests`:
+Life counter is not a finished feature and must not reach `development` or `main` until the
+developer gives an explicit go-ahead.
 
 ```
-feature/life-counter-*  →  life-counter  →  unitTests  →  Dev  →  main (explicit release only)
+feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →  development  →  main (explicit release only)
 ```
 
-- Any new life-counter work gets its own `feature/life-counter-<short-description>` branch, created from the current tip of `life-counter` (not `unitTests`).
-- Finished life-counter feature branches merge into `life-counter`.
-- `life-counter` itself merges into `unitTests` (then flows on to `Dev`) only when the user explicitly says the feature is ready to come back — do not do this proactively, even if `life-counter` has been sitting untouched for a while.
-- `main`/`Dev` currently have life-counter's route and its two entry points (group-detail's "Start Game" button, the secondary "Life Counter" button, and home's "Quick Actions" pickup card) removed/disabled behind a `GAME_SESSIONS_ENABLED` flag in [src/app/group-detail.tsx](src/app/group-detail.tsx). Restoring the feature means reverting that removal (or manually re-wiring) in addition to merging `life-counter` in — the merge alone will not restore the entry points, by design (see the removal commit's message for why).
+- `life-counter` itself only advances to `development` when the developer explicitly says the feature is ready to come back — do not do this proactively, even if `life-counter` has been sitting untouched for a while.
+- `main`/`development` currently have life-counter's route and its entry points (group-detail's "Start Game" button, the secondary "Life Counter" button, and home's "Quick Actions" pickup card) removed/disabled behind a `GAME_SESSIONS_ENABLED` flag in [src/app/group-detail.tsx](src/app/group-detail.tsx). Restoring the feature means reverting that removal (or manually re-wiring) in addition to merging `life-counter` in — the merge alone will not restore the entry points, by design (see the removal commit's message for why).
 
 ### Commit rules
 
@@ -122,20 +131,22 @@ feature/life-counter-*  →  life-counter  →  unitTests  →  Dev  →  main (
 
 ### Workflow steps — do this for every feature
 
-1. `git checkout unitTests && git pull` — start from the latest staging state.
-2. `git checkout -b feature/<name>` — create the feature branch.
-3. Implement the feature. Commit on the feature branch when done.
-4. `git checkout unitTests && git merge feature/<name>` — bring the feature into staging.
-5. Write or update unit tests on `unitTests` for the new behavior.
-6. `npm test` — all tests must pass before anything merges onward.
-7. `git checkout Dev && git merge unitTests` — only after tests are green. Do **not** merge to `main` here — that's a separate, explicitly-requested release step.
+1. `git checkout <feature> && git pull` — start from the latest state of the relevant top-level feature branch (or `development` if starting a brand-new top-level feature).
+2. `git checkout -b feature/<function>` — create the sub-branch for this specific piece of work.
+3. Implement the work. Commit on the sub-branch when done.
+4. `git checkout <feature> && git merge feature/<function>` — bring it into the feature branch.
+5. When the feature is ready to test: `git checkout unitTests && git merge development` (stay current), then `git checkout -b test/<feature> && git merge <feature>`.
+6. Write/update unit tests on `test/<feature>`. `npm test` — all tests must pass.
+7. On pass: merge the test additions back into `unitTests`, then `git checkout development && git merge <feature>`.
+8. On fail: go back to step 2–4 on the feature branch; recreate `test/<feature>` later and retry step 6.
+9. Do **not** merge to `main` at any point in this flow — that's a separate, explicitly-requested release step only.
 
 ### What to do at the start of every session
 
 1. Run `git branch -a` to orient yourself — know what branches exist.
 2. Ask the user which feature to work on if it is not obvious from context.
-3. Check out (or create) the appropriate feature branch before touching any files — off `unitTests` normally, off `life-counter` for life-counter work.
-4. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the user to explicitly ask for a release.
+3. Check out (or create) the appropriate branch before touching any files — a `feature/<function>` sub-branch off the relevant top-level feature branch for feature work, never off `main`.
+4. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the developer to explicitly ask for a release.
 
 ## Working conventions
 
