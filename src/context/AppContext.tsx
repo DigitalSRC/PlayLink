@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { UserProfile } from '../data/types';
-import { Group, HARDCODED_GROUPS } from '../data/groups';
+import { Group } from '../data/groups';
 
 export type AppTheme = 'dark' | 'light';
 
@@ -39,7 +39,9 @@ const AppContext = createContext<AppState | null>(null);
  */
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUserState] = useState<UserProfile | null>(null);
-  const [groups, setGroups] = useState<Group[]>(HARDCODED_GROUPS);
+  // Real group data now only exists on unitTests/test/<feature> (HARDCODED_GROUPS removed from
+  // development/main as seed/test data pending a real backend — see CLAUDE.md git workflow).
+  const [groups, setGroups] = useState<Group[]>([]);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<number | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
