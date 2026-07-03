@@ -1,10 +1,23 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
+import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
+import { useAuthSession } from '../hooks/useAuthSession';
+import {
+  profileKeys,
+  useCreateProfileMutation,
+  useProfileQuery,
+  useUpdateProfileMutation,
+} from '../hooks/useProfileQueries';
 
 export type AppTheme = 'dark' | 'light';
 
 interface AppState {
+  session: Session | null;
+  authLoading: boolean;
+  profileLoading: boolean;
   currentUser: UserProfile | null;
   groups: Group[];
   rivals: UserProfile[];
@@ -32,15 +45,25 @@ const AppContext = createContext<AppState | null>(null);
 
 /**
  * Provides global app state to all child screens.
- * Holds the current user profile, group list, computed rivals, app theme, and a dev-date offset for testing.
+ * Holds the Supabase auth session, the signed-in user's profile (fetched and cached via React
+ * Query, see useProfileQueries.ts), the group list, computed rivals, app theme, and a
+ * dev-date offset for testing. currentUser and its mutators (awardPoints/addWin/addLoss/
+ * addDraw/resetMonthlyPoints) are backed by Supabase rather than plain local state — reads
+ * come from the cached profile query, writes go through profile mutations with optimistic
+ * cache updates so they still feel instant.
  * Parameters: children (React tree to wrap).
  * Returns: a context provider element.
  * Edge cases: throws if useApp is called outside this provider.
  */
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [currentUser, setCurrentUserState] = useState<UserProfile | null>(null);
-  // Real group data now only exists on unitTests/test/<feature> (HARDCODED_GROUPS removed from
-  // development/main as seed/test data pending a real backend — see CLAUDE.md git workflow).
+  const { session, authLoading } = useAuthSession();
+  const queryClient = useQueryClient();
+  const userId = session?.user.id;
+
+  const { data: currentUser, isLoading: profileLoading } = useProfileQuery(userId);
+  const createProfileMutation = useCreateProfileMutation();
+  const updateProfileMutation = useUpdateProfileMutation();
+
   const [groups, setGroups] = useState<Group[]>([]);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
@@ -48,48 +71,72 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [devDateOffset, setDevDateOffset] = useState(0);
 
+  useEffect(() => {
+    registerSupabaseAutoRefresh();
+  }, []);
+
+  // Bridge for profile-creation.tsx's existing synchronous call site, which still builds a
+  // full UserProfile (including a placeholder id) locally. Discards that placeholder id in
+  // favor of the real session id and fires the create-profile mutation in the background.
+  // feature/profile-creation-integration replaces this call site with a direct, awaited
+  // useCreateProfileMutation().mutateAsync() call that can surface a "username taken" error —
+  // this bridge has no error handling of its own.
   const setCurrentUser = (profile: UserProfile) => {
-    setCurrentUserState(profile);
+    if (!userId) return;
+    const { id: _placeholderId, ...draft } = profile;
+    createProfileMutation.mutate({ userId, draft });
   };
 
   const clearCurrentUser = () => {
-    setCurrentUserState(null);
+    if (userId) {
+      queryClient.removeQueries({ queryKey: profileKeys.detail(userId) });
+    }
+    // Fire-and-forget to keep this function's existing void signature; screens navigate away
+    // immediately after calling this rather than awaiting sign-out completion.
+    supabase.auth.signOut();
     setRivals([]);
     setChosenRivalId(null);
     setMostPlayedAgainst(null);
   };
 
+  const applyProfilePatch = (patch: Partial<Omit<UserProfile, 'id'>>) => {
+    if (!userId) return;
+    updateProfileMutation.mutate({ userId, patch });
+  };
+
   const awardPoints = (amount: number) => {
-    setCurrentUserState((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        points: Math.max(0, prev.points + amount),
-        monthlyPoints: amount > 0 ? prev.monthlyPoints + amount : prev.monthlyPoints,
-      };
+    if (!currentUser) return;
+    applyProfilePatch({
+      points: Math.max(0, currentUser.points + amount),
+      monthlyPoints: amount > 0 ? currentUser.monthlyPoints + amount : currentUser.monthlyPoints,
     });
   };
 
   const addWin = () => {
-    setCurrentUserState((prev) =>
-      prev ? { ...prev, wins: prev.wins + 1, points: prev.points + 30, monthlyPoints: prev.monthlyPoints + 30 } : prev
-    );
+    if (!currentUser) return;
+    applyProfilePatch({
+      wins: currentUser.wins + 1,
+      points: currentUser.points + 30,
+      monthlyPoints: currentUser.monthlyPoints + 30,
+    });
   };
 
   const addLoss = () => {
-    setCurrentUserState((prev) =>
-      prev ? { ...prev, losses: prev.losses + 1 } : prev
-    );
+    if (!currentUser) return;
+    applyProfilePatch({ losses: currentUser.losses + 1 });
   };
 
   const addDraw = () => {
-    setCurrentUserState((prev) =>
-      prev ? { ...prev, points: prev.points + 10, monthlyPoints: prev.monthlyPoints + 10 } : prev
-    );
+    if (!currentUser) return;
+    applyProfilePatch({
+      points: currentUser.points + 10,
+      monthlyPoints: currentUser.monthlyPoints + 10,
+    });
   };
 
   const resetMonthlyPoints = () => {
-    setCurrentUserState((prev) => prev ? { ...prev, monthlyPoints: 0 } : prev);
+    if (!currentUser) return;
+    applyProfilePatch({ monthlyPoints: 0 });
   };
 
   const getNow = () => Date.now() + devDateOffset;
@@ -97,7 +144,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   return (
     <AppContext.Provider
       value={{
-        currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst,
+        session, authLoading, profileLoading,
+        currentUser: currentUser ?? null, groups, rivals, chosenRivalId, mostPlayedAgainst,
         theme, devDateOffset,
         setCurrentUser, clearCurrentUser, setGroups, setRivals,
         setChosenRivalId, setMostPlayedAgainst,
@@ -113,7 +161,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 /**
  * Returns the app-wide state from the nearest AppProvider.
  * Parameters: none.
- * Returns: the AppState object with user, groups, rivals, theme, and all mutators.
+ * Returns: the AppState object with session/auth status, user, groups, rivals, theme, and all mutators.
  * Edge cases: throws an error when called outside an AppProvider.
  */
 export const useApp = (): AppState => {
