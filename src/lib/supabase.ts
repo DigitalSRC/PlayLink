@@ -1,7 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -12,10 +12,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+// app.json's web.output "static" prerenders routes in a Node process with no `window`/
+// `document`, distinct from both native (also no `window`, but always wants AsyncStorage) and
+// a real browser (Platform.OS is also 'web', but `window` exists). Passing a truthy `storage`
+// makes GoTrueClient trust it unconditionally, so on the Node prerender pass AsyncStorage's
+// web shim would try to touch `localStorage` and crash the whole render — passing `undefined`
+// there instead lets GoTrueClient fall back to its own SSR-safe in-memory storage.
+const isServerSideWeb = Platform.OS === 'web' && typeof window === 'undefined';
+
 /**
  * The single Supabase client instance used everywhere in the app for auth and database access.
- * Sessions are persisted to AsyncStorage so a signed-in user stays signed in across app restarts.
- * `detectSessionInUrl` is disabled because React Native has no browser URL bar to parse, and
+ * Sessions are persisted to AsyncStorage (native, and the browser via AsyncStorage's web shim)
+ * so a signed-in user stays signed in across app restarts; the Node-side static-prerender pass
+ * uses Supabase's own safe in-memory fallback instead (see isServerSideWeb above), since there
+ * is nothing to persist across a single server-side render anyway.
+ * `detectSessionInUrl` is disabled because native has no browser URL bar to parse, and
  * `flowType: 'pkce'` is required for the OAuth redirect flow used by Google sign-in.
  * Parameters: none — configured entirely from EXPO_PUBLIC_SUPABASE_URL/EXPO_PUBLIC_SUPABASE_ANON_KEY.
  * Returns: not applicable — this is a module-level singleton, not a function.
@@ -24,7 +35,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: isServerSideWeb ? undefined : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
