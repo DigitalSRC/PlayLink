@@ -8,7 +8,7 @@ interface AppState {
   currentUser: UserProfile | null;
   groups: Group[];
   rivals: UserProfile[];
-  chosenRivalId: number | null;
+  chosenRivalId: string | null;
   mostPlayedAgainst: UserProfile | null;
   theme: AppTheme;
   devDateOffset: number;
@@ -16,7 +16,7 @@ interface AppState {
   clearCurrentUser: () => void;
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   setRivals: (rivals: UserProfile[]) => void;
-  setChosenRivalId: (id: number) => void;
+  setChosenRivalId: (id: string) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
   awardPoints: (amount: number) => void;
   addWin: () => void;
@@ -43,7 +43,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // development/main as seed/test data pending a real backend — see CLAUDE.md git workflow).
   const [groups, setGroups] = useState<Group[]>([]);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
-  const [chosenRivalId, setChosenRivalId] = useState<number | null>(null);
+  const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [devDateOffset, setDevDateOffset] = useState(0);

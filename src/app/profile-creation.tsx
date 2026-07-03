@@ -61,7 +61,7 @@ export default function ProfileCreation() {
   const [selectedBrackets, setSelectedBrackets] = useState<number[]>([2]);
   const [selectedNoGo, setSelectedNoGo] = useState<NoGoRule[]>([]);
   const [computedRivals, setComputedRivals] = useState<UserProfile[]>([]);
-  const [pickedRivalId, setPickedRivalId] = useState<number | null>(null);
+  const [pickedRivalId, setPickedRivalId] = useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rivalCardAnims = useRef([
@@ -99,7 +99,9 @@ export default function ProfileCreation() {
 
     if (step === 2) {
       const newProfile: UserProfile = {
-        id: Date.now(),
+        // TODO(feature/profile-creation-integration): replace with the real Supabase
+        // auth session id and write through createProfileMutation instead of local state.
+        id: String(Date.now()),
         username: username.trim(),
         displayName: displayName.trim() || undefined,
         location: location.trim() || "Nearby",
