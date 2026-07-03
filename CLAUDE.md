@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-PlayLink is an Expo Router app (v56) built with React Native and TypeScript. Users create a profile and then browse, join, create, and manage play groups.
+PlayLink is an Expo Router app (v57) built with React Native and TypeScript. Users create a profile and then browse, join, create, and manage play groups.
 
 ## Commands
 
@@ -21,7 +21,7 @@ If `git` is not in your system PATH, your machine-specific path to the git execu
 stored in `CLAUDE.local.md` (gitignored — never committed). If you have not created that
 file yet, copy `CLAUDE.local.md.example` and fill in the path for your environment.
 
-Before changing Expo or routing behavior, read the versioned docs at https://docs.expo.dev/versions/v56.0.0/.
+Before changing Expo or routing behavior, read the versioned docs at https://docs.expo.dev/versions/v57.0.0/.
 
 ## Architecture
 
@@ -48,7 +48,17 @@ Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-
 
 ### State management
 
-Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `currentUser` (`UserProfile | null`), `groups` (seeded from `HARDCODED_GROUPS` on `unitTests`/`test/<feature>`; seeded empty on `development`/`main` — see below), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. The tab layout redirects unauthenticated users to `/profile-creation`.
+Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `session`/`authLoading`/`profileLoading` (Supabase auth status — see Auth & data below), `currentUser` (`UserProfile | null`, fetched and cached via React Query rather than plain local state), `groups` (seeded from `HARDCODED_GROUPS` on `unitTests`/`test/<feature>`; seeded empty on `development`/`main` — see below), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. [src/utils/auth-status.ts](src/utils/auth-status.ts)'s `useAuthStatus()` combines session/profile status into `'loading' | 'unauthenticated' | 'no-profile' | 'ready'`; `index.tsx` and the tab layout both branch on it to redirect to `/sign-in`, `/profile-creation`, or render normally.
+
+### Auth & data (Supabase)
+
+PlayLink authenticates and persists user profiles via [Supabase](https://supabase.com). Requires `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in a local `.env` (see `.env.example`) — the app throws at startup if either is missing.
+
+- **[src/lib/supabase.ts](src/lib/supabase.ts)** — the Supabase client singleton (PKCE flow, AsyncStorage-backed session persistence). Only passes AsyncStorage as auth storage outside the Node SSR prerender pass that `app.json`'s `web.output: "static"` performs — see the file's comments before touching this.
+- **[src/lib/auth-api.ts](src/lib/auth-api.ts)** — `signInWithGoogle` (hosted OAuth redirect via `expo-web-browser`) and `signInWithApple` (native Sign in with Apple, iOS-only). Both need external console setup (Supabase Auth provider config, a Google Cloud OAuth client, an Apple Developer Services ID) before they work end-to-end.
+- **[src/lib/profile-api.ts](src/lib/profile-api.ts)** — `fetchProfile`/`insertProfile`/`updateProfile` wrapping the `profiles` table (schema in `supabase/migrations/`), plus the snake_case↔camelCase converters that keep the DB's column naming out of the rest of the app.
+- **[src/hooks/useAuthSession.ts](src/hooks/useAuthSession.ts)** and **[src/hooks/useProfileQueries.ts](src/hooks/useProfileQueries.ts)** — React Query hooks (`useProfileQuery`, `useCreateProfileMutation`, `useUpdateProfileMutation`) that `AppContext` adapts into `currentUser` and its mutators (`awardPoints`/`addWin`/`addLoss`/`addDraw`/`resetMonthlyPoints`), using optimistic updates so they still feel instant. Cached via [src/lib/query-client.ts](src/lib/query-client.ts) (`PersistQueryClientProvider` in `_layout.tsx`), persisted to AsyncStorage, so a cached profile renders instantly on cold start before the network refetch completes.
+- `UserProfile.id` is a Supabase auth UUID (`string`), matching `auth.users.id` 1:1 so RLS policies on `profiles` are a one-line `auth.uid() = id` check.
 
 ### Data layer
 

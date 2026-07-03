@@ -43,7 +43,10 @@ const DEV_TOOLS_ENABLED = false;
  * Profile tab — personal info, stats, game preferences, rivals, settings, and dev tools.
  * Header row shows an avatar circle on the left and display name / username / location on the right.
  * Settings section includes a dark/light mode toggle and a Dev Tools shortcut for developer accounts.
- * Parameters: none; reads and writes currentUser, chosenRivalId, rivals, and theme from global context.
+ * Edits save via useUpdateProfileMutation directly (an optimistic Supabase update keyed to the
+ * session id), not through AppContext's currentUser setter; logging out ends the Supabase
+ * session and redirects to /sign-in rather than /profile-creation.
+ * Parameters: none; reads currentUser, session, chosenRivalId, rivals, and theme from global context.
  * Returns: a scrollable profile page; null when no user is logged in.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for non-developer profiles.
  */

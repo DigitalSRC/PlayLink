@@ -44,11 +44,15 @@ const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
 /**
  * Multi-step onboarding screen that collects the player's full profile.
  * Steps: identity (username + location), game selection, preferences (formats, bracket, no-go), rival reveal.
- * Computes rivals on completion and saves them to global context before navigating home.
- * Also supports one-tap login for any existing seed profile via the identity step.
- * Parameters: none.
+ * On the games-to-preferences transition, writes the profile to Supabase (createProfileMutation,
+ * keyed to the signed-in user's session id) before computing rivals and advancing to the reveal
+ * step. Also supports one-tap login for any existing seed profile via the identity step.
+ * Parameters: none; reads the Supabase session from useApp() to attribute the new profile row.
  * Returns: a React Native screen with animated step transitions and haptic feedback on progression.
- * Edge cases: blocks progression if required fields are missing; rival reveal animates in automatically.
+ * Edge cases: blocks progression if required fields are missing; shows a field-level error and
+ * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
+ * generic inline error for any other save failure; the submit button shows a spinner and can't
+ * be pressed again while a save is in flight.
  */
 export default function ProfileCreation() {
   const router = useRouter();
