@@ -75,12 +75,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     registerSupabaseAutoRefresh();
   }, []);
 
-  // Bridge for profile-creation.tsx's existing synchronous call site, which still builds a
-  // full UserProfile (including a placeholder id) locally. Discards that placeholder id in
-  // favor of the real session id and fires the create-profile mutation in the background.
-  // feature/profile-creation-integration replaces this call site with a direct, awaited
-  // useCreateProfileMutation().mutateAsync() call that can surface a "username taken" error —
-  // this bridge has no error handling of its own.
+  // As of feature/profile-creation-integration, the only remaining call site is
+  // profile-creation.tsx's loginAsExisting — a dev/demo "log in as an existing seed profile"
+  // affordance that's unreachable on this branch (RIVAL_POOL there is always empty; see that
+  // file's comments). The real onboarding flow now calls useCreateProfileMutation directly so
+  // it can await the result and surface a "username taken" error. This bridge is kept only so
+  // loginAsExisting keeps compiling — it fires the create-profile mutation in the background
+  // with no error handling of its own, which is fine for a call site that never actually runs.
   const setCurrentUser = (profile: UserProfile) => {
     if (!userId) return;
     const { id: _placeholderId, ...draft } = profile;

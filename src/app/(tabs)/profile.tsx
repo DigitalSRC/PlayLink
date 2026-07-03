@@ -21,6 +21,7 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
+import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
@@ -49,11 +50,12 @@ const DEV_TOOLS_ENABLED = false;
 export default function ProfileScreen() {
   const router = useRouter();
   const {
-    currentUser, rivals, chosenRivalId, mostPlayedAgainst,
-    setCurrentUser, clearCurrentUser, setChosenRivalId,
+    session, currentUser, rivals, chosenRivalId, mostPlayedAgainst,
+    clearCurrentUser, setChosenRivalId,
     theme, setTheme,
   } = useApp();
   const { bg, card, border, textPrimary, textSecondary: textSec } = useThemeColors();
+  const updateProfileMutation = useUpdateProfileMutation();
 
   if (!currentUser) return null;
 
@@ -80,14 +82,17 @@ export default function ProfileScreen() {
   const commanderSelected = editGames.includes('mtg') && (editFormats?.mtg ?? []).includes('Commander');
 
   const saveEdit = () => {
-    setCurrentUser({
-      ...currentUser,
-      displayName: editDisplayName.trim() || undefined,
-      location: editLocation.trim() || currentUser.location,
-      games: editGames.length > 0 ? editGames : currentUser.games,
-      brackets: editBrackets.length > 0 ? editBrackets : currentUser.brackets,
-      preferredFormats: editFormats,
-      noGo: editNoGo,
+    if (!session) return;
+    updateProfileMutation.mutate({
+      userId: session.user.id,
+      patch: {
+        displayName: editDisplayName.trim() || undefined,
+        location: editLocation.trim() || currentUser.location,
+        games: editGames.length > 0 ? editGames : currentUser.games,
+        brackets: editBrackets.length > 0 ? editBrackets : currentUser.brackets,
+        preferredFormats: editFormats,
+        noGo: editNoGo,
+      },
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDirty(false);
@@ -399,7 +404,7 @@ export default function ProfileScreen() {
             'Clear your profile and start over?',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Log Out', style: 'destructive', onPress: () => { clearCurrentUser(); router.replace('/profile-creation'); } },
+              { text: 'Log Out', style: 'destructive', onPress: () => { clearCurrentUser(); router.replace('/sign-in'); } },
             ]
           )}
         >

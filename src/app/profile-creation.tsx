@@ -2,6 +2,7 @@
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Pressable,
   ScrollView,
@@ -22,6 +23,8 @@ import {
   NoGoRule,
   UserProfile,
 } from "../data/types";
+import { useCreateProfileMutation } from "../hooks/useProfileQueries";
+import { UsernameTakenError } from "../lib/profile-api";
 import { findRivals } from "../utils/rival-utils";
 
 // Rival matching against real player data (SEED_PROFILES) is still in development on the
@@ -49,7 +52,8 @@ const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
  */
 export default function ProfileCreation() {
   const router = useRouter();
-  const { setCurrentUser, setRivals, setChosenRivalId } = useApp();
+  const { session, setCurrentUser, setRivals, setChosenRivalId } = useApp();
+  const createProfileMutation = useCreateProfileMutation();
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
@@ -62,6 +66,8 @@ export default function ProfileCreation() {
   const [selectedNoGo, setSelectedNoGo] = useState<NoGoRule[]>([]);
   const [computedRivals, setComputedRivals] = useState<UserProfile[]>([]);
   const [pickedRivalId, setPickedRivalId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rivalCardAnims = useRef([
@@ -91,17 +97,17 @@ export default function ProfileCreation() {
     return true;
   };
 
-  const nextStep = () => {
+  const nextStep = async () => {
     if (step === 0) {
       if (!validateUsername(username)) return;
     }
     if (step === 1 && selectedGames.length === 0) return;
 
     if (step === 2) {
+      if (!session || isSubmitting) return;
+
       const newProfile: UserProfile = {
-        // TODO(feature/profile-creation-integration): replace with the real Supabase
-        // auth session id and write through createProfileMutation instead of local state.
-        id: String(Date.now()),
+        id: session.user.id,
         username: username.trim(),
         displayName: displayName.trim() || undefined,
         location: location.trim() || "Nearby",
@@ -115,9 +121,27 @@ export default function ProfileCreation() {
         monthlyPoints: 0,
       };
 
+      setSubmitError("");
+      setIsSubmitting(true);
+      try {
+        const { id: _id, ...draft } = newProfile;
+        await createProfileMutation.mutateAsync({ userId: session.user.id, draft });
+      } catch (err) {
+        setIsSubmitting(false);
+        if (err instanceof UsernameTakenError) {
+          setUsernameError(err.message);
+          setStep(0);
+        } else {
+          setSubmitError(
+            err instanceof Error ? err.message : "Couldn't save your profile. Please try again."
+          );
+        }
+        return;
+      }
+      setIsSubmitting(false);
+
       const rivals = findRivals(newProfile, RIVAL_POOL, 3);
       setComputedRivals(rivals);
-      setCurrentUser(newProfile);
       setRivals(rivals);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -390,6 +414,8 @@ export default function ProfileCreation() {
           })}
         </View>
       </View>
+
+      {!!submitError && <Text style={styles.errorText}>{submitError}</Text>}
     </ScrollView>
   );
 
@@ -467,10 +493,12 @@ export default function ProfileCreation() {
   );
 
   const canProceed =
-    (step === 0 && username.trim().length > 0) ||
-    (step === 1 && selectedGames.length > 0) ||
-    step === 2 ||
-    (step === 3 && pickedRivalId !== null);
+    !isSubmitting && (
+      (step === 0 && username.trim().length > 0) ||
+      (step === 1 && selectedGames.length > 0) ||
+      step === 2 ||
+      (step === 3 && pickedRivalId !== null)
+    );
 
   return (
     <View style={styles.container}>
@@ -495,9 +523,13 @@ export default function ProfileCreation() {
             onPress={nextStep}
             disabled={!canProceed}
           >
-            <Text style={styles.nextBtnText}>
-              {step === 2 ? "Find My Rivals →" : "Continue →"}
-            </Text>
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.nextBtnText}>
+                {step === 2 ? "Find My Rivals →" : "Continue →"}
+              </Text>
+            )}
           </Pressable>
         ) : (
           <Pressable
