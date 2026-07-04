@@ -81,3 +81,33 @@ export const signInWithApple = async (): Promise<void> => {
   });
   if (error) throw error;
 };
+
+/**
+ * Creates a new account with an email and password. This Supabase project has email
+ * confirmation disabled, so a successful call establishes a session immediately — there's no
+ * "check your email" step.
+ * Parameters: email (the new account's email), password (plain text; Supabase's minimum length
+ * requirement is enforced server-side, currently 6 characters).
+ * Returns: a promise that resolves once the account is created and signed in; as with the OAuth
+ * flows, the app's onAuthStateChange listener picks up the new session automatically.
+ * Edge cases: throws if the email is already registered, if the password doesn't meet
+ * Supabase's minimum length requirement, or on any other Supabase/network error.
+ */
+export const signUpWithEmail = async (email: string, password: string): Promise<void> => {
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+};
+
+/**
+ * Signs in with an existing email/password account.
+ * Parameters: email, password.
+ * Returns: a promise that resolves once a session has been established; the app's
+ * onAuthStateChange listener picks up the new session automatically.
+ * Edge cases: throws on invalid credentials (Supabase returns the same generic error for a
+ * wrong password vs. a nonexistent email, so the caller can't distinguish the two) or any other
+ * Supabase/network error.
+ */
+export const signInWithEmail = async (email: string, password: string): Promise<void> => {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+};
