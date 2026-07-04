@@ -52,7 +52,10 @@ const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
  * Edge cases: blocks progression if required fields are missing; shows a field-level error and
  * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
  * generic inline error for any other save failure; the submit button shows a spinner and can't
- * be pressed again while a save is in flight.
+ * be pressed again while a save is in flight. If no rivals are found (RIVAL_POOL is empty on
+ * this branch, so this is always the case right now), the reveal step is skipped entirely and
+ * the user goes straight to the tabs — otherwise it would be a dead end, since the reveal
+ * step's Continue button can't be enabled without a rival to pick.
  */
 export default function ProfileCreation() {
   const router = useRouter();
@@ -145,6 +148,16 @@ export default function ProfileCreation() {
       setIsSubmitting(false);
 
       const rivals = findRivals(newProfile, RIVAL_POOL, 3);
+
+      // No candidates to show — either RIVAL_POOL is empty (rival matching isn't shipped on
+      // this branch yet, see the RIVAL_POOL comment above) or this particular user just has no
+      // matches. Either way there's nothing to pick from, so the reveal step would be a dead
+      // end (canProceed requires pickedRivalId, which can never be set). Skip straight to home.
+      if (rivals.length === 0) {
+        router.replace('/(tabs)/home');
+        return;
+      }
+
       setComputedRivals(rivals);
       setRivals(rivals);
 
