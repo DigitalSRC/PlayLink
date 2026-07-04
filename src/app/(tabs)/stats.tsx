@@ -1,16 +1,9 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../context/AppContext';
-import { GAME_COLOR, GAME_EMOJI, GAME_LABELS, UserProfile } from '../../data/types';
+import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
+import { SEED_PROFILES } from '../../data/seed-profiles';
 import { useThemeColors } from '../../utils/theme-utils';
-
-// Rival matching / seed player data is still in development on the `rival-system` branch —
-// deliberately excluded from development/main until that feature is finished; see CLAUDE.md
-// git workflow. RIVAL_POOL stays empty here so the monthly leaderboard keeps compiling and
-// degrading safely (shows only the current user) without needing SEED_PROFILES. Swap back to
-// `import { SEED_PROFILES } from '../../data/seed-profiles'` (and rename the usage below)
-// once rival-system merges in.
-const RIVAL_POOL: UserProfile[] = [];
 
 /**
  * Stats tab showing the player's detailed performance history and monthly rankings.
@@ -50,7 +43,7 @@ export default function StatsScreen() {
       monthlyPoints: currentUser.monthlyPoints,
       isMe: true,
     },
-    ...RIVAL_POOL
+    ...SEED_PROFILES
       .filter((p) => p.username !== currentUser.username)
       .map((p) => ({
         displayName: p.displayName ?? p.username,

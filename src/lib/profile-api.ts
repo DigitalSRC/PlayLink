@@ -41,7 +41,7 @@ export class UsernameTakenError extends Error {
  * Edge cases: a null display_name maps to undefined (UserProfile.displayName is optional);
  * is_developer of false maps to false, not undefined, since it's a meaningful default.
  */
-const mapRowToProfile = (row: ProfileRow): UserProfile => ({
+export const mapRowToProfile = (row: ProfileRow): UserProfile => ({
   id: row.id,
   username: row.username,
   displayName: row.display_name ?? undefined,
@@ -67,7 +67,7 @@ const mapRowToProfile = (row: ProfileRow): UserProfile => ({
  * Edge cases: an explicit `undefined` value for displayName is written through as `null`
  * rather than being dropped, so clearing a display name in the UI actually clears it in the DB.
  */
-const mapProfileToRow = (
+export const mapProfileToRow = (
   profile: Partial<Omit<UserProfile, 'id'>>
 ): Partial<Omit<ProfileRow, 'id'>> => {
   const row: Partial<Omit<ProfileRow, 'id'>> = {};

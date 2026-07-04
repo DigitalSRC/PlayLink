@@ -25,16 +25,8 @@ import {
 } from "../data/types";
 import { useCreateProfileMutation } from "../hooks/useProfileQueries";
 import { UsernameTakenError } from "../lib/profile-api";
+import { SEED_PROFILES } from "../data/seed-profiles";
 import { findRivals } from "../utils/rival-utils";
-
-// Rival matching against real player data (SEED_PROFILES) is still in development on the
-// `rival-system` branch — deliberately excluded from development/main until that feature is
-// finished; see CLAUDE.md git workflow. RIVAL_POOL stays empty here so findRivals, the rival
-// reveal step, and the "login as existing seed profile" flow below all keep compiling and
-// degrading safely (no candidates, no login suggestions, isDeveloper never becomes true)
-// without needing SEED_PROFILES. Swap back to `import { SEED_PROFILES } from
-// '../data/seed-profiles'` and rename the three usages below once rival-system merges in.
-const RIVAL_POOL: UserProfile[] = [];
 
 // Ordered labels for the four-step onboarding flow displayed in the progress indicator.
 // Index corresponds to the currentStep state value; length determines total step count for the progress bar.
@@ -144,7 +136,7 @@ export default function ProfileCreation() {
       }
       setIsSubmitting(false);
 
-      const rivals = findRivals(newProfile, RIVAL_POOL, 3);
+      const rivals = findRivals(newProfile, SEED_PROFILES, 3);
       setComputedRivals(rivals);
       setRivals(rivals);
 
@@ -204,7 +196,7 @@ export default function ProfileCreation() {
 
   const loginAsExisting = (profile: UserProfile) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const rivals = findRivals(profile, RIVAL_POOL.filter((p) => p.id !== profile.id), 3);
+    const rivals = findRivals(profile, SEED_PROFILES.filter((p) => p.id !== profile.id), 3);
     setCurrentUser(profile);
     setRivals(rivals);
     if (rivals.length > 0) setChosenRivalId(rivals[0].id);
@@ -212,7 +204,7 @@ export default function ProfileCreation() {
   };
 
   const matchedProfiles = username.trim().length > 0
-    ? RIVAL_POOL.filter((p) => {
+    ? SEED_PROFILES.filter((p) => {
         const q = username.trim().toLowerCase();
         return p.username.toLowerCase().includes(q) ||
           (p.displayName ?? '').toLowerCase().includes(q);

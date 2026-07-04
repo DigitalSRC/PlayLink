@@ -15,13 +15,7 @@ import {
   GAME_LABELS,
   UserProfile,
 } from '../data/types';
-// Rival matching / seed player data is still in development on the `rival-system` branch —
-// deliberately excluded from development/main until that feature is finished; see CLAUDE.md
-// git workflow. RIVAL_POOL stays empty here so profile lookups keep compiling and degrade
-// safely (falls back to "profile not available" for anyone not currently a live rival)
-// without needing SEED_PROFILES. Swap back to `import { SEED_PROFILES } from
-// '../data/seed-profiles'` (and rename the two usages below) once rival-system merges in.
-const RIVAL_POOL: UserProfile[] = [];
+import { SEED_PROFILES } from '../data/seed-profiles';
 
 /**
  * Read-only public profile view for any player.
@@ -38,7 +32,7 @@ export default function PlayerProfileScreen() {
 
   const profile =
     rivals.find((r) => r.username === username) ||
-    RIVAL_POOL.find((p) => p.username === username) ||
+    SEED_PROFILES.find((p) => p.username === username) ||
     null;
 
   const isRival = rivals.some((r) => r.username === username);
@@ -52,7 +46,7 @@ export default function PlayerProfileScreen() {
     : '?';
 
   const theirRivals: UserProfile[] = (profile?.rivalIds ?? [])
-    .map((id) => RIVAL_POOL.find((p) => p.id === id))
+    .map((id) => SEED_PROFILES.find((p) => p.id === id))
     .filter((p): p is UserProfile => p !== undefined);
 
   return (

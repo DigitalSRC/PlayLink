@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
-import { Group } from '../data/groups';
+import { Group, HARDCODED_GROUPS } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
 import { useAuthSession } from '../hooks/useAuthSession';
 import {
@@ -64,7 +64,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const createProfileMutation = useCreateProfileMutation();
   const updateProfileMutation = useUpdateProfileMutation();
 
-  const [groups, setGroups] = useState<Group[]>([]);
+  // Real group data lives only on unitTests/test/<feature> (removed from development/main as
+  // seed/test data pending a real backend — see CLAUDE.md git workflow).
+  const [groups, setGroups] = useState<Group[]>(HARDCODED_GROUPS);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
@@ -77,11 +79,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // As of feature/profile-creation-integration, the only remaining call site is
   // profile-creation.tsx's loginAsExisting — a dev/demo "log in as an existing seed profile"
-  // affordance that's unreachable on this branch (RIVAL_POOL there is always empty; see that
-  // file's comments). The real onboarding flow now calls useCreateProfileMutation directly so
-  // it can await the result and surface a "username taken" error. This bridge is kept only so
-  // loginAsExisting keeps compiling — it fires the create-profile mutation in the background
-  // with no error handling of its own, which is fine for a call site that never actually runs.
+  // affordance. On unitTests/test/<feature> (this branch) SEED_PROFILES is real, so this path
+  // is reachable; it fires the create-profile mutation in the background with no error handling
+  // of its own, which is a pre-existing limitation of that dev-only shortcut, not something this
+  // branch introduces. The real onboarding flow calls useCreateProfileMutation directly instead,
+  // so it can await the result and surface a "username taken" error.
   const setCurrentUser = (profile: UserProfile) => {
     if (!userId) return;
     const { id: _placeholderId, ...draft } = profile;
