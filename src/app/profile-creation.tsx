@@ -1,6 +1,7 @@
-﻿import * as Haptics from "expo-haptics";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -41,6 +42,23 @@ const RIVAL_POOL: UserProfile[] = [];
 // Changing this array requires updating all step-index comparisons throughout ProfileCreation.
 const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
 
+// A user who signs up, fills in part of this form, then closes the app (or the app crashes,
+// or they just get pulled away) comes back to a blank step 0 on remount — there's nowhere else
+// this WIP state lives, since the real profiles row isn't written until step 2 completes. This
+// key namespaces a local snapshot of that WIP state per signed-in user so it survives a remount.
+const draftStorageKey = (userId: string) => `profile-creation-draft:${userId}`;
+
+interface ProfileCreationDraft {
+  step: number;
+  username: string;
+  displayName: string;
+  location: string;
+  selectedGames: GameType[];
+  selectedFormats: Partial<Record<GameType, string[]>>;
+  selectedBrackets: number[];
+  selectedNoGo: NoGoRule[];
+}
+
 /**
  * Multi-step onboarding screen that collects the player's full profile.
  * Steps: identity (username + location), game selection, preferences (formats, bracket, no-go), rival reveal.
@@ -52,7 +70,9 @@ const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
  * Edge cases: blocks progression if required fields are missing; shows a field-level error and
  * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
  * generic inline error for any other save failure; the submit button shows a spinner and can't
- * be pressed again while a save is in flight.
+ * be pressed again while a save is in flight. If the user left mid-onboarding (steps 0-2) and
+ * comes back, a locally-persisted draft (see ProfileCreationDraft) restores their progress and
+ * a "Welcome back" banner briefly confirms it; the draft is cleared once the profile actually saves.
  */
 export default function ProfileCreation() {
   const router = useRouter();
@@ -72,6 +92,8 @@ export default function ProfileCreation() {
   const [pickedRivalId, setPickedRivalId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [welcomeBackEmail, setWelcomeBackEmail] = useState<string | null>(null);
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rivalCardAnims = useRef([
@@ -88,6 +110,56 @@ export default function ProfileCreation() {
       bounciness: 8,
     }).start();
   };
+
+  // Restore any in-progress draft for this user before the save-effect below gets a chance to
+  // run — otherwise it would immediately overwrite the stored draft with the blank initial
+  // state. Runs once per signed-in user id.
+  useEffect(() => {
+    if (!session) return;
+    let isMounted = true;
+
+    AsyncStorage.getItem(draftStorageKey(session.user.id)).then((raw) => {
+      if (!isMounted) return;
+      if (raw) {
+        try {
+          const draft: ProfileCreationDraft = JSON.parse(raw);
+          setStep(draft.step);
+          setUsername(draft.username);
+          setDisplayName(draft.displayName);
+          setLocation(draft.location);
+          setSelectedGames(draft.selectedGames);
+          setSelectedFormats(draft.selectedFormats);
+          setSelectedBrackets(draft.selectedBrackets);
+          setSelectedNoGo(draft.selectedNoGo);
+
+          if (session.user.email) {
+            setWelcomeBackEmail(session.user.email);
+            setTimeout(() => setWelcomeBackEmail(null), 3000);
+          }
+        } catch {
+          // Corrupted draft — ignore it and start fresh rather than blocking onboarding.
+        }
+      }
+      setHasLoadedDraft(true);
+    });
+
+    return () => { isMounted = false; };
+  }, [session?.user.id]);
+
+  // Persists WIP onboarding fields so they survive the user leaving mid-creation (see
+  // ProfileCreationDraft above). Gated on hasLoadedDraft so this can't fire with the initial
+  // blank state before the restore effect above has had a chance to run.
+  useEffect(() => {
+    if (!session || !hasLoadedDraft) return;
+    const draft: ProfileCreationDraft = {
+      step, username, displayName, location,
+      selectedGames, selectedFormats, selectedBrackets, selectedNoGo,
+    };
+    AsyncStorage.setItem(draftStorageKey(session.user.id), JSON.stringify(draft));
+  }, [
+    session, hasLoadedDraft, step, username, displayName, location,
+    selectedGames, selectedFormats, selectedBrackets, selectedNoGo,
+  ]);
 
   const USERNAME_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
@@ -143,6 +215,7 @@ export default function ProfileCreation() {
         return;
       }
       setIsSubmitting(false);
+      AsyncStorage.removeItem(draftStorageKey(session.user.id));
 
       const rivals = findRivals(newProfile, RIVAL_POOL, 3);
       setComputedRivals(rivals);
@@ -506,6 +579,12 @@ export default function ProfileCreation() {
 
   return (
     <View style={styles.container}>
+      {!!welcomeBackEmail && (
+        <View style={styles.welcomeBackBanner}>
+          <Text style={styles.welcomeBackText}>Welcome back, {welcomeBackEmail}!</Text>
+        </View>
+      )}
+
       <View style={styles.header}>
         <Text style={styles.brand}>PlayLink</Text>
         {renderStepDots()}
@@ -563,6 +642,22 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 24,
     marginBottom: 32,
+  },
+  welcomeBackBanner: {
+    marginHorizontal: 24,
+    marginBottom: 16,
+    backgroundColor: "#0A2A0A",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#1C5A1C",
+  },
+  welcomeBackText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#34C759",
+    textAlign: "center",
   },
   brand: {
     fontSize: 13,
