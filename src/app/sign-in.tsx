@@ -1,8 +1,10 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -34,7 +36,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * Parameters: none.
  * Returns: a React Native screen with branding, an email/password form with a sign-up/sign-in
  * mode toggle, an inline loading spinner while a submission is in flight, and an inline error
- * message if one fails. Also renders Google/Apple buttons when OAUTH_ENABLED is true.
+ * message if one fails. Also renders Google/Apple buttons when OAUTH_ENABLED is true. The form
+ * sits near the top of the screen rather than pinned to the bottom, and the whole layout is
+ * wrapped in a KeyboardAvoidingView + ScrollView so the on-screen keyboard can never cover the
+ * inputs, even though the higher placement already makes that unlikely on typical screen sizes.
  * Edge cases: the submit button is disabled while a request is in progress or the form is
  * incomplete; validates email shape and a 6-character password minimum client-side before
  * ever calling Supabase, so obviously-invalid input never round-trips to the server.
@@ -93,94 +98,104 @@ export default function SignIn() {
   const isBusy = isSubmitting || pendingProvider !== null;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.brand}>PlayLink</Text>
-        <Text style={styles.tagline}>Find your table. Track your rivals.</Text>
-      </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.brand}>Welcome to PlayLink!</Text>
+          <Text style={styles.tagline}>Linking Players to play games!</Text>
+        </View>
 
-      <View style={styles.footer}>
-        {!!error && <Text style={styles.errorText}>{error}</Text>}
+        <View style={styles.footer}>
+          {!!error && <Text style={styles.errorText}>{error}</Text>}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#666"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          editable={!isBusy}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password (min. 6 characters)"
-          placeholderTextColor="#666"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isBusy}
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor="#666"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            editable={!isBusy}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password (min. 6 characters)"
+            placeholderTextColor="#666"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!isBusy}
+          />
 
-        <Pressable
-          style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
-          onPress={handleSubmit}
-          disabled={!canSubmit || isBusy}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.submitButtonText}>
-              {mode === "signUp" ? "Create Account" : "Sign In"}
+          <Pressable
+            style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={!canSubmit || isBusy}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.submitButtonText}>
+                {mode === "signUp" ? "Create Account" : "Sign In"}
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => { setError(""); setMode(mode === "signUp" ? "signIn" : "signUp"); }}
+            disabled={isBusy}
+          >
+            <Text style={styles.toggleText}>
+              {mode === "signUp"
+                ? "Already have an account? Sign in"
+                : "New here? Create an account"}
             </Text>
-          )}
-        </Pressable>
+          </Pressable>
 
-        <Pressable
-          onPress={() => { setError(""); setMode(mode === "signUp" ? "signIn" : "signUp"); }}
-          disabled={isBusy}
-        >
-          <Text style={styles.toggleText}>
-            {mode === "signUp"
-              ? "Already have an account? Sign in"
-              : "New here? Create an account"}
-          </Text>
-        </Pressable>
-
-        {OAUTH_ENABLED && (
-          <>
-            <Pressable
-              style={[styles.button, styles.googleButton, isBusy && styles.buttonDisabled]}
-              onPress={handleGoogle}
-              disabled={isBusy}
-            >
-              {pendingProvider === "google" ? (
-                <ActivityIndicator color="#1C1C24" />
-              ) : (
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-              )}
-            </Pressable>
-
-            {Platform.OS === "ios" && (
+          {OAUTH_ENABLED && (
+            <>
               <Pressable
-                style={[styles.button, styles.appleButton, isBusy && styles.buttonDisabled]}
-                onPress={handleApple}
+                style={[styles.button, styles.googleButton, isBusy && styles.buttonDisabled]}
+                onPress={handleGoogle}
                 disabled={isBusy}
               >
-                {pendingProvider === "apple" ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                {pendingProvider === "google" ? (
+                  <ActivityIndicator color="#1C1C24" />
                 ) : (
-                  <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
                 )}
               </Pressable>
-            )}
-          </>
-        )}
-      </View>
-    </View>
+
+              {Platform.OS === "ios" && (
+                <Pressable
+                  style={[styles.button, styles.appleButton, isBusy && styles.buttonDisabled]}
+                  onPress={handleApple}
+                  disabled={isBusy}
+                >
+                  {pendingProvider === "apple" ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                  )}
+                </Pressable>
+              )}
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -188,19 +203,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0F0F14",
-    justifyContent: "space-between",
-    paddingTop: 96,
-    paddingBottom: 56,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "flex-start",
+    paddingTop: 72,
+    paddingBottom: 40,
     paddingHorizontal: 24,
   },
   header: {
     alignItems: "center",
+    marginBottom: 40,
   },
   brand: {
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: "800",
     color: "#FFFFFF",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    textAlign: "center",
   },
   tagline: {
     fontSize: 15,
