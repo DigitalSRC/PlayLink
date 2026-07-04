@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -22,6 +23,7 @@ import {
   NoGoRule,
 } from '../../data/types';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
+import { updatePassword } from '../../lib/auth-api';
 import { useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
@@ -42,13 +44,16 @@ const DEV_TOOLS_ENABLED = false;
 /**
  * Profile tab — personal info, stats, game preferences, rivals, settings, and dev tools.
  * Header row shows an avatar circle on the left and display name / username / location on the right.
- * Settings section includes a dark/light mode toggle and a Dev Tools shortcut for developer accounts.
+ * Settings section includes a dark/light mode toggle, a change-password form, and a Dev Tools
+ * shortcut for developer accounts.
  * Edits save via useUpdateProfileMutation directly (an optimistic Supabase update keyed to the
  * session id), not through AppContext's currentUser setter; logging out ends the Supabase
  * session and redirects to /sign-in rather than /profile-creation.
  * Parameters: none; reads currentUser, session, chosenRivalId, rivals, and theme from global context.
  * Returns: a scrollable profile page; null when no user is logged in.
- * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for non-developer profiles.
+ * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
+ * non-developer profiles; the password form validates a 6-character minimum and that both
+ * fields match before ever calling Supabase, and shows an inline error or success message.
  */
 export default function ProfileScreen() {
   const router = useRouter();
@@ -71,6 +76,13 @@ export default function ProfileScreen() {
   const [dirty, setDirty] = useState(false);
   const [showGameModal, setShowGameModal] = useState(false);
   const [modalGames, setModalGames] = useState<GameType[]>(currentUser.games);
+
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const setEditDisplayName = (v: string) => { setEditDisplayNameState(v); setDirty(true); };
   const setEditLocation = (v: string) => { setEditLocationState(v); setDirty(true); };
@@ -109,6 +121,31 @@ export default function ProfileScreen() {
     setEditFormats(currentUser.preferredFormats);
     setEditNoGo(currentUser.noGo);
     setDirty(false);
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    setPasswordSuccess(false);
+    if (newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      await updatePassword(newPassword);
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Could not change password. Please try again.');
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const toggleFormat = (game: GameType, fmt: string) => {
@@ -384,11 +421,66 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <View style={[styles.settingsCard, { backgroundColor: card, borderColor: border }]}>
+          <Pressable
+            style={styles.passwordToggleRow}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setPasswordError('');
+              setPasswordSuccess(false);
+              setShowPasswordForm((v) => !v);
+            }}
+          >
+            <Text style={[styles.settingsLabel, { color: textSec, marginBottom: 0 }]}>Change Password</Text>
+            <Text style={[styles.passwordToggleArrow, { color: textSec }]}>{showPasswordForm ? '−' : '+'}</Text>
+          </Pressable>
+
+          {showPasswordForm && (
+            <View style={styles.passwordForm}>
+              <TextInput
+                style={[styles.passwordInput, { color: textPrimary, borderColor: border }]}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="New password (min. 6 characters)"
+                placeholderTextColor={textSec}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isChangingPassword}
+              />
+              <TextInput
+                style={[styles.passwordInput, { color: textPrimary, borderColor: border }]}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm new password"
+                placeholderTextColor={textSec}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isChangingPassword}
+              />
+              {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
+              {passwordSuccess && <Text style={styles.passwordSuccessText}>Password updated.</Text>}
+              <Pressable
+                style={[styles.passwordSubmitBtn, isChangingPassword && styles.passwordSubmitBtnDisabled]}
+                onPress={handleChangePassword}
+                disabled={isChangingPassword}
+              >
+                {isChangingPassword ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.passwordSubmitText}>Update Password</Text>
+                )}
+              </Pressable>
+            </View>
+          )}
+        </View>
+
         {/* Dev Tools entry point removed along with src/app/dev-tools.tsx — see
             DEV_TOOLS_ENABLED above and CLAUDE.md git workflow. */}
       </View>
 
-      {/* ── Save / Discard / Restart ── */}
+      {/* ── Save / Discard / Log Out ── */}
       <View style={styles.editActions}>
         {dirty && (
           <>
@@ -401,17 +493,17 @@ export default function ProfileScreen() {
           </>
         )}
         <Pressable
-          style={styles.restartBtn}
+          style={styles.logoutBtn}
           onPress={() => Alert.alert(
             'Log Out',
-            'Clear your profile and start over?',
+            'Are you sure you want to log out?',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Log Out', style: 'destructive', onPress: () => { clearCurrentUser(); router.replace('/sign-in'); } },
             ]
           )}
         >
-          <Text style={styles.restartBtnText}>LOG OUT / RESTART</Text>
+          <Text style={styles.logoutBtnText}>LOG OUT</Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -523,6 +615,19 @@ const styles = StyleSheet.create({
   themeBtnActive: { backgroundColor: '#0A1030', borderColor: '#007AFF' },
   themeBtnActiveLight: { backgroundColor: '#FFF8E0', borderColor: '#E6A817' },
   themeBtnText: { fontSize: 14, fontWeight: '700', color: '#888' },
+  passwordToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  passwordToggleArrow: { fontSize: 18, fontWeight: '700' },
+  passwordForm: { marginTop: 14, gap: 10 },
+  passwordInput: {
+    borderWidth: 1, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, fontSize: 14,
+  },
+  passwordErrorText: { fontSize: 12, color: '#C0392B', fontWeight: '600' },
+  passwordSuccessText: { fontSize: 12, color: '#34C759', fontWeight: '600' },
+  passwordSubmitBtn: {
+    backgroundColor: '#007AFF', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+  },
+  passwordSubmitBtnDisabled: { opacity: 0.6 },
+  passwordSubmitText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
   themeBtnTextActive: { color: '#007AFF' },
   themeBtnTextActiveLight: { color: '#8B6000' },
   devToolsBtn: {
@@ -538,9 +643,9 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
   cancelBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 1 },
   cancelBtnText: { fontWeight: '700', fontSize: 15 },
-  restartBtn: {
+  logoutBtn: {
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
     borderWidth: 1, borderColor: '#3D1215', backgroundColor: 'transparent', marginTop: 8,
   },
-  restartBtnText: { color: '#C0392B', fontWeight: '800', fontSize: 13, letterSpacing: 1.5 },
+  logoutBtnText: { color: '#C0392B', fontWeight: '800', fontSize: 13, letterSpacing: 1.5 },
 });
