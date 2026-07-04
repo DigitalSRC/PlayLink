@@ -194,6 +194,41 @@ let the main files merge cleanly forever, at the cost of a refactor across profi
 stats.tsx, player-profile.tsx, and AppContext.tsx. Worth doing if this conflict resolution
 becomes a recurring drag across many future `test/<feature>` cycles; not worth it for a one-off.
 
+### 2.8 Sync from parent before starting work on any branch
+
+**Before making any new commit on any branch, merge in the latest state of its parent first —
+not just `git pull` from its own remote.** `git pull` only catches a branch up with its own
+remote history; it says nothing about whatever has landed on the branch's *parent* since this
+branch last synced. The two are easy to conflate because they're both "getting current," but
+only the second one surfaces fixes/updates that happened elsewhere in the tree.
+
+- **Top-level feature branch** (`<feature-name>`): merge latest `development` in before
+  starting work each session — `git checkout <feature> && git pull && git merge development`.
+- **Sub-branch** (`feature/<function>`): merge the latest state of its parent top-level feature
+  branch in before resuming work on it — `git checkout feature/<function> && git merge <feature>`.
+- **`unitTests`**: its parent is `development`, but use the `--no-ff` merge from §2.7 specifically
+  — a plain `git merge development` here risks a silent fast-forward that deletes
+  unitTests-exclusive content. §2.7's guidance supersedes the plain merge described above for
+  this one branch.
+- **`test/<feature>`**: recreated fresh each cycle as `unitTests` + `<feature>` (see §2.5) —
+  there's no separate "sync" step since the branch is rebuilt from both parents' current tips
+  every time anyway.
+
+**Why this was added:** a bug in the profile-creation onboarding flow (the rival-reveal step
+being a dead end when no rivals exist) was fixed once on the `onboarding-fixes` top-level
+branch, then resurfaced on `database`, a sibling top-level branch that had forked from
+`development` before the fix existed and was never merged with `onboarding-fixes` or refreshed
+from `development` afterward (2026-07-04). Note the specific nuance: syncing `database` from
+`development` alone would *not* have caught this particular case, since the fix hadn't been
+merged into `development` yet either — it was sitting on a sibling top-level branch awaiting
+release. The general habit of routinely syncing from parent still matters going forward (it
+closes the more common case: a fix that *has* landed on `development` but a long-lived sibling
+branch hasn't pulled it in), but it doesn't replace paying attention to fixes still parked on
+other active top-level branches — if a bug fix is generally applicable (not specific to one
+feature's unfinished work), consider whether it needs to be applied to other active top-level
+branches directly (as a cherry-pick or equivalent) rather than assuming a `development` sync
+will eventually deliver it.
+
 ---
 
 ## 3. Commit rules
@@ -213,6 +248,7 @@ becomes a recurring drag across many future `test/<feature>` cycles; not worth i
 | Work on one piece of an existing feature | that feature's branch | `feature/<specific-function>` |
 | Test a feature that's ready | merge of `unitTests` + `<feature>` | `test/<feature>` |
 | Fix something found during testing | the feature branch (or its `feature/*` sub-branch) | continue there, don't branch from `test/<feature>` |
+| Resume work on any existing branch | that branch | first merge its parent in (§2.8) before committing anything new |
 | Merge a tested feature into `development` | — | not automatic on green tests; requires explicit developer (or other-developer) confirmation the feature is ready — then merge, with no test files carried in (§2.6) |
 | Cut a release | — | not a branch action; ask the developer, then merge `development` → `main` and tag it |
 

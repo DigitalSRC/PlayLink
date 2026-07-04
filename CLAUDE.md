@@ -123,6 +123,7 @@ test/<feature>       ← created fresh per test cycle as a merge of `unitTests` 
 - **Never sync `unitTests` with a plain `git merge development`.** `development`'s history contains commits that delete unitTests-exclusive content (`dev-tools.tsx`, `seed-profiles.ts`, `HARDCODED_GROUPS`, test files) — if `unitTests` hasn't diverged since, that merge is a silent fast-forward that reapplies every one of those deletions with zero warning (this happened once, 2026-07-03). Always use `git merge development --no-ff` instead, and see §2.7 of the full workflow doc for the conflict-resolution checklist (which lines to keep from `unitTests` vs. take from `development` in the handful of partially-gated files).
 - **`development` and `main` never contain test files.** No `*.test.ts` (or other test-suite files) may exist on either branch. `unitTests` and `test/<feature>` are the only branches where test files live. If a merge into `development` or a commit to `main` would introduce a test file, strip it out first — see §2.6 of the full workflow doc.
 - **Branches are not deleted as routine practice.** (A one-time cleanup happened when this document was written, removing branches whose entire history was already absorbed into `development` — see git log. That was a rare, explicit, developer-approved exception, not a standing policy.)
+- **Always update a branch from its parent before starting new work on it.** Before making any new commit on any branch, first merge in the latest state of its parent — a top-level feature branch's parent is `development`; a `feature/<function>` sub-branch's parent is the top-level feature branch it was forked from; `unitTests`'s parent is `development` via the `--no-ff` rule above. This is separate from `git pull` (which only catches up a branch with its own remote history) — a fix or update can land on the parent while a sibling branch sits untouched, and only merging the parent in surfaces it. (This was added after a bug fixed on one top-level feature branch resurfaced on a sibling top-level branch that had forked from `development` before the fix existed and was never re-synced — syncing from the parent routinely is the general habit that prevents this class of drift, even though in that specific case the fix hadn't reached `development` yet either; see the full workflow doc.)
 
 ### The `life-counter` branch (feature under active development, excluded from the MVP)
 
@@ -152,8 +153,8 @@ Three more things have been removed from `development`/`main` for the same reaso
 
 ### Workflow steps — do this for every feature
 
-1. `git checkout <feature> && git pull` — start from the latest state of the relevant top-level feature branch (or `development` if starting a brand-new top-level feature).
-2. `git checkout -b feature/<function>` — create the sub-branch for this specific piece of work.
+1. `git checkout <feature> && git pull`, then `git merge development` — start from the latest state of the relevant top-level feature branch (or `development` if starting a brand-new top-level feature) **and** bring in whatever has landed on `development` since this branch last synced. Don't skip the merge just because `git pull` reported nothing new — that only covers the branch's own remote history, not its parent.
+2. `git checkout -b feature/<function>` — create the sub-branch for this specific piece of work. If `feature/<function>` already exists and work is resuming on it, first `git merge <feature>` (its parent, now synced per step 1) before continuing.
 3. Implement the work. Commit on the sub-branch when done.
 4. `git checkout <feature> && git merge feature/<function>` — bring it into the feature branch.
 5. When the feature is ready to test: `git checkout unitTests && git merge development --no-ff` (stay current — always `--no-ff`, see §2.7 of the workflow doc for why a plain merge can silently delete unitTests-exclusive content), then `git checkout -b test/<feature> && git merge <feature>`.
@@ -169,7 +170,8 @@ Three more things have been removed from `development`/`main` for the same reaso
 2. Treat `development` as the source of truth for the current state of the project, and check it even if the session starts on a different branch. Other branches (especially `main`) can silently lag behind — `main`'s copy of this file and its workflow model once drifted out of date until a session caught it by diffing against `development` and reconciled it. When a branch's docs or code disagree with `development`, `development` wins unless the developer says otherwise; flag the drift and ask before assuming which side is correct.
 3. Ask the user which feature to work on if it is not obvious from context.
 4. Check out (or create) the appropriate branch before touching any files — a `feature/<function>` sub-branch off the relevant top-level feature branch for feature work, never off `main`.
-5. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the developer to explicitly ask for a release.
+5. Before touching any files, sync the checked-out branch from its parent (see "Always update a branch from its parent before starting new work on it" above) — merge latest `development` into a top-level feature branch, or the top-level feature branch into a `feature/<function>` sub-branch. Do this every session, even if the branch was synced recently.
+6. Never assume it is acceptable to work on `main` directly, even for a "small" fix. Never assume it is acceptable to merge into `main` — that requires the developer to explicitly ask for a release.
 
 ## Working conventions
 
