@@ -125,6 +125,75 @@ unitTests                Kept up to date with development at all times.
   `test/<feature>` branch — running them on `development` or `main` will find nothing to
   run.
 
+### 2.7 Syncing `unitTests` with `development` — never let it fast-forward
+
+`development`'s history contains commits whose entire purpose is stripping unitTests-exclusive
+content out of `development` specifically: `src/app/dev-tools.tsx`, `src/data/seed-profiles.ts`,
+`HARDCODED_GROUPS` in `src/data/groups.ts`, and any test files. `unitTests` is supposed to keep
+all of that. That creates a trap: **a plain `git merge development` from `unitTests` can silently
+delete every one of those things**, with no conflict, no warning — discovered the hard way while
+building the `database` feature (2026-07-03).
+
+**Why it happens:** if `unitTests` hasn't diverged from `development`'s shared lineage since
+those stripping commits landed (i.e. `unitTests` never got its own commit touching those files),
+`unitTests`'s tip is a strict ancestor of `development`'s tip. Git resolves that as a
+**fast-forward** — a pure pointer move, not a merge. Fast-forwards run zero conflict detection,
+so every deletion `development` accumulated along the way is applied without so much as a diff
+being shown.
+
+**The fix, verified empirically on disposable branches (not tested against `.gitattributes`
+tricks — those don't help here, see below):**
+
+- **`unitTests` must always carry its own real commit(s) over the gated files.** Once it does,
+  `unitTests`'s tip is no longer an ancestor of `development`'s, so `development` can never again
+  fast-forward it — every sync becomes a real 3-way merge, and git's normal conflict detection
+  applies. This happens naturally every time a `test/<feature>` cycle merges its reconciliation
+  work back into `unitTests` (see below) — it's self-maintaining as long as that step isn't
+  skipped.
+- **As an extra guard against ever hitting a fast-forward by accident** (e.g. a freshly
+  recreated `unitTests` that hasn't diverged yet), always sync with:
+  ```
+  git checkout unitTests
+  git merge development --no-ff
+  ```
+  `--no-ff` forces a real merge commit even in cases where a fast-forward would otherwise be
+  possible, so conflict detection always runs.
+- **`.gitattributes merge=ours` does *not* fix this**, and was ruled out after testing: when
+  `unitTests` hasn't touched a file at all relative to the merge base, git deletes it on `theirs`
+  regardless of any merge driver — there's no content to run a driver on. A custom merge driver
+  only ever gets a chance to run when `unitTests` has *also* modified the file, at which point git
+  raises a normal `CONFLICT (modify/delete)` and leaves `unitTests`'s version in the tree
+  automatically anyway — the driver doesn't add anything a real divergence didn't already provide.
+
+**What a sync merge conflict actually looks like, and how to resolve it:** merging `development`
+into `unitTests` after `development` has changed one of the partially-gated files below will
+raise a normal git content conflict on the overlapping lines (not the fully-deleted-file case —
+that one's silent, see above). Resolve by keeping `unitTests`'s side for the gated lines and
+taking `development`'s side for everything else in the file:
+
+| File | Keep from `unitTests` | Take from `development` |
+|---|---|---|
+| `src/app/dev-tools.tsx` | the whole file (fully exclusive) | n/a — `development` doesn't have it |
+| `src/data/seed-profiles.ts` | the whole file (fully exclusive) | n/a — `development` doesn't have it |
+| `src/utils/*.test.ts` | the whole file (fully exclusive) | n/a — `development` doesn't have it |
+| `src/data/groups.ts` | the `HARDCODED_GROUPS` export | everything else (`Group`/`PlayerProfile` types) |
+| `src/context/AppContext.tsx` | `useState<Group[]>(HARDCODED_GROUPS)` for `groups` | everything else |
+| `src/app/profile-creation.tsx`, `(tabs)/stats.tsx`, `player-profile.tsx` | `import { SEED_PROFILES } from '.../seed-profiles'` and its usages | everything else (these files also carry real feature logic that must flow through) |
+| `(tabs)/profile.tsx` | the real "Developer Tools" button/`router.push('/dev-tools')` (no `DEV_TOOLS_ENABLED` flag) | everything else |
+
+A fully-exclusive file that's missing after a merge (not conflicting — just gone) means a
+fast-forward slipped through; restore it with
+`git show <last-known-good-unitTests-commit>:<path> > <path>` and commit the restoration before
+continuing, same as the 2026-07-03 recovery.
+
+**A further option, not done as of this writing:** the partially-gated files above mix
+gated and shared content in the same file, which is why they need manual conflict resolution
+every time `development` touches something nearby. Extracting the gated bits into their own
+small, fully-exclusive files (the way `dev-tools.tsx` and `seed-profiles.ts` already are) would
+let the main files merge cleanly forever, at the cost of a refactor across profile-creation.tsx,
+stats.tsx, player-profile.tsx, and AppContext.tsx. Worth doing if this conflict resolution
+becomes a recurring drag across many future `test/<feature>` cycles; not worth it for a one-off.
+
 ---
 
 ## 3. Commit rules
