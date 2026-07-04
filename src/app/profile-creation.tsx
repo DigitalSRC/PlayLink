@@ -72,11 +72,15 @@ interface ProfileCreationDraft {
  * generic inline error for any other save failure; the submit button shows a spinner and can't
  * be pressed again while a save is in flight. If the user left mid-onboarding (steps 0-2) and
  * comes back, a locally-persisted draft (see ProfileCreationDraft) restores their progress and
- * a "Welcome back" banner briefly confirms it; the draft is cleared once the profile actually saves.
+ * a "Welcome back" banner briefly confirms it; the draft is cleared once the profile actually
+ * saves. A "Sign Out" link in the header (see handleSignOut) is this screen's only way back to
+ * /sign-in — necessary because a session can land here with no way to ever leave (e.g. the
+ * profiles row was deleted directly in the database after the session was established), and the
+ * normal logout button lives on the profile tab, which is unreachable without a profile.
  */
 export default function ProfileCreation() {
   const router = useRouter();
-  const { session, setCurrentUser, setRivals, setChosenRivalId } = useApp();
+  const { session, setCurrentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
   const createProfileMutation = useCreateProfileMutation();
 
   const [step, setStep] = useState(0);
@@ -282,6 +286,18 @@ export default function ProfileCreation() {
     setRivals(rivals);
     if (rivals.length > 0) setChosenRivalId(rivals[0].id);
     router.replace('/(tabs)/home');
+  };
+
+  // Escape hatch for a session with no reachable profile — e.g. the profiles row was deleted
+  // directly in Supabase, or this account was never meant to be finished. Without this, a user
+  // in that state has no way back to /sign-in: the session persists (by design), so index.tsx
+  // always routes here instead of to sign-in, and the tabs (where the normal logout lives) are
+  // unreachable without a profile.
+  const handleSignOut = () => {
+    if (session) AsyncStorage.removeItem(draftStorageKey(session.user.id));
+    Haptics.selectionAsync();
+    clearCurrentUser();
+    router.replace('/sign-in');
   };
 
   const matchedProfiles = username.trim().length > 0
@@ -586,7 +602,12 @@ export default function ProfileCreation() {
       )}
 
       <View style={styles.header}>
-        <Text style={styles.brand}>PlayLink</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.brand}>PlayLink</Text>
+          <Pressable onPress={handleSignOut} hitSlop={8}>
+            <Text style={styles.signOutLink}>Sign Out</Text>
+          </Pressable>
+        </View>
         {renderStepDots()}
       </View>
 
@@ -643,6 +664,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginBottom: 32,
   },
+  headerTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  signOutLink: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#888",
+    textDecorationLine: "underline",
+  },
   welcomeBackBanner: {
     marginHorizontal: 24,
     marginBottom: 16,
@@ -665,7 +698,6 @@ const styles = StyleSheet.create({
     color: "#007AFF",
     letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 16,
   },
   dots: {
     flexDirection: "row",
