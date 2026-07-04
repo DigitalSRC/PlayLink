@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -42,9 +43,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * inputs, even though the higher placement already makes that unlikely on typical screen sizes.
  * Edge cases: the submit button is disabled while a request is in progress or the form is
  * incomplete; validates email shape and a 6-character password minimum client-side before
- * ever calling Supabase, so obviously-invalid input never round-trips to the server.
+ * ever calling Supabase, so obviously-invalid input never round-trips to the server. On success,
+ * explicitly navigates back to "/" rather than relying on the auth-state listener alone —
+ * index.tsx and /sign-in are sibling routes, so index.tsx's routing gate only re-evaluates when
+ * it's remounted, not just because session state changed somewhere else while it's unmounted.
  */
 export default function SignIn() {
+  const router = useRouter();
   const [mode, setMode] = useState<"signIn" | "signUp">("signUp");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,6 +69,7 @@ export default function SignIn() {
       } else {
         await signInWithEmail(email.trim(), password);
       }
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -76,6 +82,7 @@ export default function SignIn() {
     setPendingProvider("google");
     try {
       await signInWithGoogle();
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in failed. Please try again.");
     } finally {
@@ -88,6 +95,7 @@ export default function SignIn() {
     setPendingProvider("apple");
     try {
       await signInWithApple();
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Apple sign-in failed. Please try again.");
     } finally {
