@@ -1,7 +1,9 @@
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -41,12 +43,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * sits near the top of the screen rather than pinned to the bottom, and the whole layout is
  * wrapped in a KeyboardAvoidingView + ScrollView so the on-screen keyboard can never cover the
  * inputs, even though the higher placement already makes that unlikely on typical screen sizes.
- * Edge cases: the submit button is disabled while a request is in progress or the form is
- * incomplete; validates email shape and a 6-character password minimum client-side before
- * ever calling Supabase, so obviously-invalid input never round-trips to the server. On success,
- * explicitly navigates back to "/" rather than relying on the auth-state listener alone —
- * index.tsx and /sign-in are sibling routes, so index.tsx's routing gate only re-evaluates when
- * it's remounted, not just because session state changed somewhere else while it's unmounted.
+ * Edge cases: the submit button is enabled once both fields are non-empty, but a malformed
+ * email or a too-short password is only caught when the button is actually pressed — showing
+ * a red inline error under the offending field plus an error haptic, rather than just leaving
+ * the button silently disabled with no explanation. Toggling between sign-up/sign-in animates
+ * the form (slide + haptic tick) purely so the mode switch reads as "something happened," even
+ * though it's the same screen underneath. On success, explicitly navigates back to "/" rather
+ * than relying on the auth-state listener alone — index.tsx and /sign-in are sibling routes, so
+ * index.tsx's routing gate only re-evaluates when it's remounted, not just because session state
+ * changed somewhere else while it's unmounted.
  */
 export default function SignIn() {
   const router = useRouter();
@@ -56,18 +61,54 @@ export default function SignIn() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<"google" | "apple" | null>(null);
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
-  const canSubmit = EMAIL_RE.test(email.trim()) && password.length >= 6;
+  const formAnim = useRef(new Animated.Value(0)).current;
+
+  // Purely cosmetic: makes toggling sign-up/sign-in feel like it navigated somewhere, even
+  // though it's the same screen and fields underneath. See the toggle Pressable below.
+  const animateModeSwitch = () => {
+    formAnim.setValue(24);
+    Animated.spring(formAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      bounciness: 10,
+    }).start();
+  };
+
+  // Gate on non-empty rather than full validity so the button is always pressable - actual
+  // format/length problems are caught inside handleSubmit and surfaced as inline errors, not by
+  // silently disabling the button with no explanation (see the "no email" bug this was added for).
+  const canSubmit = email.trim().length > 0 && password.length > 0;
 
   const handleSubmit = async () => {
     if (!canSubmit || isSubmitting) return;
     setError("");
+    setEmailError("");
+    setPasswordError("");
+
+    const trimmedEmail = email.trim();
+    let hasValidationError = false;
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setEmailError("Enter a valid email address with a valid extension (e.g. name@example.com).");
+      hasValidationError = true;
+    }
+    if (password.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      hasValidationError = true;
+    }
+    if (hasValidationError) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (mode === "signUp") {
-        await signUpWithEmail(email.trim(), password);
+        await signUpWithEmail(trimmedEmail, password);
       } else {
-        await signInWithEmail(email.trim(), password);
+        await signInWithEmail(trimmedEmail, password);
       }
       router.replace("/");
     } catch (err) {
@@ -121,31 +162,36 @@ export default function SignIn() {
           <Text style={styles.tagline}>Linking Players to play games!</Text>
         </View>
 
-        <View style={styles.footer}>
+        <Animated.View
+          style={[styles.footer, { transform: [{ translateY: formAnim }] }]}
+        >
           {!!error && <Text style={styles.errorText}>{error}</Text>}
 
           <TextInput
-            style={styles.input}
+            style={[styles.input, !!emailError && styles.inputError]}
             placeholder="Email"
             placeholderTextColor="#666"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(v) => { setEmail(v); if (emailError) setEmailError(""); }}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
             editable={!isBusy}
           />
+          {!!emailError && <Text style={styles.fieldErrorText}>{emailError}</Text>}
+
           <TextInput
-            style={styles.input}
+            style={[styles.input, !!passwordError && styles.inputError]}
             placeholder="Password (min. 6 characters)"
             placeholderTextColor="#666"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
             editable={!isBusy}
           />
+          {!!passwordError && <Text style={styles.fieldErrorText}>{passwordError}</Text>}
 
           <Pressable
             style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
@@ -162,7 +208,14 @@ export default function SignIn() {
           </Pressable>
 
           <Pressable
-            onPress={() => { setError(""); setMode(mode === "signUp" ? "signIn" : "signUp"); }}
+            onPress={() => {
+              setError("");
+              setEmailError("");
+              setPasswordError("");
+              Haptics.selectionAsync();
+              animateModeSwitch();
+              setMode(mode === "signUp" ? "signIn" : "signUp");
+            }}
             disabled={isBusy}
           >
             <Text style={styles.toggleText}>
@@ -201,7 +254,7 @@ export default function SignIn() {
               )}
             </>
           )}
-        </View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -255,6 +308,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 16,
     color: "#FFF",
+  },
+  inputError: {
+    borderColor: "#FF3B30",
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    color: "#FF3B30",
+    fontWeight: "600",
+    marginTop: -6,
   },
   toggleText: {
     fontSize: 13,
