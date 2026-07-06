@@ -73,7 +73,14 @@ interface ProfileCreationDraft {
  * be pressed again while a save is in flight. If no rivals are found (RIVAL_POOL is empty on
  * this branch, so this is always the case right now), the reveal step is skipped entirely and
  * the user goes straight to the tabs — otherwise it would be a dead end, since the reveal
- * step's Continue button can't be enabled without a rival to pick. If the user left
+ * step's Continue button can't be enabled without a rival to pick; the button reads "Create
+ * Profile" instead of "Find My Rivals" whenever RIVAL_POOL is empty, since the latter would be
+ * a lie about what pressing it actually does. Entering the tabs (from either this fast path or
+ * the reveal step's "Enter the Arena") sets awaitingHomeEntry rather than navigating directly —
+ * the create-profile mutation resolving only means the query cache has been written, not that
+ * AppContext's currentUser has re-rendered with it yet, and navigating before that propagates
+ * would make the tabs' own routing gate see a stale null currentUser and bounce straight back
+ * here. If the user left
  * mid-onboarding (steps 0-2) and comes back, a locally-persisted draft (see
  * ProfileCreationDraft) restores their progress and a "Welcome back" banner briefly confirms
  * it; the draft is cleared once the profile actually saves. A "Sign Out" link in the header
@@ -84,7 +91,7 @@ interface ProfileCreationDraft {
  */
 export default function ProfileCreation() {
   const router = useRouter();
-  const { session, setCurrentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
+  const { session, currentUser, setCurrentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
   const createProfileMutation = useCreateProfileMutation();
 
   const [step, setStep] = useState(0);
@@ -102,6 +109,7 @@ export default function ProfileCreation() {
   const [submitError, setSubmitError] = useState("");
   const [welcomeBackEmail, setWelcomeBackEmail] = useState<string | null>(null);
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
+  const [awaitingHomeEntry, setAwaitingHomeEntry] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rivalCardAnims = useRef([
@@ -169,6 +177,15 @@ export default function ProfileCreation() {
     selectedGames, selectedFormats, selectedBrackets, selectedNoGo,
   ]);
 
+  // Navigates to the tabs once currentUser (populated by the just-completed create-profile
+  // mutation, via AppContext's useProfileQuery) has actually propagated down to this component -
+  // see the awaitingHomeEntry comment in nextStep for why this can't just navigate immediately.
+  useEffect(() => {
+    if (awaitingHomeEntry && currentUser) {
+      router.replace('/(tabs)/home');
+    }
+  }, [awaitingHomeEntry, currentUser, router]);
+
   const USERNAME_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
   const validateUsername = (value: string) => {
@@ -222,7 +239,6 @@ export default function ProfileCreation() {
         }
         return;
       }
-      setIsSubmitting(false);
       AsyncStorage.removeItem(draftStorageKey(session.user.id));
 
       const rivals = findRivals(newProfile, RIVAL_POOL, 3);
@@ -232,10 +248,19 @@ export default function ProfileCreation() {
       // matches. Either way there's nothing to pick from, so the reveal step would be a dead
       // end (canProceed requires pickedRivalId, which can never be set). Skip straight to home.
       if (rivals.length === 0) {
-        router.replace('/(tabs)/home');
+        // Don't navigate immediately: the mutation resolving only means the query cache has
+        // been written, not that AppContext's currentUser (read from that same cache by a
+        // different component, higher up the tree) has actually re-rendered with it yet. If
+        // /(tabs)/home's routing gate mounts before that propagates, it sees a stale null
+        // currentUser, decides there's no profile, and bounces straight back here - which looks
+        // like the whole flow silently restarting. Instead, stay "submitting" (keeps the button
+        // spinner up and blocks a duplicate submit) and let the effect below navigate once
+        // currentUser has actually caught up.
+        setAwaitingHomeEntry(true);
         return;
       }
 
+      setIsSubmitting(false);
       setComputedRivals(rivals);
       setRivals(rivals);
 
@@ -645,7 +670,7 @@ export default function ProfileCreation() {
               <ActivityIndicator color="#FFF" />
             ) : (
               <Text style={styles.nextBtnText}>
-                {step === 2 ? "Find My Rivals →" : "Continue →"}
+                {step === 2 ? (RIVAL_POOL.length > 0 ? "Find My Rivals →" : "Create Profile →") : "Continue →"}
               </Text>
             )}
           </Pressable>
@@ -655,7 +680,7 @@ export default function ProfileCreation() {
             disabled={!canProceed}
             onPress={() => {
               if (pickedRivalId !== null) setChosenRivalId(pickedRivalId);
-              router.replace("/(tabs)/home");
+              setAwaitingHomeEntry(true);
             }}
           >
             <Text style={styles.nextBtnText}>
