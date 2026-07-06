@@ -525,10 +525,10 @@ export default function GroupDetail() {
             onPress={() => router.push({ pathname: '/player-profile', params: { username: player.username } })}
           >
             <View style={styles.playerAvatar}>
-              <Text style={styles.playerInitial}>{player.username[0]}</Text>
+              <Text style={styles.playerInitial}>{(player.displayName ?? player.username)[0]}</Text>
             </View>
             <View style={styles.playerInfo}>
-              <Text style={styles.playerName}>{player.username}</Text>
+              <Text style={styles.playerName}>{player.displayName ?? player.username}</Text>
               <Text style={styles.playerMeta}>
                 {player.role} · Bracket {player.bracket} · {player.location}
               </Text>
@@ -595,7 +595,7 @@ export default function GroupDetail() {
             <ScrollView style={styles.reportList}>
               {group.players.map((player) => (
                 <View key={player.id} style={styles.placementRow}>
-                  <Text style={styles.placementName}>{player.username}</Text>
+                  <Text style={styles.placementName}>{player.displayName ?? player.username}</Text>
                   <View style={styles.placementStepper}>
                     <Pressable style={styles.stepperBtn} onPress={() => adjustPlacement(player.id, -1)}>
                       <Text style={styles.stepperBtnText}>−</Text>

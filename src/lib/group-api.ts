@@ -11,7 +11,7 @@ interface GroupPlayerRow {
   player_id: string;
   role: string;
   bracket: number;
-  profiles: { username: string; location: string } | null;
+  profiles: { username: string; display_name: string | null; location: string } | null;
 }
 
 interface GroupRow {
@@ -33,11 +33,12 @@ interface GroupRow {
   group_players: GroupPlayerRow[];
 }
 
-const GROUP_SELECT = '*, group_players(player_id, role, bracket, profiles(username, location))';
+const GROUP_SELECT = '*, group_players(player_id, role, bracket, profiles(username, display_name, location))';
 
 const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   id: row.player_id,
   username: row.profiles?.username ?? 'Unknown',
+  displayName: row.profiles?.display_name ?? undefined,
   bracket: row.bracket,
   location: row.profiles?.location ?? '',
   role: row.role,
