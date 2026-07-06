@@ -219,15 +219,22 @@ export const useSubmitGroupResultMutation = () => {
 
 /**
  * Flags a pending result as disputed, invalidating that group's results query.
- * Parameters: none — call sites pass `{ result, playerId }`.
+ * Parameters: none — call sites pass `{ result, playerId, reason }`.
  * Returns: a React Query mutation object.
  * Edge cases: none beyond the standard mutation error path.
  */
 export const useDisputeGroupResultMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ result, playerId }: { result: GroupResult; playerId: string }) =>
-      disputeGroupResult(result, playerId),
+    mutationFn: ({
+      result,
+      playerId,
+      reason,
+    }: {
+      result: GroupResult;
+      playerId: string;
+      reason: string;
+    }) => disputeGroupResult(result, playerId, reason),
     onSuccess: (_data, { result }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.results(result.groupId) });
     },

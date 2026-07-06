@@ -86,6 +86,9 @@ export default function GroupDetail() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [placementDraft, setPlacementDraft] = useState<Record<string, number>>({});
 
+  const [disputeTarget, setDisputeTarget] = useState<GroupResult | null>(null);
+  const [disputeReasonInput, setDisputeReasonInput] = useState('');
+
   const activeResult = results.find((r) => r.status !== 'finalized');
 
   // Lazily finalizes a pending result once its dispute window has elapsed — matches this app's
@@ -262,10 +265,22 @@ export default function GroupDetail() {
     }
   };
 
-  const handleDispute = async (result: GroupResult) => {
+  const handleDispute = (result: GroupResult) => {
+    setDisputeReasonInput('');
+    setDisputeTarget(result);
+  };
+
+  const handleSubmitDispute = async () => {
+    if (!disputeTarget) return;
+    const reason = disputeReasonInput.trim();
+    if (!reason) {
+      Alert.alert('Reason required', "Let the host know what's wrong before flagging this round.");
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     try {
-      await disputeMutation.mutateAsync({ result, playerId: currentUser.id });
+      await disputeMutation.mutateAsync({ result: disputeTarget, playerId: currentUser.id, reason });
+      setDisputeTarget(null);
     } catch (err) {
       Alert.alert('Couldn’t flag dispute', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -348,8 +363,18 @@ export default function GroupDetail() {
               <>
                 <Text style={styles.resultStatusTitleDisputed}>Round {activeResult.roundNumber} disputed</Text>
                 <Text style={styles.resultStatusSub}>
-                  A player flagged this round. {isHost ? 'Cancel it and resubmit corrected results.' : 'Waiting on the host to resubmit.'}
+                  {isHost ? 'Cancel it and resubmit corrected results.' : 'Waiting on the host to resubmit.'}
                 </Text>
+                {activeResult.disputedBy.map((disputerId) => {
+                  const disputer = group.players.find((p) => p.id === disputerId);
+                  const reason = activeResult.disputeReasons[disputerId];
+                  if (!reason) return null;
+                  return (
+                    <Text key={disputerId} style={styles.disputeReasonText}>
+                      {disputer?.username ?? 'A player'}: "{reason}"
+                    </Text>
+                  );
+                })}
                 {isHost && (
                   <Pressable style={styles.disputeBtn} onPress={() => handleCancelResult(activeResult)}>
                     <Text style={styles.disputeBtnText}>Cancel Round {activeResult.roundNumber}</Text>
@@ -619,6 +644,34 @@ export default function GroupDetail() {
           </View>
         </View>
       </Modal>
+
+      {/* Dispute reason modal */}
+      <Modal visible={!!disputeTarget} animationType="slide" transparent onRequestClose={() => setDisputeTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.reportSheet}>
+            <Text style={styles.reportTitle}>What's wrong with this round?</Text>
+            <Text style={styles.reportSubtitle}>
+              Let the host know what needs fixing before they cancel and resubmit it.
+            </Text>
+            <TextInput
+              style={[styles.editInput, styles.disputeReasonInput]}
+              value={disputeReasonInput}
+              onChangeText={setDisputeReasonInput}
+              placeholder="e.g. I actually came in 2nd, not 3rd"
+              placeholderTextColor="#555"
+              multiline
+            />
+            <View style={styles.editBtnRow}>
+              <Pressable style={styles.cancelBtn} onPress={() => setDisputeTarget(null)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.saveBtn} onPress={handleSubmitDispute}>
+                <Text style={styles.saveBtnText}>Flag Dispute</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -741,6 +794,16 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  disputeReasonText: {
+    color: '#E6A0A0',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  disputeReasonInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   metaCard: {
     backgroundColor: '#1C1C24',
