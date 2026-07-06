@@ -14,9 +14,10 @@ import {
 } from "./group-utils";
 
 const makeGroup = (overrides: Partial<Group> = {}): Group => ({
-  id: 1,
+  id: '1',
   name: "Test Group",
   joinCode: "TST001",
+  createdBy: '1',
   createdAt: 0,
   roundsPlayed: 0,
   gameType: "mtg",
@@ -28,7 +29,7 @@ const makeGroup = (overrides: Partial<Group> = {}): Group => ({
   confirmed: false,
   players: [
     {
-      id: 1,
+      id: '1',
       username: "Alice",
       bracket: 2,
       location: "Downtown",
@@ -41,8 +42,8 @@ const makeGroup = (overrides: Partial<Group> = {}): Group => ({
 
 describe("group-utils", () => {
   it("finds the correct group when the username exists", () => {
-    const groupA = makeGroup({ id: 1, players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host")] });
-    const groupB = makeGroup({ id: 2, players: [buildNewPlayer(2, "Bob", 3, "Riverside", "Member")] });
+    const groupA = makeGroup({ id: '1', players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    const groupB = makeGroup({ id: '2', players: [buildNewPlayer('2', "Bob", 3, "Riverside", "Member")] });
 
     expect(findGroupByUsername([groupA, groupB], "Bob")).toBe(groupB);
   });
@@ -62,20 +63,20 @@ describe("group-utils", () => {
   });
 
   it("detects when a group is full", () => {
-    expect(isGroupFull(makeGroup({ players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host"), buildNewPlayer(2, "Bob", 2, "Downtown", "Member")], targetPlayers: 2 }))).toBe(true);
-    expect(isGroupFull(makeGroup({ targetPlayers: 4, players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host")] }))).toBe(false);
+    expect(isGroupFull(makeGroup({ players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host"), buildNewPlayer('2', "Bob", 2, "Downtown", "Member")], targetPlayers: 2 }))).toBe(true);
+    expect(isGroupFull(makeGroup({ targetPlayers: 4, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] }))).toBe(false);
   });
 
   it("allows joining only when the user is not already in a group and the target is not full", () => {
-    const group = makeGroup({ targetPlayers: 3, players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host")] });
+    const group = makeGroup({ targetPlayers: 3, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
     expect(canJoinGroup(group, undefined)).toBe(true);
     expect(canJoinGroup(group, group)).toBe(false);
-    expect(canJoinGroup(makeGroup({ targetPlayers: 1, players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host")] }), undefined)).toBe(false);
+    expect(canJoinGroup(makeGroup({ targetPlayers: 1, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] }), undefined)).toBe(false);
   });
 
   it("builds a player profile with provided values", () => {
-    expect(buildNewPlayer(9, "Charlie", 4, "Central", "Member")).toEqual({
-      id: 9,
+    expect(buildNewPlayer('9', "Charlie", 4, "Central", "Member")).toEqual({
+      id: '9',
       username: "Charlie",
       bracket: 4,
       location: "Central",
@@ -91,8 +92,8 @@ describe("group-utils", () => {
   });
 
   it("removes a player and removes the group when it becomes empty", () => {
-    const group = makeGroup({ players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host")] });
-    const result = removePlayerFromGroup(group, 1);
+    const group = makeGroup({ players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    const result = removePlayerFromGroup(group, '1');
 
     expect(result.removed).toBe(true);
     expect(result.updatedGroup).toBeNull();
@@ -101,17 +102,17 @@ describe("group-utils", () => {
   it("promotes the next player to host when the host leaves", () => {
     const group = makeGroup({
       players: [
-        buildNewPlayer(1, "Alice", 2, "Downtown", "Host"),
-        buildNewPlayer(2, "Bob", 3, "Riverside", "Member"),
+        buildNewPlayer('1', "Alice", 2, "Downtown", "Host"),
+        buildNewPlayer('2', "Bob", 3, "Riverside", "Member"),
       ],
     });
-    const result = removePlayerFromGroup(group, 1);
+    const result = removePlayerFromGroup(group, '1');
 
     expect(result.wasHost).toBe(true);
     expect(result.updatedGroup).toEqual(
       expect.objectContaining({
         players: [
-          expect.objectContaining({ id: 2, username: "Bob", role: "Host" }),
+          expect.objectContaining({ id: '2', username: "Bob", role: "Host" }),
         ],
       })
     );
@@ -119,7 +120,7 @@ describe("group-utils", () => {
 
   it("returns the same group when trying to set a non-existent host", () => {
     const group = makeGroup();
-    expect(setPlayerAsHost(group, 999)).toBe(group);
+    expect(setPlayerAsHost(group, '999')).toBe(group);
   });
 
   it("formats a single bracket as 'Bracket N'", () => {
@@ -137,16 +138,16 @@ describe("group-utils", () => {
   it("changes the host to the requested player", () => {
     const group = makeGroup({
       players: [
-        buildNewPlayer(1, "Alice", 2, "Downtown", "Host"),
-        buildNewPlayer(2, "Bob", 3, "Riverside", "Member"),
+        buildNewPlayer('1', "Alice", 2, "Downtown", "Host"),
+        buildNewPlayer('2', "Bob", 3, "Riverside", "Member"),
       ],
     });
 
-    expect(setPlayerAsHost(group, 2)).toEqual(
+    expect(setPlayerAsHost(group, '2')).toEqual(
       expect.objectContaining({
         players: [
-          expect.objectContaining({ id: 1, role: "Member" }),
-          expect.objectContaining({ id: 2, role: "Host" }),
+          expect.objectContaining({ id: '1', role: "Member" }),
+          expect.objectContaining({ id: '2', role: "Host" }),
         ],
       })
     );
@@ -181,8 +182,8 @@ describe("group-utils", () => {
   it("treats a group as full when player count exactly equals the target", () => {
     const g = makeGroup({
       players: [
-        buildNewPlayer(1, "Alice", 2, "Downtown", "Host"),
-        buildNewPlayer(2, "Bob", 2, "Downtown", "Member"),
+        buildNewPlayer('1', "Alice", 2, "Downtown", "Host"),
+        buildNewPlayer('2', "Bob", 2, "Downtown", "Member"),
       ],
       targetPlayers: 2,
     });
@@ -198,7 +199,7 @@ describe("group-utils", () => {
   it("blocks joining when the user is already in the target group", () => {
     const group = makeGroup({
       targetPlayers: 4,
-      players: [buildNewPlayer(1, "Alice", 2, "Downtown", "Host")],
+      players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")],
     });
     expect(canJoinGroup(group, group)).toBe(false);
   });
@@ -217,7 +218,7 @@ describe("group-utils", () => {
 
   it("returns the original group unchanged when the player id is not found", () => {
     const group = makeGroup();
-    const result = removePlayerFromGroup(group, 999);
+    const result = removePlayerFromGroup(group, '999');
     expect(result.removed).toBe(false);
     expect(result.updatedGroup).toBe(group);
   });
@@ -225,11 +226,11 @@ describe("group-utils", () => {
   it("removes a non-host member without changing any role", () => {
     const group = makeGroup({
       players: [
-        buildNewPlayer(1, "Alice", 2, "Downtown", "Host"),
-        buildNewPlayer(2, "Bob", 3, "Riverside", "Member"),
+        buildNewPlayer('1', "Alice", 2, "Downtown", "Host"),
+        buildNewPlayer('2', "Bob", 3, "Riverside", "Member"),
       ],
     });
-    const result = removePlayerFromGroup(group, 2);
+    const result = removePlayerFromGroup(group, '2');
     expect(result.wasHost).toBe(false);
     expect(result.removed).toBe(false);
     expect(result.updatedGroup?.players).toHaveLength(1);
@@ -240,7 +241,7 @@ describe("group-utils", () => {
 
   it("returns a valid group when the current host is re-assigned as host", () => {
     const group = makeGroup();
-    const result = setPlayerAsHost(group, 1);
+    const result = setPlayerAsHost(group, '1');
     expect(result.players[0].role).toBe("Host");
   });
 
