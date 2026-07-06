@@ -1,6 +1,6 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import SignIn from "./sign-in";
+import SignIn from "../../app/sign-in";
 
 const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
@@ -21,7 +21,7 @@ const mockSignUpWithEmail = jest.fn<(email: string, password: string) => Promise
 const mockSignInWithEmail = jest.fn<(email: string, password: string) => Promise<void>>(
   () => Promise.resolve()
 );
-jest.mock("../lib/auth-api", () => ({
+jest.mock("../../lib/auth-api", () => ({
   signUpWithEmail: (email: string, password: string) => mockSignUpWithEmail(email, password),
   signInWithEmail: (email: string, password: string) => mockSignInWithEmail(email, password),
   signInWithGoogle: jest.fn(),
