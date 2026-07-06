@@ -1,8 +1,13 @@
-import { useState } from "react";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -34,31 +39,78 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * Parameters: none.
  * Returns: a React Native screen with branding, an email/password form with a sign-up/sign-in
  * mode toggle, an inline loading spinner while a submission is in flight, and an inline error
- * message if one fails. Also renders Google/Apple buttons when OAUTH_ENABLED is true.
- * Edge cases: the submit button is disabled while a request is in progress or the form is
- * incomplete; validates email shape and a 6-character password minimum client-side before
- * ever calling Supabase, so obviously-invalid input never round-trips to the server.
+ * message if one fails. Also renders Google/Apple buttons when OAUTH_ENABLED is true. The form
+ * sits near the top of the screen rather than pinned to the bottom, and the whole layout is
+ * wrapped in a KeyboardAvoidingView + ScrollView so the on-screen keyboard can never cover the
+ * inputs, even though the higher placement already makes that unlikely on typical screen sizes.
+ * Edge cases: the submit button is enabled once both fields are non-empty, but a malformed
+ * email or a too-short password is only caught when the button is actually pressed — showing
+ * a red inline error under the offending field plus an error haptic, rather than just leaving
+ * the button silently disabled with no explanation. Toggling between sign-up/sign-in animates
+ * the form (slide + haptic tick) purely so the mode switch reads as "something happened," even
+ * though it's the same screen underneath. On success, explicitly navigates back to "/" rather
+ * than relying on the auth-state listener alone — index.tsx and /sign-in are sibling routes, so
+ * index.tsx's routing gate only re-evaluates when it's remounted, not just because session state
+ * changed somewhere else while it's unmounted.
  */
 export default function SignIn() {
+  const router = useRouter();
   const [mode, setMode] = useState<"signIn" | "signUp">("signUp");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<"google" | "apple" | null>(null);
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
-  const canSubmit = EMAIL_RE.test(email.trim()) && password.length >= 6;
+  const formAnim = useRef(new Animated.Value(0)).current;
+
+  // Purely cosmetic: makes toggling sign-up/sign-in feel like it navigated somewhere, even
+  // though it's the same screen and fields underneath. See the toggle Pressable below.
+  const animateModeSwitch = () => {
+    formAnim.setValue(24);
+    Animated.spring(formAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      bounciness: 10,
+    }).start();
+  };
+
+  // Gate on non-empty rather than full validity so the button is always pressable - actual
+  // format/length problems are caught inside handleSubmit and surfaced as inline errors, not by
+  // silently disabling the button with no explanation (see the "no email" bug this was added for).
+  const canSubmit = email.trim().length > 0 && password.length > 0;
 
   const handleSubmit = async () => {
     if (!canSubmit || isSubmitting) return;
     setError("");
+    setEmailError("");
+    setPasswordError("");
+
+    const trimmedEmail = email.trim();
+    let hasValidationError = false;
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setEmailError("Enter a valid email address with a valid extension (e.g. name@example.com).");
+      hasValidationError = true;
+    }
+    if (password.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      hasValidationError = true;
+    }
+    if (hasValidationError) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (mode === "signUp") {
-        await signUpWithEmail(email.trim(), password);
+        await signUpWithEmail(trimmedEmail, password);
       } else {
-        await signInWithEmail(email.trim(), password);
+        await signInWithEmail(trimmedEmail, password);
       }
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -71,6 +123,7 @@ export default function SignIn() {
     setPendingProvider("google");
     try {
       await signInWithGoogle();
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in failed. Please try again.");
     } finally {
@@ -83,6 +136,7 @@ export default function SignIn() {
     setPendingProvider("apple");
     try {
       await signInWithApple();
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Apple sign-in failed. Please try again.");
     } finally {
@@ -93,94 +147,116 @@ export default function SignIn() {
   const isBusy = isSubmitting || pendingProvider !== null;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.brand}>PlayLink</Text>
-        <Text style={styles.tagline}>Find your table. Track your rivals.</Text>
-      </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.brand}>Welcome to PlayLink!</Text>
+          <Text style={styles.tagline}>Linking Players to play games!</Text>
+        </View>
 
-      <View style={styles.footer}>
-        {!!error && <Text style={styles.errorText}>{error}</Text>}
-
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#666"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          editable={!isBusy}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password (min. 6 characters)"
-          placeholderTextColor="#666"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isBusy}
-        />
-
-        <Pressable
-          style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
-          onPress={handleSubmit}
-          disabled={!canSubmit || isBusy}
+        <Animated.View
+          style={[styles.footer, { transform: [{ translateY: formAnim }] }]}
         >
-          {isSubmitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.submitButtonText}>
-              {mode === "signUp" ? "Create Account" : "Sign In"}
+          {!!error && <Text style={styles.errorText}>{error}</Text>}
+
+          <TextInput
+            style={[styles.input, !!emailError && styles.inputError]}
+            placeholder="Email"
+            placeholderTextColor="#666"
+            value={email}
+            onChangeText={(v) => { setEmail(v); if (emailError) setEmailError(""); }}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            editable={!isBusy}
+          />
+          {!!emailError && <Text style={styles.fieldErrorText}>{emailError}</Text>}
+
+          <TextInput
+            style={[styles.input, !!passwordError && styles.inputError]}
+            placeholder="Password (min. 6 characters)"
+            placeholderTextColor="#666"
+            value={password}
+            onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!isBusy}
+          />
+          {!!passwordError && <Text style={styles.fieldErrorText}>{passwordError}</Text>}
+
+          <Pressable
+            style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={!canSubmit || isBusy}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.submitButtonText}>
+                {mode === "signUp" ? "Create Account" : "Sign In"}
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              setError("");
+              setEmailError("");
+              setPasswordError("");
+              Haptics.selectionAsync();
+              animateModeSwitch();
+              setMode(mode === "signUp" ? "signIn" : "signUp");
+            }}
+            disabled={isBusy}
+          >
+            <Text style={styles.toggleText}>
+              {mode === "signUp"
+                ? "Already have an account? Sign in"
+                : "New here? Create an account"}
             </Text>
-          )}
-        </Pressable>
+          </Pressable>
 
-        <Pressable
-          onPress={() => { setError(""); setMode(mode === "signUp" ? "signIn" : "signUp"); }}
-          disabled={isBusy}
-        >
-          <Text style={styles.toggleText}>
-            {mode === "signUp"
-              ? "Already have an account? Sign in"
-              : "New here? Create an account"}
-          </Text>
-        </Pressable>
-
-        {OAUTH_ENABLED && (
-          <>
-            <Pressable
-              style={[styles.button, styles.googleButton, isBusy && styles.buttonDisabled]}
-              onPress={handleGoogle}
-              disabled={isBusy}
-            >
-              {pendingProvider === "google" ? (
-                <ActivityIndicator color="#1C1C24" />
-              ) : (
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-              )}
-            </Pressable>
-
-            {Platform.OS === "ios" && (
+          {OAUTH_ENABLED && (
+            <>
               <Pressable
-                style={[styles.button, styles.appleButton, isBusy && styles.buttonDisabled]}
-                onPress={handleApple}
+                style={[styles.button, styles.googleButton, isBusy && styles.buttonDisabled]}
+                onPress={handleGoogle}
                 disabled={isBusy}
               >
-                {pendingProvider === "apple" ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                {pendingProvider === "google" ? (
+                  <ActivityIndicator color="#1C1C24" />
                 ) : (
-                  <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
                 )}
               </Pressable>
-            )}
-          </>
-        )}
-      </View>
-    </View>
+
+              {Platform.OS === "ios" && (
+                <Pressable
+                  style={[styles.button, styles.appleButton, isBusy && styles.buttonDisabled]}
+                  onPress={handleApple}
+                  disabled={isBusy}
+                >
+                  {pendingProvider === "apple" ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                  )}
+                </Pressable>
+              )}
+            </>
+          )}
+        </Animated.View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -188,19 +264,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0F0F14",
-    justifyContent: "space-between",
-    paddingTop: 96,
-    paddingBottom: 56,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "flex-start",
+    paddingTop: 72,
+    paddingBottom: 40,
     paddingHorizontal: 24,
   },
   header: {
     alignItems: "center",
+    marginBottom: 40,
   },
   brand: {
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: "800",
     color: "#FFFFFF",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    textAlign: "center",
   },
   tagline: {
     fontSize: 15,
@@ -227,6 +308,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 16,
     color: "#FFF",
+  },
+  inputError: {
+    borderColor: "#FF3B30",
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    color: "#FF3B30",
+    fontWeight: "600",
+    marginTop: -6,
   },
   toggleText: {
     fontSize: 13,

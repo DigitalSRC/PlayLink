@@ -111,3 +111,18 @@ export const signInWithEmail = async (email: string, password: string): Promise<
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
 };
+
+/**
+ * Changes the password for the currently signed-in user. Supabase's updateUser call operates
+ * on whichever session is already active, so this doesn't need the user's current password —
+ * only a valid session, which the profile screen already requires to be reachable.
+ * Parameters: newPassword (plain text; Supabase's minimum length requirement is enforced
+ * server-side, currently 6 characters).
+ * Returns: a promise that resolves once the password has been updated.
+ * Edge cases: throws if the new password doesn't meet Supabase's minimum length requirement,
+ * if the session has expired, or on any other Supabase/network error.
+ */
+export const updatePassword = async (newPassword: string): Promise<void> => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+};
