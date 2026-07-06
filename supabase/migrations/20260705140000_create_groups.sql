@@ -23,10 +23,14 @@ create table public.groups (
 
 create unique index groups_join_code_idx on public.groups (join_code);
 
+-- `bracket` is the Commander bracket this player chose for THIS group's session, not the same
+-- as their profile-wide `brackets` array (which lists every bracket they're willing to play) -
+-- a member picks one specific value from that list when joining.
 create table public.group_players (
   group_id uuid not null references public.groups (id) on delete cascade,
   player_id uuid not null references public.profiles (id) on delete cascade,
   role text not null default 'Player',
+  bracket integer not null default 2,
   joined_at timestamptz not null default now(),
   primary key (group_id, player_id)
 );
