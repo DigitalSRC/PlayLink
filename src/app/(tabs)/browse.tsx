@@ -25,6 +25,7 @@ import {
 } from '../../data/types';
 import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
 import { useThemeColors } from '../../utils/theme-utils';
+import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
 
 type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
@@ -44,8 +45,10 @@ const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lor
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, setGroups, awardPoints, rivals } = useApp();
+  const { currentUser, groups, rivals } = useApp();
   const colors = useThemeColors();
+  const createGroupMutation = useCreateGroupMutation();
+  const joinGroupMutation = useJoinGroupMutation();
 
   const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
@@ -100,7 +103,7 @@ export default function BrowseScreen() {
 
   const displayUser = currentUser?.username ?? 'Player';
   const currentUserGroup = groups.find((g) =>
-    g.players.some((p) => p.username === displayUser)
+    g.players.some((p) => p.id === currentUser?.id)
   );
 
   const filtered =
@@ -135,7 +138,7 @@ export default function BrowseScreen() {
     handleJoin(group);
   };
 
-  const handleJoin = (group: Group) => {
+  const handleJoin = async (group: Group) => {
     if (!currentUser) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group before joining another.');
@@ -146,29 +149,17 @@ export default function BrowseScreen() {
       return;
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    setGroups((prev) =>
-      prev.map((g) =>
-        g.id === group.id
-          ? {
-              ...g,
-              players: [
-                ...g.players,
-                {
-                  id: Date.now(),
-                  username: displayUser,
-                  bracket: currentUser.brackets[0] ?? 2,
-                  location: currentUser.location,
-                  role: 'Member',
-                },
-              ],
-            }
-          : g
-      )
-    );
-
-    showFeedback(`Joined ${group.name}!`);
+    try {
+      await joinGroupMutation.mutateAsync({
+        groupId: group.id,
+        playerId: currentUser.id,
+        bracket: currentUser.brackets[0] ?? 2,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showFeedback(`Joined ${group.name}!`);
+    } catch (err) {
+      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   /**
@@ -214,7 +205,7 @@ export default function BrowseScreen() {
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!currentUser) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group first.');
@@ -226,12 +217,9 @@ export default function BrowseScreen() {
     }
 
     const resolvedFormat = newFormat || FORMAT_OPTIONS[newGame][0];
-    const group: Group = {
-      id: Date.now(),
+    const draft = {
       name: newName.trim(),
       joinCode: generateJoinCode(groups),
-      createdAt: Date.now(),
-      roundsPlayed: 0,
       gameType: newGame,
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
@@ -246,25 +234,19 @@ export default function BrowseScreen() {
         const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         return `${dayLabel} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}`;
       })(),
-      players: [
-        {
-          id: Date.now() + 1,
-          username: displayUser,
-          bracket: currentUser.brackets[0] ?? 2,
-          location: currentUser.location,
-          role: 'Host',
-        },
-      ],
       targetPlayers: Math.max(2, Number(newTarget) || 4),
       noGo: newNoGo,
-      confirmed: false,
+      hostBracket: currentUser.brackets[0] ?? 2,
     };
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    setGroups((prev) => [group, ...prev]);
-    closeCreateForm();
-    showFeedback('Group posted! Other players can now find and join it.');
+    try {
+      await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      closeCreateForm();
+      showFeedback('Group posted! Other players can now find and join it.');
+    } catch (err) {
+      Alert.alert('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   const toggleBracket = (b: number) => {
