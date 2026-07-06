@@ -74,7 +74,7 @@ describe("SignIn", () => {
     expect(queryByText(/enter a valid email address/i)).toBeNull();
   });
 
-  it("submits a valid sign-up and navigates to '/' on success", async () => {
+  it("submits a valid sign-in and navigates to '/' on success (default mode, no toggle needed)", async () => {
     const { getByTestId } = await render(<SignIn />);
 
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "  player@example.com  ");
@@ -82,12 +82,13 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => {
-      expect(mockSignUpWithEmail).toHaveBeenCalledWith("player@example.com", "password123");
+      expect(mockSignInWithEmail).toHaveBeenCalledWith("player@example.com", "password123");
     });
+    expect(mockSignUpWithEmail).not.toHaveBeenCalled();
     expect(mockReplace).toHaveBeenCalledWith("/");
   });
 
-  it("submits sign-in (not sign-up) once the mode has been toggled", async () => {
+  it("submits sign-up (not sign-in) once the mode has been toggled", async () => {
     const { getByTestId } = await render(<SignIn />);
 
     await fireEvent.press(getByTestId("sign-in-mode-toggle"));
@@ -98,13 +99,13 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => {
-      expect(mockSignInWithEmail).toHaveBeenCalledWith("player@example.com", "password123");
+      expect(mockSignUpWithEmail).toHaveBeenCalledWith("player@example.com", "password123");
     });
-    expect(mockSignUpWithEmail).not.toHaveBeenCalled();
+    expect(mockSignInWithEmail).not.toHaveBeenCalled();
   });
 
   it("shows a generic error message and does not navigate when Supabase rejects", async () => {
-    mockSignUpWithEmail.mockRejectedValueOnce(new Error("Email already registered."));
+    mockSignInWithEmail.mockRejectedValueOnce(new Error("Invalid login credentials."));
     const { getByTestId, getByText } = await render(<SignIn />);
 
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
@@ -112,8 +113,30 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => {
-      expect(getByText("Email already registered.")).toBeTruthy();
+      expect(getByText("Invalid login credentials.")).toBeTruthy();
     });
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("shows 'Welcome Back to PlayLink' in sign-in mode and switches copy in sign-up mode", async () => {
+    const { getByText, getByTestId } = await render(<SignIn />);
+
+    expect(getByText("Welcome Back to PlayLink")).toBeTruthy();
+
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
+    expect(getByText("Welcome to PlayLink!")).toBeTruthy();
+  });
+
+  it("toggles password visibility when the eye icon is pressed", async () => {
+    const { getByTestId } = await render(<SignIn />);
+
+    const passwordInput = getByTestId("sign-in-password-input");
+    expect(passwordInput.props.secureTextEntry).toBe(true);
+
+    await fireEvent.press(getByTestId("sign-in-password-toggle"));
+    expect(passwordInput.props.secureTextEntry).toBe(false);
+
+    await fireEvent.press(getByTestId("sign-in-password-toggle"));
+    expect(passwordInput.props.secureTextEntry).toBe(true);
   });
 });
