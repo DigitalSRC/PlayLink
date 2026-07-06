@@ -89,6 +89,12 @@ export default function GroupDetail() {
   const [disputeTarget, setDisputeTarget] = useState<GroupResult | null>(null);
   const [disputeReasonInput, setDisputeReasonInput] = useState('');
 
+  // Remembers a disputed round's placements across cancel -> resubmit, so reopening the report
+  // modal pre-fills the host's correction instead of resetting to the default 1..N order — the
+  // host is correcting a mistake, not re-entering the whole round from scratch. Cleared once the
+  // corrected round is actually submitted.
+  const [lastCancelledPlacements, setLastCancelledPlacements] = useState<Record<string, number> | null>(null);
+
   const activeResult = results.find((r) => r.status !== 'finalized');
 
   // Lazily finalizes a pending result once its dispute window has elapsed — matches this app's
@@ -234,7 +240,9 @@ export default function GroupDetail() {
 
   const openReportModal = () => {
     const initial: Record<string, number> = {};
-    group.players.forEach((p, i) => { initial[p.id] = i + 1; });
+    group.players.forEach((p, i) => {
+      initial[p.id] = lastCancelledPlacements?.[p.id] ?? i + 1;
+    });
     setPlacementDraft(initial);
     setShowReportModal(true);
   };
@@ -260,6 +268,7 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowReportModal(false);
+      setLastCancelledPlacements(null);
     } catch (err) {
       Alert.alert('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -289,6 +298,9 @@ export default function GroupDetail() {
   const handleCancelResult = async (result: GroupResult) => {
     try {
       await cancelResultMutation.mutateAsync({ resultId: result.id, groupId: result.groupId });
+      const prefill: Record<string, number> = {};
+      result.placements.forEach((p) => { prefill[p.playerId] = p.placement; });
+      setLastCancelledPlacements(prefill);
     } catch (err) {
       Alert.alert('Couldn’t cancel round', err instanceof Error ? err.message : 'Please try again.');
     }
