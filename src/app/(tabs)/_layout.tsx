@@ -66,8 +66,12 @@ export default function TabLayout() {
             fontSize: isHome ? HOME_LABEL_SIZE : LABEL_SIZE,
             fontWeight: isHome ? '800' : '600',
           },
+          tabBarIconStyle: {
+            width: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8,
+            height: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8,
+          },
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: isHome ? HOME_ICON_SIZE : ICON_SIZE }}>
+            <Text style={{ fontSize: isHome ? HOME_ICON_SIZE : ICON_SIZE, lineHeight: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8 }}>
               {TAB_ICON[route.name]?.[focused ? 'active' : 'inactive'] ?? '●'}
             </Text>
           ),
