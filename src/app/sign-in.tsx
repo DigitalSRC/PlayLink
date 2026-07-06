@@ -168,6 +168,7 @@ export default function SignIn() {
           {!!error && <Text style={styles.errorText}>{error}</Text>}
 
           <TextInput
+            testID="sign-in-email-input"
             style={[styles.input, !!emailError && styles.inputError]}
             placeholder="Email"
             placeholderTextColor="#666"
@@ -181,6 +182,7 @@ export default function SignIn() {
           {!!emailError && <Text style={styles.fieldErrorText}>{emailError}</Text>}
 
           <TextInput
+            testID="sign-in-password-input"
             style={[styles.input, !!passwordError && styles.inputError]}
             placeholder="Password (min. 6 characters)"
             placeholderTextColor="#666"
@@ -194,6 +196,7 @@ export default function SignIn() {
           {!!passwordError && <Text style={styles.fieldErrorText}>{passwordError}</Text>}
 
           <Pressable
+            testID="sign-in-submit-button"
             style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
             onPress={handleSubmit}
             disabled={!canSubmit || isBusy}
@@ -208,6 +211,7 @@ export default function SignIn() {
           </Pressable>
 
           <Pressable
+            testID="sign-in-mode-toggle"
             onPress={() => {
               setError("");
               setEmailError("");
