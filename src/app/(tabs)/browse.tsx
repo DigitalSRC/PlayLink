@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -45,7 +47,7 @@ const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lor
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, rivals } = useApp();
+  const { currentUser, groups, groupsLoading, rivals } = useApp();
   const colors = useThemeColors();
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
@@ -115,6 +117,7 @@ export default function BrowseScreen() {
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
+    if (groupsLoading || joinGroupMutation.isPending) return;
     const code = codeValue.toUpperCase().trim();
     if (code.length !== 6) {
       Alert.alert('Invalid code', 'Join codes are 6 characters long.');
@@ -140,6 +143,7 @@ export default function BrowseScreen() {
 
   const handleJoin = async (group: Group) => {
     if (!currentUser) return;
+    if (groupsLoading || joinGroupMutation.isPending) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group before joining another.');
       return;
@@ -207,6 +211,7 @@ export default function BrowseScreen() {
 
   const handleCreate = async () => {
     if (!currentUser) return;
+    if (groupsLoading || createGroupMutation.isPending) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group first.');
       return;
@@ -371,9 +376,9 @@ export default function BrowseScreen() {
                   </View>
                 ) : (
                   <Pressable
-                    style={[styles.joinBtn, isFull && styles.joinBtnDisabled]}
+                    style={[styles.joinBtn, (isFull || groupsLoading || joinGroupMutation.isPending) && styles.joinBtnDisabled]}
                     onPress={(e) => { e.stopPropagation(); handleJoin(group); }}
-                    disabled={isFull}
+                    disabled={isFull || groupsLoading || joinGroupMutation.isPending}
                   >
                     <Text style={styles.joinBtnText}>{isFull ? 'Full' : 'Join →'}</Text>
                   </Pressable>
@@ -386,41 +391,54 @@ export default function BrowseScreen() {
 
       {/* ── Join a Group popup ── */}
       {showJoinModal && (
-        <Pressable style={styles.modalBackdrop} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
-          <Pressable style={[styles.joinModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Join a Group</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              Enter the 6-character code your host shared with you. Hosts can find their
-              group's code on the group's detail page, under "Join Code."
-            </Text>
-            <TextInput
-              style={styles.codeInput}
-              value={codeValue}
-              onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
-              placeholder="XXXXXX"
-              placeholderTextColor="#444"
-              autoCapitalize="characters"
-              autoCorrect={false}
-              maxLength={6}
-              autoFocus
-            />
-            <View style={styles.modalBtnRow}>
-              <Pressable style={styles.modalCancelBtn} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
-                <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.codeJoinBtn} onPress={handleJoinByCode}>
-                <Text style={styles.codeJoinText}>Join →</Text>
-              </Pressable>
-            </View>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdropFill} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
+            <Pressable style={[styles.joinModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Join a Group</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                Enter the 6-character code your host shared with you. Hosts can find their
+                group's code on the group's detail page, under "Join Code."
+              </Text>
+              <TextInput
+                style={styles.codeInput}
+                value={codeValue}
+                onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
+                placeholder="XXXXXX"
+                placeholderTextColor="#444"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={6}
+                autoFocus
+              />
+              <View style={styles.modalBtnRow}>
+                <Pressable style={styles.modalCancelBtn} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
+                  <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.codeJoinBtn, (groupsLoading || joinGroupMutation.isPending) && styles.joinBtnDisabled]}
+                  onPress={handleJoinByCode}
+                  disabled={groupsLoading || joinGroupMutation.isPending}
+                >
+                  <Text style={styles.codeJoinText}>Join →</Text>
+                </Pressable>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       )}
 
       {/* ── Create-group popup, overlays this tab ── */}
       {showCreate && (
-        <Pressable style={styles.modalBackdrop} onPress={requestCloseCreate}>
-          <Pressable style={[styles.createFormSheet, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            <ScrollView contentContainerStyle={styles.createFormScrollContent}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdropFill} onPress={requestCloseCreate}>
+            <Pressable style={[styles.createFormSheet, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+            <ScrollView contentContainerStyle={styles.createFormScrollContent} keyboardShouldPersistTaps="handled">
               <View style={styles.createFormHeader}>
                 <Text style={[styles.createTitle, { color: colors.textPrimary }]}>Post a Group</Text>
                 <Pressable style={styles.createCloseBtn} onPress={requestCloseCreate}>
@@ -570,12 +588,17 @@ export default function BrowseScreen() {
                 })}
               </View>
 
-              <Pressable style={styles.postBtn} onPress={handleCreate}>
-                <Text style={styles.postBtnText}>Post Group</Text>
+              <Pressable
+                style={[styles.postBtn, (groupsLoading || createGroupMutation.isPending) && styles.joinBtnDisabled]}
+                onPress={handleCreate}
+                disabled={groupsLoading || createGroupMutation.isPending}
+              >
+                <Text style={styles.postBtnText}>{createGroupMutation.isPending ? 'Posting…' : 'Post Group'}</Text>
               </Pressable>
             </ScrollView>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       )}
     </View>
   );
@@ -677,6 +700,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  // Used inside the KeyboardAvoidingView-wrapped Join popup: modalBackdrop's own
+  // justifyContent doesn't help once the keyboard adds bottom padding to it, since this
+  // fill view (not modalBackdrop itself) is what needs to sit flush above that padding.
+  modalBackdropFill: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   modalTitle: {
