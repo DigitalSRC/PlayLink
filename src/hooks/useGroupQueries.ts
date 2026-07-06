@@ -14,6 +14,8 @@ import {
   leaveGroup,
   setGroupHost,
   submitGroupResult,
+  updateGroup,
+  UpdateGroupDraft,
 } from '../lib/group-api';
 import { PlayerProfile } from '../data/groups';
 import { PlacementInput } from '../utils/scoring-utils';
@@ -169,6 +171,25 @@ export const useSetGroupHostMutation = () => {
     }) => setGroupHost(groupId, newHostId, previousHostId),
     onSuccess: (_data, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
+    },
+  });
+};
+
+/**
+ * Persists edits from group-detail.tsx's Edit Group form, invalidating that group's detail query
+ * and the list (so name/location/time changes show up on Browse's cards too).
+ * Parameters: none — call sites pass `{ groupId, draft }`.
+ * Returns: a React Query mutation object.
+ * Edge cases: none beyond the standard mutation error path.
+ */
+export const useUpdateGroupMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, draft }: { groupId: string; draft: UpdateGroupDraft }) =>
+      updateGroup(groupId, draft),
+    onSuccess: (_data, { groupId }) => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.list() });
     },
   });
 };

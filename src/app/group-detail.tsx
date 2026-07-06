@@ -30,6 +30,7 @@ import {
   useLeaveGroupMutation,
   useSetGroupHostMutation,
   useSubmitGroupResultMutation,
+  useUpdateGroupMutation,
 } from '../hooks/useGroupQueries';
 
 const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can start a game
@@ -66,6 +67,7 @@ export default function GroupDetail() {
   const submitResultMutation = useSubmitGroupResultMutation();
   const disputeMutation = useDisputeGroupResultMutation();
   const cancelResultMutation = useCancelGroupResultMutation();
+  const updateGroupMutation = useUpdateGroupMutation();
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group?.name ?? '');
@@ -279,16 +281,27 @@ export default function GroupDetail() {
     }
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editName.trim() || !editLocation.trim()) {
       Alert.alert('Missing info', 'Name and location are required.');
       return;
     }
-    // Group editing (name/location/time/targetPlayers/brackets) isn't wired to the backend yet —
-    // this screen's real-backend migration focused on the game-session/scoring flow. Left as a
-    // known gap rather than silently no-op-ing without saying so.
-    Alert.alert('Not available yet', 'Editing group details after creation is coming soon.');
-    setEditing(false);
+    try {
+      await updateGroupMutation.mutateAsync({
+        groupId: group.id,
+        draft: {
+          name: editName.trim(),
+          location: editLocation.trim(),
+          time: `${editDay} · ${editHour}:${String(editMinute).padStart(2, '0')} ${editPeriod}`,
+          targetPlayers: Math.max(2, Number(editTarget) || group.targetPlayers),
+          brackets: editBrackets,
+        },
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditing(false);
+    } catch (err) {
+      Alert.alert('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   const dispusteWindowMinutesLeft = activeResult

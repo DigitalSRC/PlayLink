@@ -224,6 +224,37 @@ export const setGroupHost = async (
   if (demoteError) throw demoteError;
 };
 
+export interface UpdateGroupDraft {
+  name: string;
+  location: string;
+  time: string;
+  targetPlayers: number;
+  brackets: number[];
+}
+
+/**
+ * Persists edits made through group-detail.tsx's Edit Group form: name, location, day/time,
+ * players needed, and Commander brackets. This was previously local-state-only (the form's Save
+ * button just showed a "coming soon" alert), so nothing typed here ever reached the `groups` row.
+ * Parameters: groupId, draft (the edited field values, already validated/parsed by the caller).
+ * Returns: a promise that resolves once the update completes.
+ * Edge cases: none beyond the standard Postgres/network error; does not touch gameType, format,
+ * or noGo, none of which the edit form exposes.
+ */
+export const updateGroup = async (groupId: string, draft: UpdateGroupDraft): Promise<void> => {
+  const { error } = await supabase
+    .from('groups')
+    .update({
+      name: draft.name,
+      location: draft.location,
+      time: draft.time,
+      target_players: draft.targetPlayers,
+      brackets: draft.brackets,
+    })
+    .eq('id', groupId);
+  if (error) throw error;
+};
+
 /**
  * Sets whether a group's game session is confirmed (host-only in practice, enforced by the UI
  * rather than RLS since any member can currently update a group row).
