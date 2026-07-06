@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -386,34 +388,39 @@ export default function BrowseScreen() {
 
       {/* ── Join a Group popup ── */}
       {showJoinModal && (
-        <Pressable style={styles.modalBackdrop} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
-          <Pressable style={[styles.joinModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Join a Group</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              Enter the 6-character code your host shared with you. Hosts can find their
-              group's code on the group's detail page, under "Join Code."
-            </Text>
-            <TextInput
-              style={styles.codeInput}
-              value={codeValue}
-              onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
-              placeholder="XXXXXX"
-              placeholderTextColor="#444"
-              autoCapitalize="characters"
-              autoCorrect={false}
-              maxLength={6}
-              autoFocus
-            />
-            <View style={styles.modalBtnRow}>
-              <Pressable style={styles.modalCancelBtn} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
-                <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.codeJoinBtn} onPress={handleJoinByCode}>
-                <Text style={styles.codeJoinText}>Join →</Text>
-              </Pressable>
-            </View>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdropFill} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
+            <Pressable style={[styles.joinModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Join a Group</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                Enter the 6-character code your host shared with you. Hosts can find their
+                group's code on the group's detail page, under "Join Code."
+              </Text>
+              <TextInput
+                style={styles.codeInput}
+                value={codeValue}
+                onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
+                placeholder="XXXXXX"
+                placeholderTextColor="#444"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={6}
+                autoFocus
+              />
+              <View style={styles.modalBtnRow}>
+                <Pressable style={styles.modalCancelBtn} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
+                  <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.codeJoinBtn} onPress={handleJoinByCode}>
+                  <Text style={styles.codeJoinText}>Join →</Text>
+                </Pressable>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       )}
 
       {/* ── Create-group popup, overlays this tab ── */}
@@ -677,6 +684,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  // Used inside the KeyboardAvoidingView-wrapped Join popup: modalBackdrop's own
+  // justifyContent doesn't help once the keyboard adds bottom padding to it, since this
+  // fill view (not modalBackdrop itself) is what needs to sit flush above that padding.
+  modalBackdropFill: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   modalTitle: {

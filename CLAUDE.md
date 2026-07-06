@@ -73,6 +73,7 @@ PlayLink authenticates and persists user profiles via [Supabase](https://supabas
 - **[src/lib/profile-api.ts](src/lib/profile-api.ts)** — `fetchProfile`/`insertProfile`/`updateProfile` wrapping the `profiles` table (schema in `supabase/migrations/`), plus the snake_case↔camelCase converters that keep the DB's column naming out of the rest of the app. `insertProfile`/`updateProfile` also best-effort sync `username`/`displayName` into the auth user's own metadata (`syncAuthUserMetadata`, via `supabase.auth.updateUser({ data })`) so Supabase Studio's Authentication → Users view shows a real identity instead of a blank one; failures there are logged, not thrown — `profiles` stays the source of truth.
 - **[src/hooks/useAuthSession.ts](src/hooks/useAuthSession.ts)** and **[src/hooks/useProfileQueries.ts](src/hooks/useProfileQueries.ts)** — React Query hooks (`useProfileQuery`, `useCreateProfileMutation`, `useUpdateProfileMutation`) that `AppContext` adapts into `currentUser` and its mutators (`awardPoints`/`addWin`/`addLoss`/`addDraw`/`resetMonthlyPoints`), using optimistic updates so they still feel instant. Cached via [src/lib/query-client.ts](src/lib/query-client.ts) (`PersistQueryClientProvider` in `_layout.tsx`), persisted to AsyncStorage, so a cached profile renders instantly on cold start before the network refetch completes.
 - `UserProfile.id` is a Supabase auth UUID (`string`), matching `auth.users.id` 1:1 so RLS policies on `profiles` are a one-line `auth.uid() = id` check.
+- **[src/lib/crypto-polyfill.ts](src/lib/crypto-polyfill.ts)** — a `SubtleCrypto.digest` shim backed by `expo-crypto`, since React Native has no native `crypto.subtle`. Supabase's PKCE auth flow needs it to hash the code verifier; `subtleDigest` is async so an unmapped algorithm rejects the returned promise rather than throwing synchronously, matching the real `SubtleCrypto.digest` contract.
 
 ### Data layer
 
@@ -97,7 +98,7 @@ When adding new group or rival behavior, put the logic in the appropriate utils 
 
 ### Styling
 
-All styles use React Native `StyleSheet.create` defined at the bottom of each screen file. No external styling library is used.
+All styles use React Native `StyleSheet.create` defined at the bottom of each screen file. No external styling library is used. Screens pull neutral, theme-dependent colors (backgrounds, borders, text tiers) from `ThemeColors` in [src/utils/theme-utils.ts](src/utils/theme-utils.ts) rather than hardcoding light/dark hex values — sourced from `theme` in `AppContext`. Semantic/accent colors (`GAME_COLOR`, success green, accent blue, rival red/gold/purple) are intentionally not part of this palette since they're saturated enough to read on both themes.
 
 ## Git workflow — MANDATORY, follow in every session
 
