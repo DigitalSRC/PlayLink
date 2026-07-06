@@ -124,6 +124,14 @@ unitTests                Kept up to date with development at all times.
 - `npm test` / `npx jest ...` are therefore only meaningful when run on `unitTests` or a
   `test/<feature>` branch — running them on `development` or `main` will find nothing to
   run.
+- **Never place a test file inside `src/app/`, even on `unitTests`/`test/<feature>`.**
+  `src/app/` is Expo Router's scanned root — a `*.test.tsx` file there gets bundled into the
+  real app (not just picked up by Jest), pulling in test-only packages that break the actual
+  bundle (`@testing-library/react-native` imports Node's `console` module, which the RN/web
+  runtime doesn't have). Every other test file in this repo is colocated with its source
+  (`src/utils/`, `src/lib/`) precisely because those directories aren't scanned by the router;
+  screen tests need a different home — `src/__tests__/app/<screen>.test.tsx` (Jest's default
+  `testMatch` already covers `__tests__/` directories anywhere, so this needs no config change).
 
 ### 2.7 Syncing `unitTests` with `development` — never let it fast-forward
 
