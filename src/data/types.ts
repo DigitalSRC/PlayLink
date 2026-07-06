@@ -20,9 +20,11 @@ export interface UserProfile {
   noGo: NoGoRule[];
   wins: number;
   losses: number;
+  draws: number;
   points: number;
   monthlyPoints: number;
   rivalIds?: string[];
+  lastRivalRefresh?: string;
 }
 
 export const GAME_LABELS: Record<GameType, string> = {
