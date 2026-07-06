@@ -1,16 +1,17 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
+import { fetchProfilesByIds } from '../lib/profile-api';
 import { useAuthSession } from '../hooks/useAuthSession';
 import {
   profileKeys,
-  useCreateProfileMutation,
   useProfileQuery,
   useUpdateProfileMutation,
 } from '../hooks/useProfileQueries';
+import { useGroupsQuery } from '../hooks/useGroupQueries';
 
 export type AppTheme = 'dark' | 'light';
 
@@ -20,14 +21,13 @@ interface AppState {
   profileLoading: boolean;
   currentUser: UserProfile | null;
   groups: Group[];
+  groupsLoading: boolean;
   rivals: UserProfile[];
   chosenRivalId: string | null;
   mostPlayedAgainst: UserProfile | null;
   theme: AppTheme;
   devDateOffset: number;
-  setCurrentUser: (profile: UserProfile) => void;
   clearCurrentUser: () => void;
-  setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   setRivals: (rivals: UserProfile[]) => void;
   setChosenRivalId: (id: string) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
@@ -61,10 +61,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const userId = session?.user.id;
 
   const { data: currentUser, isLoading: profileLoading } = useProfileQuery(userId);
-  const createProfileMutation = useCreateProfileMutation();
   const updateProfileMutation = useUpdateProfileMutation();
+  const { data: groups, isLoading: groupsLoading } = useGroupsQuery();
 
-  const [groups, setGroups] = useState<Group[]>([]);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
@@ -75,18 +74,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     registerSupabaseAutoRefresh();
   }, []);
 
-  // As of feature/profile-creation-integration, the only remaining call site is
-  // profile-creation.tsx's loginAsExisting — a dev/demo "log in as an existing seed profile"
-  // affordance that's unreachable on this branch (RIVAL_POOL there is always empty; see that
-  // file's comments). The real onboarding flow now calls useCreateProfileMutation directly so
-  // it can await the result and surface a "username taken" error. This bridge is kept only so
-  // loginAsExisting keeps compiling — it fires the create-profile mutation in the background
-  // with no error handling of its own, which is fine for a call site that never actually runs.
-  const setCurrentUser = (profile: UserProfile) => {
-    if (!userId) return;
-    const { id: _placeholderId, ...draft } = profile;
-    createProfileMutation.mutate({ userId, draft });
-  };
+  // Rehydrates the rivals list from the profile's stored rival_ids whenever it loads or
+  // changes — without this, a returning user (or one whose rivals were just updated by the
+  // daily refresh job) would see an empty rivals list until profile-creation ran again, since
+  // `rivals` is otherwise only ever populated once, at signup time.
+  const rivalIdsKey = currentUser?.rivalIds?.join(',') ?? '';
+  useEffect(() => {
+    if (!rivalIdsKey) return;
+    let cancelled = false;
+    fetchProfilesByIds(rivalIdsKey.split(',')).then((profiles) => {
+      if (cancelled) return;
+      setRivals(profiles);
+      setChosenRivalId((prev) => prev ?? profiles[0]?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rivalIdsKey]);
 
   const clearCurrentUser = () => {
     if (userId) {
@@ -130,6 +134,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const addDraw = () => {
     if (!currentUser) return;
     applyProfilePatch({
+      draws: currentUser.draws + 1,
       points: currentUser.points + 10,
       monthlyPoints: currentUser.monthlyPoints + 10,
     });
@@ -146,9 +151,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     <AppContext.Provider
       value={{
         session, authLoading, profileLoading,
-        currentUser: currentUser ?? null, groups, rivals, chosenRivalId, mostPlayedAgainst,
+        currentUser: currentUser ?? null, groups: groups ?? [], groupsLoading,
+        rivals, chosenRivalId, mostPlayedAgainst,
         theme, devDateOffset,
-        setCurrentUser, clearCurrentUser, setGroups, setRivals,
+        clearCurrentUser, setRivals,
         setChosenRivalId, setMostPlayedAgainst,
         awardPoints, addWin, addLoss, addDraw, resetMonthlyPoints,
         setTheme, setDevDateOffset, getNow,

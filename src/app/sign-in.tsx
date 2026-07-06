@@ -55,9 +55,17 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 export default function SignIn() {
   const router = useRouter();
-  const [mode, setMode] = useState<"signIn" | "signUp">("signUp");
+  // Defaults to signIn rather than signUp: this screen is reached both on a fresh install and
+  // whenever an existing session ends (e.g. signing out), and the latter is the far more common
+  // case in practice. Defaulting to signUp meant a returning user who typed their existing
+  // credentials without first tapping "Already have an account?" would call signUp() instead of
+  // signInWithPassword() - which, for an email that already exists, doesn't throw a catchable
+  // error here but also doesn't establish a real session, silently bouncing them back to this
+  // screen with no explanation.
+  const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<"google" | "apple" | null>(null);
   const [error, setError] = useState("");
@@ -158,7 +166,7 @@ export default function SignIn() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>Welcome to PlayLink!</Text>
+          <Text style={styles.brand}>{mode === "signIn" ? "Welcome Back to PlayLink" : "Welcome to PlayLink!"}</Text>
           <Text style={styles.tagline}>Linking Players to play games!</Text>
         </View>
 
@@ -181,18 +189,28 @@ export default function SignIn() {
           />
           {!!emailError && <Text style={styles.fieldErrorText}>{emailError}</Text>}
 
-          <TextInput
-            testID="sign-in-password-input"
-            style={[styles.input, !!passwordError && styles.inputError]}
-            placeholder="Password (min. 6 characters)"
-            placeholderTextColor="#666"
-            value={password}
-            onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isBusy}
-          />
+          <View style={styles.passwordRow}>
+            <TextInput
+              testID="sign-in-password-input"
+              style={[styles.input, styles.passwordInput, !!passwordError && styles.inputError]}
+              placeholder="Password (min. 6 characters)"
+              placeholderTextColor="#666"
+              value={password}
+              onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isBusy}
+            />
+            <Pressable
+              testID="sign-in-password-toggle"
+              style={styles.passwordToggle}
+              onPress={() => setShowPassword((v) => !v)}
+              disabled={isBusy}
+            >
+              <Text style={styles.passwordToggleIcon}>{showPassword ? "🙈" : "👁️"}</Text>
+            </Pressable>
+          </View>
           {!!passwordError && <Text style={styles.fieldErrorText}>{passwordError}</Text>}
 
           <Pressable
@@ -315,6 +333,24 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: "#FF3B30",
+  },
+  passwordRow: {
+    position: "relative",
+    justifyContent: "center",
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  passwordToggle: {
+    position: "absolute",
+    right: 4,
+    height: "100%",
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  passwordToggleIcon: {
+    fontSize: 18,
   },
   fieldErrorText: {
     fontSize: 12,

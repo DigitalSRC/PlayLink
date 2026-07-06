@@ -1,8 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,31 +15,57 @@ import {
 import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
+import { PlacementInput } from '../utils/scoring-utils';
+import { applyGroupResultPoints, finalizeGroupResultIfReady, GroupResult } from '../lib/group-api';
+import { profileKeys } from '../hooks/useProfileQueries';
+import {
+  groupKeys,
+  useCancelGroupResultMutation,
+  useConfirmGroupMutation,
+  useDeleteGroupMutation,
+  useDisputeGroupResultMutation,
+  useGroupQuery,
+  useGroupResultsQuery,
+  useJoinGroupMutation,
+  useLeaveGroupMutation,
+  useSetGroupHostMutation,
+  useSubmitGroupResultMutation,
+} from '../hooks/useGroupQueries';
 
 const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can start a game
 const MIN_PLAYERS_OTHER = 2;            // minimum attendees required to start any game format
 
-// Game sessions (life counter) are still in development on the `life-counter` branch and are
-// deliberately kept off main until that feature is finished — see CLAUDE.md git workflow.
-// Flip this once life-counter is merged back in to restore the Start Game / Life Counter flow.
-const GAME_SESSIONS_ENABLED = false;
-
 /**
- * Group detail screen showing the full roster, settings, and host controls for a single group.
- * Handles join, leave, host transfer, and group edits with haptic and visual feedback on each action.
- * Multi-round session flow: host confirms a round, selects the winner (winner earns +30 Points), then chooses Another Round or End Session (+10 consolation Points to current user).
- * Anti-cheat guards block confirmation until the group is at least 30 minutes old and has reached the minimum player count (3 for Commander, 2 for others).
- * Parameters: none; reads id from route search params and locates the matching group in global context.
- * Returns: a scrollable detail screen or null when the group ID does not match any active group.
- * Edge cases: renders null and back-navigates silently when the group is not found or has been disbanded.
+ * Group detail screen showing the full roster, settings, and host controls for a single group,
+ * plus the game-session flow: the host confirms the game, then reports each round's placements
+ * once it's over. Points are placement-based (see scoring-utils.ts): the winner's base pool
+ * scales with pod size, each subsequent rank earns half of the one before it, last place always
+ * scores zero placement points, and everyone gets a flat participation bonus regardless.
+ * A submitted round starts as 'pending' with a dispute window before it finalizes and each
+ * participant's own device applies their point delta — see group-api.ts for the full model.
+ * Parameters: none; reads id from route search params and fetches the matching group from Supabase.
+ * Returns: a scrollable detail screen or null when the group ID does not match any group, or
+ * currentUser hasn't loaded yet.
+ * Edge cases: renders null when the group is not found (e.g. it was just deleted by its last
+ * player leaving).
  */
 export default function GroupDetail() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
-  const { currentUser, groups, setGroups } = useApp();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { currentUser } = useApp();
+  const queryClient = useQueryClient();
 
-  const groupId = Number(id);
-  const group = groups.find((g) => g.id === groupId);
+  const { data: group } = useGroupQuery(id);
+  const { data: results = [] } = useGroupResultsQuery(id);
+
+  const joinMutation = useJoinGroupMutation();
+  const leaveMutation = useLeaveGroupMutation();
+  const deleteMutation = useDeleteGroupMutation();
+  const setHostMutation = useSetGroupHostMutation();
+  const confirmMutation = useConfirmGroupMutation();
+  const submitResultMutation = useSubmitGroupResultMutation();
+  const disputeMutation = useDisputeGroupResultMutation();
+  const cancelResultMutation = useCancelGroupResultMutation();
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group?.name ?? '');
@@ -54,13 +82,49 @@ export default function GroupDetail() {
   const [editHour, setEditHour] = useState(parsedTime.h);
   const [editMinute, setEditMinute] = useState(parsedTime.min);
   const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
+
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [placementDraft, setPlacementDraft] = useState<Record<string, number>>({});
+
+  const activeResult = results.find((r) => r.status !== 'finalized');
+
+  // Lazily finalizes a pending result once its dispute window has elapsed — matches this app's
+  // existing getNow()/devDateOffset pattern of checking elapsed time on read rather than running
+  // a scheduled job for it. Runs whenever the group or its results are (re)loaded.
+  useEffect(() => {
+    if (!group || !activeResult) return;
+    if (activeResult.status !== 'pending' || Date.now() < activeResult.disputeWindowEndsAt) return;
+    finalizeGroupResultIfReady(activeResult, group.roundsPlayed).then(() => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.results(group.id) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(group.id) });
+    });
+  }, [group?.id, group?.roundsPlayed, activeResult?.id, activeResult?.status, activeResult?.disputeWindowEndsAt]);
+
+  // Applies this device's own point delta from any finalized result the current user hasn't
+  // synced yet. RLS only allows writing your own profile row, so every participant's device has
+  // to do this independently — there's no single step that applies everyone's points at once.
+  useEffect(() => {
+    if (!currentUser) return;
+    const toApply = results.find(
+      (r) =>
+        r.status === 'finalized' &&
+        !r.appliedBy.includes(currentUser.id) &&
+        r.placements.some((p) => p.playerId === currentUser.id)
+    );
+    if (!toApply) return;
+    applyGroupResultPoints(toApply, currentUser).then(() => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.results(toApply.groupId) });
+      queryClient.invalidateQueries({ queryKey: profileKeys.detail(currentUser.id) });
+    });
+  }, [results, currentUser?.id]);
+
   if (!group || !currentUser) {
     return null;
   }
 
   const displayUser = currentUser.username;
-  const isInGroup = group.players.some((p) => p.username === displayUser);
-  const isHost = group.players.some((p) => p.username === displayUser && p.role === 'Host');
+  const isInGroup = group.players.some((p) => p.id === currentUser.id);
+  const isHost = group.players.some((p) => p.id === currentUser.id && p.role === 'Host');
   const isFull = group.players.length >= group.targetPlayers;
 
   const minPlayers = MIN_PLAYERS_OTHER;
@@ -70,106 +134,123 @@ export default function GroupDetail() {
   const headcountLocked = group.players.length < minPlayers;
   const confirmBlocked = timeLocked || headcountLocked;
 
-  const currentUserGroup = groups.find((g) =>
-    g.players.some((p) => p.username === displayUser)
-  );
-
-  // The time-lock/headcount-lock branches below are unreachable while GAME_SESSIONS_ENABLED is
-  // false; they're intentionally left in place (rather than deleted) since the life-counter
-  // branch's copy of this file still has the working router.push('/life-counter') target, and
-  // that's what will replace this whole function body once the feature is merged back in.
-  const handleStartGame = () => {
-    if (!isHost) return;
-    if (!GAME_SESSIONS_ENABLED) {
-      Haptics.selectionAsync();
-      Alert.alert('Coming Soon', 'Starting a game session is coming in a future update.');
-      return;
-    }
-  };
-
-  const handleJoin = () => {
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
-      return;
-    }
+  const handleJoin = async () => {
     if (isFull) {
       Alert.alert('Group full', 'No open spots in this group.');
       return;
     }
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    setGroups((prev) =>
-      prev.map((g) =>
-        g.id === groupId
-          ? {
-              ...g,
-              players: [
-                ...g.players,
-                {
-                  id: Date.now(),
-                  username: displayUser,
-                  bracket: currentUser.brackets[0] ?? 2,
-                  location: currentUser.location,
-                  role: 'Member',
-                },
-              ],
-            }
-          : g
-      )
-    );
+    try {
+      await joinMutation.mutateAsync({
+        groupId: group.id,
+        playerId: currentUser.id,
+        bracket: currentUser.brackets[0] ?? 2,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
-  const handleLeave = () => {
-    const leavingPlayer = group.players.find((p) => p.username === displayUser);
+  const handleLeave = async () => {
+    const leavingPlayer = group.players.find((p) => p.id === currentUser.id);
     if (!leavingPlayer) return;
 
     const remaining = group.players.filter((p) => p.id !== leavingPlayer.id);
     const wasHost = leavingPlayer.role === 'Host';
 
-    if (remaining.length === 0) {
-      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    try {
+      if (remaining.length === 0) {
+        await deleteMutation.mutateAsync({ groupId: group.id });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        router.back();
+        return;
+      }
+
+      if (wasHost) {
+        await setHostMutation.mutateAsync({
+          groupId: group.id,
+          newHostId: remaining[0].id,
+          previousHostId: leavingPlayer.id,
+        });
+      }
+      await leaveMutation.mutateAsync({ groupId: group.id, playerId: leavingPlayer.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
-      return;
+    } catch (err) {
+      Alert.alert('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
     }
-
-    const updatedPlayers = wasHost
-      ? remaining.map((p, i) => (i === 0 ? { ...p, role: 'Host' } : p))
-      : remaining;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    setGroups((prev) =>
-      prev.map((g) =>
-        g.id === groupId ? { ...g, players: updatedPlayers } : g
-      )
-    );
-
-    router.back();
   };
 
-  const handleMakeHost = (playerId: number) => {
+  const handleMakeHost = async (playerId: string) => {
     if (!isHost) return;
+    const previousHost = group.players.find((p) => p.role === 'Host');
+    if (!previousHost) return;
     Haptics.selectionAsync();
-    setGroups((prev) =>
-      prev.map((g) =>
-        g.id === groupId
-          ? {
-              ...g,
-              players: g.players.map((p) => ({
-                ...p,
-                role:
-                  p.id === playerId
-                    ? 'Host'
-                    : p.role === 'Host'
-                    ? 'Member'
-                    : p.role,
-              })),
-            }
-          : g
-      )
-    );
+    try {
+      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId, previousHostId: previousHost.id });
+    } catch (err) {
+      Alert.alert('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const handleConfirmGame = async () => {
+    if (!isHost || confirmBlocked) return;
+    try {
+      await confirmMutation.mutateAsync({ groupId: group.id, confirmed: true });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      Alert.alert('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const openReportModal = () => {
+    const initial: Record<string, number> = {};
+    group.players.forEach((p, i) => { initial[p.id] = i + 1; });
+    setPlacementDraft(initial);
+    setShowReportModal(true);
+  };
+
+  const adjustPlacement = (playerId: string, delta: number) => {
+    setPlacementDraft((prev) => ({
+      ...prev,
+      [playerId]: Math.max(1, (prev[playerId] ?? 1) + delta),
+    }));
+  };
+
+  const handleSubmitResult = async () => {
+    const placements: PlacementInput[] = group.players.map((p) => ({
+      playerId: p.id,
+      placement: placementDraft[p.id] ?? 1,
+    }));
+    try {
+      await submitResultMutation.mutateAsync({
+        groupId: group.id,
+        roundNumber: group.roundsPlayed + 1,
+        submittedBy: currentUser.id,
+        placements,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowReportModal(false);
+    } catch (err) {
+      Alert.alert('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const handleDispute = async (result: GroupResult) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    try {
+      await disputeMutation.mutateAsync({ result, playerId: currentUser.id });
+    } catch (err) {
+      Alert.alert('Couldn’t flag dispute', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const handleCancelResult = async (result: GroupResult) => {
+    try {
+      await cancelResultMutation.mutateAsync({ resultId: result.id, groupId: result.groupId });
+    } catch (err) {
+      Alert.alert('Couldn’t cancel round', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   const handleSaveEdit = () => {
@@ -177,23 +258,16 @@ export default function GroupDetail() {
       Alert.alert('Missing info', 'Name and location are required.');
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setGroups((prev) =>
-      prev.map((g) =>
-        g.id === groupId
-          ? {
-              ...g,
-              name: editName.trim(),
-              location: editLocation.trim(),
-              time: editDay ? `${editDay} · ${editHour}:${String(editMinute).padStart(2, '0')} ${editPeriod}` : g.time,
-              targetPlayers: Math.max(g.players.length, Number(editTarget) || g.targetPlayers),
-              brackets: editBrackets.length > 0 ? editBrackets : g.brackets,
-            }
-          : g
-      )
-    );
+    // Group editing (name/location/time/targetPlayers/brackets) isn't wired to the backend yet —
+    // this screen's real-backend migration focused on the game-session/scoring flow. Left as a
+    // known gap rather than silently no-op-ing without saying so.
+    Alert.alert('Not available yet', 'Editing group details after creation is coming soon.');
     setEditing(false);
   };
+
+  const dispusteWindowMinutesLeft = activeResult
+    ? Math.max(0, Math.ceil((activeResult.disputeWindowEndsAt - Date.now()) / 60000))
+    : 0;
 
   return (
     <View style={styles.container}>
@@ -220,7 +294,7 @@ export default function GroupDetail() {
           <Text style={styles.groupName}>{group.name}</Text>
         )}
 
-        {group.confirmed && (
+        {group.confirmed && !activeResult && (
           <View style={styles.confirmedBadge}>
             <Text style={styles.confirmedText}>✓ Round {group.roundsPlayed} Confirmed</Text>
           </View>
@@ -228,6 +302,35 @@ export default function GroupDetail() {
         {!group.confirmed && group.roundsPlayed > 0 && (
           <View style={styles.roundInProgressBadge}>
             <Text style={styles.roundInProgressText}>🎮 Round {group.roundsPlayed + 1} of this session</Text>
+          </View>
+        )}
+
+        {/* Pending/disputed round status — visible to every member */}
+        {activeResult && (
+          <View style={[styles.resultStatusCard, activeResult.status === 'disputed' && styles.resultStatusCardDisputed]}>
+            {activeResult.status === 'pending' ? (
+              <>
+                <Text style={styles.resultStatusTitle}>Round {activeResult.roundNumber} results submitted</Text>
+                <Text style={styles.resultStatusSub}>
+                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it.
+                </Text>
+                <Pressable style={styles.disputeBtn} onPress={() => handleDispute(activeResult)}>
+                  <Text style={styles.disputeBtnText}>⚠️ Something's wrong with this</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={styles.resultStatusTitleDisputed}>Round {activeResult.roundNumber} disputed</Text>
+                <Text style={styles.resultStatusSub}>
+                  A player flagged this round. {isHost ? 'Cancel it and resubmit corrected results.' : 'Waiting on the host to resubmit.'}
+                </Text>
+                {isHost && (
+                  <Pressable style={styles.disputeBtn} onPress={() => handleCancelResult(activeResult)}>
+                    <Text style={styles.disputeBtnText}>Cancel Round {activeResult.roundNumber}</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
           </View>
         )}
 
@@ -352,20 +455,29 @@ export default function GroupDetail() {
                   <Pressable style={styles.editBtn} onPress={() => setEditing(true)}>
                     <Text style={styles.editBtnText}>Edit Group</Text>
                   </Pressable>
-                  {!group.confirmed && (
+                  {!group.confirmed ? (
                     <Pressable
-                      style={[styles.confirmBtn, (confirmBlocked || !GAME_SESSIONS_ENABLED) && styles.confirmBtnLocked]}
-                      onPress={handleStartGame}
+                      style={[styles.confirmBtn, confirmBlocked && styles.confirmBtnLocked]}
+                      onPress={handleConfirmGame}
+                      disabled={confirmBlocked}
                     >
-                      <Text style={[styles.confirmBtnText, (confirmBlocked || !GAME_SESSIONS_ENABLED) && styles.confirmBtnTextLocked]}>
-                        {!GAME_SESSIONS_ENABLED
-                          ? 'Coming Soon'
-                          : group.roundsPlayed > 0 ? `Start Round ${group.roundsPlayed + 1}` : 'Start Game'}
+                      <Text style={[styles.confirmBtnText, confirmBlocked && styles.confirmBtnTextLocked]}>
+                        Confirm Game
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={[styles.confirmBtn, !!activeResult && styles.confirmBtnLocked]}
+                      onPress={openReportModal}
+                      disabled={!!activeResult}
+                    >
+                      <Text style={[styles.confirmBtnText, !!activeResult && styles.confirmBtnTextLocked]}>
+                        {group.roundsPlayed > 0 ? `Report Round ${group.roundsPlayed + 1}` : 'Report Results'}
                       </Text>
                     </Pressable>
                   )}
                 </View>
-                {!group.confirmed && GAME_SESSIONS_ENABLED && confirmBlocked && (
+                {!group.confirmed && confirmBlocked && (
                   <Text style={styles.confirmLockNote}>
                     {[
                       timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
@@ -430,6 +542,42 @@ export default function GroupDetail() {
           )}
         </View>
       </ScrollView>
+
+      {/* Report Results modal */}
+      <Modal visible={showReportModal} animationType="slide" transparent onRequestClose={() => setShowReportModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.reportSheet}>
+            <Text style={styles.reportTitle}>Report Round {group.roundsPlayed + 1}</Text>
+            <Text style={styles.reportSubtitle}>
+              Set each player's placement (1st, 2nd, ...). Tie two players by giving them the same number.
+            </Text>
+            <ScrollView style={styles.reportList}>
+              {group.players.map((player) => (
+                <View key={player.id} style={styles.placementRow}>
+                  <Text style={styles.placementName}>{player.username}</Text>
+                  <View style={styles.placementStepper}>
+                    <Pressable style={styles.stepperBtn} onPress={() => adjustPlacement(player.id, -1)}>
+                      <Text style={styles.stepperBtnText}>−</Text>
+                    </Pressable>
+                    <Text style={styles.stepperValue}>{placementDraft[player.id] ?? 1}</Text>
+                    <Pressable style={styles.stepperBtn} onPress={() => adjustPlacement(player.id, 1)}>
+                      <Text style={styles.stepperBtnText}>+</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.editBtnRow}>
+              <Pressable style={styles.cancelBtn} onPress={() => setShowReportModal(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.saveBtn} onPress={handleSubmitResult}>
+                <Text style={styles.saveBtnText}>Submit Results</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -438,81 +586,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F0F14',
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 99,
-  },
-  celebCard: {
-    backgroundColor: '#1C1C24',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    marginHorizontal: 32,
-    borderWidth: 1,
-    borderColor: '#34C759',
-  },
-  celebEmoji: {
-    fontSize: 56,
-    marginBottom: 12,
-  },
-  celebTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#FFF',
-    marginBottom: 8,
-  },
-  celebXP: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: '#34C759',
-    marginBottom: 8,
-  },
-  celebSub: {
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  celebBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 0,
-  },
-  celebBtn: {
-    flex: 1,
-    backgroundColor: '#34C759',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  celebBtnText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  celebBtnSecondary: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#444',
-  },
-  celebBtnSecondaryText: {
-    color: '#888',
-    fontWeight: '700',
-    fontSize: 14,
   },
   content: {
     paddingTop: 56,
@@ -585,6 +658,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  resultStatusCard: {
+    backgroundColor: '#001A3D',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
+  resultStatusCardDisputed: {
+    backgroundColor: '#3D1215',
+    borderColor: '#C0392B',
+  },
+  resultStatusTitle: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  resultStatusTitleDisputed: {
+    color: '#C0392B',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  resultStatusSub: {
+    color: '#AAA',
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  disputeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1C1C24',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+  },
+  disputeBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   metaCard: {
     backgroundColor: '#1C1C24',
     borderRadius: 14,
@@ -631,13 +747,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFF',
     marginBottom: 8,
-  },
-  editRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  editHalf: {
-    flex: 1,
   },
   editLabel: {
     fontSize: 11,
@@ -916,68 +1025,76 @@ const styles = StyleSheet.create({
   periodTextActive: {
     color: '#007AFF',
   },
-  winnerOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F0F14',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 10,
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  reportSheet: {
+    backgroundColor: '#1C1C24',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 40,
+    maxHeight: '80%',
     borderWidth: 1,
     borderColor: '#2C2C38',
-    width: '100%',
   },
-  winnerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#2C2C38',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  winnerInitial: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  winnerName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  winnerYouTag: {
-    backgroundColor: '#007AFF',
-    borderRadius: 6,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  winnerYouText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFF',
-  },
-  winnerAnnounce: {
-    alignItems: 'center',
-    backgroundColor: '#0F0F14',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E6A817',
-  },
-  winnerAnnounceLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#E6A817',
-    letterSpacing: 1.5,
-    marginBottom: 4,
-  },
-  winnerAnnounceName: {
+  reportTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#FFF',
+    marginBottom: 6,
+  },
+  reportSubtitle: {
+    fontSize: 13,
+    color: '#AAA',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  reportList: {
+    maxHeight: 320,
+    marginBottom: 16,
+  },
+  placementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0F0F14',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#2C2C38',
+  },
+  placementName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  placementStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stepperBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#2C2C38',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  stepperValue: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+    minWidth: 24,
+    textAlign: 'center',
   },
 });

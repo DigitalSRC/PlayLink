@@ -2,7 +2,7 @@
 
 A React Native / Expo Router app for finding and organizing tabletop card game play groups. Users create a profile, select the games they play, get matched with rivals, and browse or create local play groups.
 
-Built with **Expo SDK 56**, **React Native**, and **TypeScript**.
+Built with **Expo SDK 57**, **React Native**, and **TypeScript**.
 
 ---
 
@@ -129,6 +129,6 @@ gitignored. Claude Code will reference that file for environment-specific comman
 
 ## Expo documentation
 
-- [Expo Router docs](https://docs.expo.dev/versions/v56.0.0/) (v56)
+- [Expo Router docs](https://docs.expo.dev/versions/v57.0.0/) (v57)
 - [React Native docs](https://reactnative.dev/docs/getting-started)
 - [Expo Go](https://expo.dev/go)
