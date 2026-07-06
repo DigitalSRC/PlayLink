@@ -25,17 +25,8 @@ import {
   UserProfile,
 } from "../data/types";
 import { useCreateProfileMutation } from "../hooks/useProfileQueries";
-import { UsernameTakenError } from "../lib/profile-api";
+import { fetchRivalCandidates, UsernameTakenError, updateProfile } from "../lib/profile-api";
 import { findRivals } from "../utils/rival-utils";
-
-// Rival matching against real player data (SEED_PROFILES) is still in development on the
-// `rival-system` branch — deliberately excluded from development/main until that feature is
-// finished; see CLAUDE.md git workflow. RIVAL_POOL stays empty here so findRivals, the rival
-// reveal step, and the "login as existing seed profile" flow below all keep compiling and
-// degrading safely (no candidates, no login suggestions, isDeveloper never becomes true)
-// without needing SEED_PROFILES. Swap back to `import { SEED_PROFILES } from
-// '../data/seed-profiles'` and rename the three usages below once rival-system merges in.
-const RIVAL_POOL: UserProfile[] = [];
 
 // Ordered labels for the four-step onboarding flow displayed in the progress indicator.
 // Index corresponds to the currentStep state value; length determines total step count for the progress bar.
@@ -63,19 +54,17 @@ interface ProfileCreationDraft {
  * Multi-step onboarding screen that collects the player's full profile.
  * Steps: identity (username + location), game selection, preferences (formats, bracket, no-go), rival reveal.
  * On the games-to-preferences transition, writes the profile to Supabase (createProfileMutation,
- * keyed to the signed-in user's session id) before computing rivals and advancing to the reveal
- * step. Also supports one-tap login for any existing seed profile via the identity step.
+ * keyed to the signed-in user's session id), fetches a pool of other real profiles
+ * (fetchRivalCandidates) to run findRivals against, then advances to the reveal step.
  * Parameters: none; reads the Supabase session from useApp() to attribute the new profile row.
  * Returns: a React Native screen with animated step transitions and haptic feedback on progression.
  * Edge cases: blocks progression if required fields are missing; shows a field-level error and
  * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
  * generic inline error for any other save failure; the submit button shows a spinner and can't
- * be pressed again while a save is in flight. If no rivals are found (RIVAL_POOL is empty on
- * this branch, so this is always the case right now), the reveal step is skipped entirely and
- * the user goes straight to the tabs — otherwise it would be a dead end, since the reveal
- * step's Continue button can't be enabled without a rival to pick; the button reads "Create
- * Profile" instead of "Find My Rivals" whenever RIVAL_POOL is empty, since the latter would be
- * a lie about what pressing it actually does. Entering the tabs (from either this fast path or
+ * be pressed again while a save is in flight. If no rivals are found (e.g. this is the very
+ * first profile in the table), the reveal step is skipped entirely and the user goes straight
+ * to the tabs — otherwise it would be a dead end, since the reveal step's Continue button can't
+ * be enabled without a rival to pick. Entering the tabs (from either this fast path or
  * the reveal step's "Enter the Arena") sets awaitingHomeEntry rather than navigating directly —
  * the create-profile mutation resolving only means the query cache has been written, not that
  * AppContext's currentUser has re-rendered with it yet, and navigating before that propagates
@@ -91,7 +80,7 @@ interface ProfileCreationDraft {
  */
 export default function ProfileCreation() {
   const router = useRouter();
-  const { session, currentUser, setCurrentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
+  const { session, currentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
   const createProfileMutation = useCreateProfileMutation();
 
   const [step, setStep] = useState(0);
@@ -218,6 +207,7 @@ export default function ProfileCreation() {
         noGo: selectedNoGo,
         wins: 0,
         losses: 0,
+        draws: 0,
         points: 0,
         monthlyPoints: 0,
       };
@@ -241,12 +231,21 @@ export default function ProfileCreation() {
       }
       AsyncStorage.removeItem(draftStorageKey(session.user.id));
 
-      const rivals = findRivals(newProfile, RIVAL_POOL, 3);
+      const candidates = await fetchRivalCandidates(session.user.id);
+      const rivals = findRivals(newProfile, candidates, 3);
+      if (rivals.length > 0) {
+        // Best-effort: the daily refresh job (see the rival-refresh Edge Function) is the
+        // long-term source of truth for rival_ids, but persisting this initial match now means
+        // a returning user sees rivals immediately instead of an empty state until the next run.
+        updateProfile(session.user.id, { rivalIds: rivals.map((r) => r.id) }).catch((err) =>
+          console.warn('Failed to persist initial rival match:', err)
+        );
+      }
 
-      // No candidates to show — either RIVAL_POOL is empty (rival matching isn't shipped on
-      // this branch yet, see the RIVAL_POOL comment above) or this particular user just has no
-      // matches. Either way there's nothing to pick from, so the reveal step would be a dead
-      // end (canProceed requires pickedRivalId, which can never be set). Skip straight to home.
+      // No candidates to show — this is the very first profile in the table, or genuinely no
+      // one else shares a game with this user yet. Either way there's nothing to pick from, so
+      // the reveal step would be a dead end (canProceed requires pickedRivalId, which can never
+      // be set). Skip straight to home.
       if (rivals.length === 0) {
         // Don't navigate immediately: the mutation resolving only means the query cache has
         // been written, not that AppContext's currentUser (read from that same cache by a
@@ -318,15 +317,6 @@ export default function ProfileCreation() {
     );
   };
 
-  const loginAsExisting = (profile: UserProfile) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const rivals = findRivals(profile, RIVAL_POOL.filter((p) => p.id !== profile.id), 3);
-    setCurrentUser(profile);
-    setRivals(rivals);
-    if (rivals.length > 0) setChosenRivalId(rivals[0].id);
-    router.replace('/(tabs)/home');
-  };
-
   // Escape hatch for a session with no reachable profile — e.g. the profiles row was deleted
   // directly in Supabase, or this account was never meant to be finished. Without this, a user
   // in that state has no way back to /sign-in: the session persists (by design), so index.tsx
@@ -338,14 +328,6 @@ export default function ProfileCreation() {
     clearCurrentUser();
     router.replace('/sign-in');
   };
-
-  const matchedProfiles = username.trim().length > 0
-    ? RIVAL_POOL.filter((p) => {
-        const q = username.trim().toLowerCase();
-        return p.username.toLowerCase().includes(q) ||
-          (p.displayName ?? '').toLowerCase().includes(q);
-      })
-    : [];
 
   const renderStepDots = () => (
     <View style={styles.dots}>
@@ -386,30 +368,6 @@ export default function ProfileCreation() {
         onChangeText={setDisplayName}
         maxLength={32}
       />
-
-      {matchedProfiles.length > 0 && (
-        <View style={styles.loginSuggestions}>
-          <Text style={styles.loginSuggestionsLabel}>Returning player?</Text>
-          {matchedProfiles.map((profile) => (
-            <Pressable
-              key={profile.id}
-              style={styles.loginSuggestionRow}
-              onPress={() => loginAsExisting(profile)}
-            >
-              <View style={styles.loginAvatar}>
-                <Text style={styles.loginAvatarText}>{(profile.displayName ?? profile.username).charAt(0) || '?'}</Text>
-              </View>
-              <View style={styles.loginInfo}>
-                <Text style={styles.loginName}>{profile.displayName ?? profile.username}</Text>
-                <Text style={styles.loginMeta}>
-                  @{profile.username} · {profile.wins}W – {profile.losses}L · {profile.location}
-                </Text>
-              </View>
-              <Text style={styles.loginArrow}>Log In →</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
 
       <Text style={styles.label}>Your Area</Text>
       <TextInput
@@ -673,7 +631,7 @@ export default function ProfileCreation() {
               <ActivityIndicator color="#FFF" />
             ) : (
               <Text style={styles.nextBtnText}>
-                {step === 2 ? (RIVAL_POOL.length > 0 ? "Find My Rivals →" : "Create Profile →") : "Continue →"}
+                {step === 2 ? "Find My Rivals →" : "Continue →"}
               </Text>
             )}
           </Pressable>
@@ -994,64 +952,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 40,
     fontSize: 15,
-  },
-  loginSuggestions: {
-    marginTop: 12,
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: "#2C2C38",
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  loginSuggestionsLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#555",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 6,
-  },
-  loginSuggestionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#1E1E28",
-  },
-  loginAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#007AFF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  loginAvatarText: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#FFF",
-  },
-  loginInfo: {
-    flex: 1,
-  },
-  loginName: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-  loginMeta: {
-    fontSize: 11,
-    color: "#666",
-    marginTop: 1,
-  },
-  loginArrow: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#007AFF",
   },
   footer: {
     paddingHorizontal: 24,
