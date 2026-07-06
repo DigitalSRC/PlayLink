@@ -12,6 +12,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  SharedValue,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
@@ -34,6 +42,7 @@ import {
 
 const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can start a game
 const MIN_PLAYERS_OTHER = 2;            // minimum attendees required to start any game format
+const ROW_HEIGHT = 64;                  // draggable placement row height, including its gap
 
 /**
  * Group detail screen showing the full roster, settings, and host controls for a single group,
@@ -84,7 +93,13 @@ export default function GroupDetail() {
   const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
 
   const [showReportModal, setShowReportModal] = useState(false);
-  const [placementDraft, setPlacementDraft] = useState<Record<string, number>>({});
+  // Finish order, best first — the source of truth for the report modal's drag-and-drop list.
+  const [placementOrder, setPlacementOrder] = useState<string[]>([]);
+  // Player ids tied with whoever is directly above them in placementOrder (index 0 can never be
+  // tied, since there's nothing above it). Kept separate from ordering itself so dragging and
+  // marking a tie are independent actions.
+  const [tiedWithAbove, setTiedWithAbove] = useState<Set<string>>(new Set());
+  const rowPositions = useSharedValue<Record<string, number>>({});
 
   const [disputeTarget, setDisputeTarget] = useState<GroupResult | null>(null);
   const [disputeReasonInput, setDisputeReasonInput] = useState('');
@@ -96,6 +111,15 @@ export default function GroupDetail() {
   const [lastCancelledPlacements, setLastCancelledPlacements] = useState<Record<string, number> | null>(null);
 
   const activeResult = results.find((r) => r.status !== 'finalized');
+
+  // Keeps the shared position map (read by every draggable row's animated style) in sync with
+  // placementOrder — the plain-state array stays the single source of truth; this is just its
+  // reanimated-readable mirror.
+  useEffect(() => {
+    const next: Record<string, number> = {};
+    placementOrder.forEach((id, index) => { next[id] = index; });
+    rowPositions.value = next;
+  }, [placementOrder]);
 
   // Lazily finalizes a pending result once its dispute window has elapsed — matches this app's
   // existing getNow()/devDateOffset pattern of checking elapsed time on read rather than running
@@ -239,26 +263,58 @@ export default function GroupDetail() {
   };
 
   const openReportModal = () => {
-    const initial: Record<string, number> = {};
-    group.players.forEach((p, i) => {
-      initial[p.id] = lastCancelledPlacements?.[p.id] ?? i + 1;
-    });
-    setPlacementDraft(initial);
+    let order = group.players.map((p) => p.id);
+    const tied = new Set<string>();
+    if (lastCancelledPlacements) {
+      order = [...order].sort(
+        (a, b) => (lastCancelledPlacements[a] ?? 1) - (lastCancelledPlacements[b] ?? 1)
+      );
+      order.forEach((id, index) => {
+        if (index === 0) return;
+        const prevId = order[index - 1];
+        if ((lastCancelledPlacements[id] ?? 1) === (lastCancelledPlacements[prevId] ?? 1)) {
+          tied.add(id);
+        }
+      });
+    }
+    setPlacementOrder(order);
+    setTiedWithAbove(tied);
     setShowReportModal(true);
   };
 
-  const adjustPlacement = (playerId: string, delta: number) => {
-    setPlacementDraft((prev) => ({
-      ...prev,
-      [playerId]: Math.max(1, (prev[playerId] ?? 1) + delta),
-    }));
+  // Called (via runOnJS) once a drag gesture releases — positionsSnapshot is the row-position
+  // shared value's plain-object contents at that moment, movedId is whichever row was dragged.
+  // Reordering breaks any tie the moved player had with its old neighbor, so it's cleared here
+  // rather than left pointing at a row it's no longer next to.
+  const commitPlacementOrder = (positionsSnapshot: Record<string, number>, movedId: string) => {
+    const nextOrder = Object.entries(positionsSnapshot)
+      .sort((a, b) => a[1] - b[1])
+      .map(([id]) => id);
+    setPlacementOrder(nextOrder);
+    setTiedWithAbove((prev) => {
+      if (!prev.has(movedId)) return prev;
+      const next = new Set(prev);
+      next.delete(movedId);
+      return next;
+    });
+  };
+
+  const toggleTieWithAbove = (playerId: string) => {
+    setTiedWithAbove((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId); else next.add(playerId);
+      return next;
+    });
   };
 
   const handleSubmitResult = async () => {
-    const placements: PlacementInput[] = group.players.map((p) => ({
-      playerId: p.id,
-      placement: placementDraft[p.id] ?? 1,
-    }));
+    let placement = 1;
+    const placements: PlacementInput[] = placementOrder.map((playerId, index) => {
+      if (index === 0 || !tiedWithAbove.has(playerId)) {
+        placement = index + 1;
+      }
+      return { playerId, placement };
+    });
     try {
       await submitResultMutation.mutateAsync({
         groupId: group.id,
@@ -627,24 +683,27 @@ export default function GroupDetail() {
           <View style={styles.reportSheet}>
             <Text style={styles.reportTitle}>Report Round {group.roundsPlayed + 1}</Text>
             <Text style={styles.reportSubtitle}>
-              Set each player's placement (1st, 2nd, ...). Tie two players by giving them the same number.
+              Drag ☰ to set each player&apos;s finish order (1st at top). Use &quot;Tie with above&quot; for a shared placement.
             </Text>
-            <ScrollView style={styles.reportList}>
-              {group.players.map((player) => (
-                <View key={player.id} style={styles.placementRow}>
-                  <Text style={styles.placementName}>{player.username}</Text>
-                  <View style={styles.placementStepper}>
-                    <Pressable style={styles.stepperBtn} onPress={() => adjustPlacement(player.id, -1)}>
-                      <Text style={styles.stepperBtnText}>−</Text>
-                    </Pressable>
-                    <Text style={styles.stepperValue}>{placementDraft[player.id] ?? 1}</Text>
-                    <Pressable style={styles.stepperBtn} onPress={() => adjustPlacement(player.id, 1)}>
-                      <Text style={styles.stepperBtnText}>+</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
+            <View style={[styles.reportList, { height: placementOrder.length * ROW_HEIGHT }]}>
+              {placementOrder.map((playerId, index) => {
+                const player = group.players.find((p) => p.id === playerId);
+                if (!player) return null;
+                return (
+                  <DraggablePlacementRow
+                    key={playerId}
+                    playerId={playerId}
+                    label={player.username}
+                    index={index}
+                    totalCount={placementOrder.length}
+                    positions={rowPositions}
+                    onDragEnd={commitPlacementOrder}
+                    isTied={tiedWithAbove.has(playerId)}
+                    onToggleTie={() => toggleTieWithAbove(playerId)}
+                  />
+                );
+              })}
+            </View>
             <View style={styles.editBtnRow}>
               <Pressable style={styles.cancelBtn} onPress={() => setShowReportModal(false)}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -661,7 +720,7 @@ export default function GroupDetail() {
       <Modal visible={!!disputeTarget} animationType="slide" transparent onRequestClose={() => setDisputeTarget(null)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.reportSheet}>
-            <Text style={styles.reportTitle}>What's wrong with this round?</Text>
+            <Text style={styles.reportTitle}>What&apos;s wrong with this round?</Text>
             <Text style={styles.reportSubtitle}>
               Let the host know what needs fixing before they cancel and resubmit it.
             </Text>
@@ -685,6 +744,110 @@ export default function GroupDetail() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+interface DraggablePlacementRowProps {
+  playerId: string;
+  label: string;
+  index: number;
+  totalCount: number;
+  positions: SharedValue<Record<string, number>>;
+  onDragEnd: (positionsSnapshot: Record<string, number>, movedId: string) => void;
+  isTied: boolean;
+  onToggleTie: () => void;
+}
+
+/**
+ * One row of the report-results modal's finish-order list. Dragging its ☰ handle reorders the
+ * whole list live (every other row's position is driven off the shared `positions` map, so they
+ * slide out of the way as this row passes over them); releasing settles the drag and reports the
+ * new order back to the parent via onDragEnd. A separate "Tie with above" chip lets the row share
+ * its neighbor's placement without affecting drag order — dragging and tying are independent.
+ * Parameters: playerId/label (who this row is), index (this player's last-committed position,
+ * used as a fallback before the shared position map has an entry), totalCount (list length, to
+ * clamp drags within bounds), positions (shared position map all rows read from), onDragEnd
+ * (parent callback fired once per drag release), isTied/onToggleTie (this row's tie state and
+ * toggle handler).
+ * Returns: an absolutely-positioned, animated row that reorders instead of scrolling.
+ * Edge cases: none beyond standard gesture cancellation, which onEnd handles the same as a normal
+ * release since gesture-handler always calls it.
+ */
+function DraggablePlacementRow({
+  playerId,
+  label,
+  index,
+  totalCount,
+  positions,
+  onDragEnd,
+  isTied,
+  onToggleTie,
+}: DraggablePlacementRowProps) {
+  'use no memo'; // React Compiler can't see that mutating a SharedValue's .value is the sanctioned
+  // Reanimated update pattern, not an actual prop mutation — opt this component out rather than
+  // have the compiler bail on (or the linter flag) every drag gesture callback below.
+  const dragY = useSharedValue(0);
+  const startY = useSharedValue(0);
+  const isDragging = useSharedValue(false);
+
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      isDragging.value = true;
+      startY.value = (positions.value[playerId] ?? index) * ROW_HEIGHT;
+      dragY.value = startY.value;
+    })
+    .onUpdate((e) => {
+      dragY.value = startY.value + e.translationY;
+      const newIndex = Math.min(
+        totalCount - 1,
+        Math.max(0, Math.round(dragY.value / ROW_HEIGHT))
+      );
+      const currentIndex = positions.value[playerId] ?? index;
+      if (newIndex !== currentIndex) {
+        const next = { ...positions.value };
+        for (const key in next) {
+          if (key === playerId) continue;
+          if (newIndex > currentIndex && next[key] > currentIndex && next[key] <= newIndex) {
+            next[key] -= 1;
+          } else if (newIndex < currentIndex && next[key] >= newIndex && next[key] < currentIndex) {
+            next[key] += 1;
+          }
+        }
+        next[playerId] = newIndex;
+        // reanimated's SharedValue.value assignment is its sanctioned update mechanism, not a real prop mutation.
+        // eslint-disable-next-line react-hooks/immutability
+        positions.value = next;
+      }
+    })
+    .onEnd(() => {
+      isDragging.value = false;
+      runOnJS(onDragEnd)(positions.value, playerId);
+    });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const pos = positions.value[playerId] ?? index;
+    return {
+      transform: [{ translateY: isDragging.value ? dragY.value : withSpring(pos * ROW_HEIGHT) }],
+      zIndex: isDragging.value ? 10 : 0,
+    };
+  });
+
+  return (
+    <Animated.View style={[styles.placementRow, animatedStyle]}>
+      <GestureDetector gesture={panGesture}>
+        <View style={styles.dragHandle} hitSlop={8}>
+          <Text style={styles.dragHandleText}>☰</Text>
+        </View>
+      </GestureDetector>
+      <Text style={styles.placementName}>{label}</Text>
+      {index > 0 && (
+        <Pressable style={[styles.tieChip, isTied && styles.tieChipActive]} onPress={onToggleTie}>
+          <Text style={[styles.tieChipText, isTied && styles.tieChipTextActive]}>
+            {isTied ? 'Tied ✓' : 'Tie with above'}
+          </Text>
+        </Pressable>
+      )}
+    </Animated.View>
   );
 }
 
@@ -1189,48 +1352,56 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   reportList: {
-    maxHeight: 320,
+    position: 'relative',
     marginBottom: 16,
   },
   placementRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: ROW_HEIGHT - 8,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#0F0F14',
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#2C2C38',
   },
+  dragHandle: {
+    paddingHorizontal: 6,
+    paddingVertical: 10,
+    marginRight: 10,
+  },
+  dragHandleText: {
+    color: '#666',
+    fontSize: 18,
+    fontWeight: '700',
+  },
   placementName: {
+    flex: 1,
     fontSize: 14,
     fontWeight: '700',
     color: '#FFF',
   },
-  placementStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  tieChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    backgroundColor: '#1C1C24',
   },
-  stepperBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#2C2C38',
-    alignItems: 'center',
-    justifyContent: 'center',
+  tieChipActive: {
+    backgroundColor: '#001A33',
+    borderColor: '#007AFF',
   },
-  stepperBtnText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '800',
+  tieChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#666',
   },
-  stepperValue: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '800',
-    minWidth: 24,
-    textAlign: 'center',
+  tieChipTextActive: {
+    color: '#007AFF',
   },
 });
