@@ -363,6 +363,7 @@ export default function ProfileCreation() {
       <Text style={styles.label}>Username</Text>
       <Text style={styles.labelHint}>Letters, numbers, underscores only — no spaces</Text>
       <TextInput
+        testID="profile-creation-username-input"
         style={[styles.input, !!usernameError && styles.inputError]}
         placeholder="e.g. DarkRitualDave"
         placeholderTextColor="#999"
@@ -431,6 +432,7 @@ export default function ProfileCreation() {
         return (
           <Pressable
             key={game}
+            testID={`profile-creation-game-${game}`}
             style={[
               styles.gameOption,
               selected && {
@@ -643,7 +645,7 @@ export default function ProfileCreation() {
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <Text style={styles.brand}>PlayLink</Text>
-          <Pressable onPress={handleSignOut} hitSlop={8}>
+          <Pressable testID="profile-creation-sign-out" onPress={handleSignOut} hitSlop={8}>
             <Text style={styles.signOutLink}>Sign Out</Text>
           </Pressable>
         </View>
@@ -662,6 +664,7 @@ export default function ProfileCreation() {
       <View style={styles.footer}>
         {step < 3 ? (
           <Pressable
+            testID="profile-creation-next-button"
             style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
             onPress={nextStep}
             disabled={!canProceed}
@@ -676,6 +679,7 @@ export default function ProfileCreation() {
           </Pressable>
         ) : (
           <Pressable
+            testID="profile-creation-next-button"
             style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
             disabled={!canProceed}
             onPress={() => {
