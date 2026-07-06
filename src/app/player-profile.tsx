@@ -7,33 +7,41 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 import { useApp } from '../context/AppContext';
 import {
   BRACKET_INFO,
   GAME_COLOR,
   GAME_EMOJI,
   GAME_LABELS,
-  UserProfile,
 } from '../data/types';
-import { SEED_PROFILES } from '../data/seed-profiles';
+import { fetchProfileByUsername, fetchProfilesByIds } from '../lib/profile-api';
 
 /**
  * Read-only public profile view for any player.
- * Looks up the player by username from the rivals list first, then from seed profiles.
+ * Looks up the player by username from the current user's already-fetched rivals list first
+ * (avoids a network round trip for the common case), falling back to a live Supabase lookup
+ * for any other player, e.g. a leaderboard row that isn't one of your rivals.
  * If the player is one of the current user's rivals, shows a Set as Rival / Current Rival button.
  * Parameters: username (route param — the player to view).
  * Returns: a scrollable read-only profile screen.
- * Edge cases: shows a minimal "profile not found" state when username has no matching data.
+ * Edge cases: shows a minimal "profile not found" state while the lookup is loading or if
+ * username has no matching profile at all.
  */
 export default function PlayerProfileScreen() {
   const router = useRouter();
   const { username } = useLocalSearchParams<{ username: string }>();
   const { rivals, chosenRivalId, setChosenRivalId } = useApp();
 
-  const profile =
-    rivals.find((r) => r.username === username) ||
-    SEED_PROFILES.find((p) => p.username === username) ||
-    null;
+  const rivalMatch = rivals.find((r) => r.username === username) ?? null;
+
+  const { data: fetchedProfile } = useQuery({
+    queryKey: ['profile-by-username', username],
+    queryFn: () => fetchProfileByUsername(username),
+    enabled: !rivalMatch && !!username,
+  });
+
+  const profile = rivalMatch ?? fetchedProfile ?? null;
 
   const isRival = rivals.some((r) => r.username === username);
   const isChosenRival = profile ? profile.id === chosenRivalId : false;
@@ -45,9 +53,11 @@ export default function PlayerProfileScreen() {
     ? username.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
 
-  const theirRivals: UserProfile[] = (profile?.rivalIds ?? [])
-    .map((id) => SEED_PROFILES.find((p) => p.id === id))
-    .filter((p): p is UserProfile => p !== undefined);
+  const { data: theirRivals = [] } = useQuery({
+    queryKey: ['profiles-by-ids', profile?.rivalIds],
+    queryFn: () => fetchProfilesByIds(profile?.rivalIds ?? []),
+    enabled: (profile?.rivalIds?.length ?? 0) > 0,
+  });
 
   return (
     <View style={styles.container}>
