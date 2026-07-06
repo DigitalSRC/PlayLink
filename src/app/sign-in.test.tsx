@@ -1,0 +1,119 @@
+import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import SignIn from "./sign-in";
+
+const mockReplace = jest.fn();
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ replace: mockReplace }),
+}));
+
+const mockNotificationAsync = jest.fn();
+const mockSelectionAsync = jest.fn();
+jest.mock("expo-haptics", () => ({
+  notificationAsync: (...args: unknown[]) => mockNotificationAsync(...args),
+  selectionAsync: (...args: unknown[]) => mockSelectionAsync(...args),
+  NotificationFeedbackType: { Success: "success", Error: "error" },
+}));
+
+const mockSignUpWithEmail = jest.fn<(email: string, password: string) => Promise<void>>(
+  () => Promise.resolve()
+);
+const mockSignInWithEmail = jest.fn<(email: string, password: string) => Promise<void>>(
+  () => Promise.resolve()
+);
+jest.mock("../lib/auth-api", () => ({
+  signUpWithEmail: (email: string, password: string) => mockSignUpWithEmail(email, password),
+  signInWithEmail: (email: string, password: string) => mockSignInWithEmail(email, password),
+  signInWithGoogle: jest.fn(),
+  signInWithApple: jest.fn(),
+}));
+
+describe("SignIn", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Regression test: typing an email with no "@"/no extension used to just leave the submit
+  // button silently disabled with no explanation - no error text, no haptic, nothing visible.
+  it("shows a red inline error and an error haptic for an invalid email, and never calls Supabase", async () => {
+    const { getByTestId, getByText, queryByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "not-a-valid-email");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    expect(getByText(/enter a valid email address/i)).toBeTruthy();
+    expect(mockNotificationAsync).toHaveBeenCalledWith("error");
+    expect(mockSignUpWithEmail).not.toHaveBeenCalled();
+    expect(mockSignInWithEmail).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(queryByText(/couldn't save|something went wrong/i)).toBeNull();
+  });
+
+  it("shows a red inline error for a too-short password and never calls Supabase", async () => {
+    const { getByTestId, getByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    expect(getByText(/at least 6 characters/i)).toBeTruthy();
+    expect(mockNotificationAsync).toHaveBeenCalledWith("error");
+    expect(mockSignUpWithEmail).not.toHaveBeenCalled();
+  });
+
+  it("clears the field error as soon as the user edits that field again", async () => {
+    const { getByTestId, getByText, queryByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "not-a-valid-email");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+    expect(getByText(/enter a valid email address/i)).toBeTruthy();
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "still-typing");
+    expect(queryByText(/enter a valid email address/i)).toBeNull();
+  });
+
+  it("submits a valid sign-up and navigates to '/' on success", async () => {
+    const { getByTestId } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "  player@example.com  ");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => {
+      expect(mockSignUpWithEmail).toHaveBeenCalledWith("player@example.com", "password123");
+    });
+    expect(mockReplace).toHaveBeenCalledWith("/");
+  });
+
+  it("submits sign-in (not sign-up) once the mode has been toggled", async () => {
+    const { getByTestId } = await render(<SignIn />);
+
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
+    expect(mockSelectionAsync).toHaveBeenCalled();
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => {
+      expect(mockSignInWithEmail).toHaveBeenCalledWith("player@example.com", "password123");
+    });
+    expect(mockSignUpWithEmail).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic error message and does not navigate when Supabase rejects", async () => {
+    mockSignUpWithEmail.mockRejectedValueOnce(new Error("Email already registered."));
+    const { getByTestId, getByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => {
+      expect(getByText("Email already registered.")).toBeTruthy();
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
