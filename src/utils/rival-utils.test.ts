@@ -12,6 +12,7 @@ const makeProfile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   noGo: [],
   wins: 5,
   losses: 5,
+  draws: 0,
   points: 100,
   monthlyPoints: 0,
   rivalIds: [],
@@ -89,17 +90,17 @@ describe("rival-utils", () => {
     expect(findRivals(user, pool)).toEqual([]);
   });
 
-  it("uses 0.5 win rate for a profile with zero recorded games", () => {
-    const user = makeProfile({ id: '1', wins: 5, losses: 5 });
-    const newbie = makeProfile({ id: '2', username: "Newbie", wins: 0, losses: 0 });
-    const rivals = findRivals(user, [dillon, newbie], 3);
-    expect(rivals.some((r) => r.id === newbie.id)).toBe(true);
+  it("treats a candidate with identical monthly points as a perfect match", () => {
+    const user = makeProfile({ id: '1', monthlyPoints: 0 });
+    const twin = makeProfile({ id: '2', username: "Twin", monthlyPoints: 0 });
+    const rivals = findRivals(user, [dillon, twin], 3);
+    expect(rivals.some((r) => r.id === twin.id)).toBe(true);
   });
 
-  it("ranks closer win-rate candidates above distant ones", () => {
-    const user = makeProfile({ id: '1', wins: 5, losses: 5 });
-    const close = makeProfile({ id: '2', username: "Close", wins: 6, losses: 4 });
-    const far = makeProfile({ id: '3', username: "Far", wins: 9, losses: 1 });
+  it("ranks closer monthly-points candidates above distant ones", () => {
+    const user = makeProfile({ id: '1', monthlyPoints: 100 });
+    const close = makeProfile({ id: '2', username: "Close", monthlyPoints: 110 });
+    const far = makeProfile({ id: '3', username: "Far", monthlyPoints: 900 });
     const rivals = findRivals(user, [dillon, close, far], 4);
     const closeIdx = rivals.findIndex((r) => r.id === '2');
     const farIdx = rivals.findIndex((r) => r.id === '3');

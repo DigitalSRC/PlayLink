@@ -17,7 +17,6 @@ jest.mock("expo-haptics", () => ({
 }));
 
 let mockCurrentUser: UserProfile | null = null;
-const mockSetCurrentUser = jest.fn();
 const mockSetRivals = jest.fn();
 const mockSetChosenRivalId = jest.fn();
 const mockClearCurrentUser = jest.fn();
@@ -29,7 +28,6 @@ jest.mock("../../context/AppContext", () => ({
   useApp: () => ({
     session: mockSession,
     currentUser: mockCurrentUser,
-    setCurrentUser: mockSetCurrentUser,
     setRivals: mockSetRivals,
     setChosenRivalId: mockSetChosenRivalId,
     clearCurrentUser: mockClearCurrentUser,
@@ -46,6 +44,7 @@ const mockCreatedProfile: UserProfile = {
   noGo: [],
   wins: 0,
   losses: 0,
+  draws: 0,
   points: 0,
   monthlyPoints: 0,
 };
@@ -62,6 +61,14 @@ jest.mock("../../hooks/useProfileQueries", () => ({
 const mockFindRivals = jest.fn();
 jest.mock("../../utils/rival-utils", () => ({
   findRivals: (...args: unknown[]) => mockFindRivals(...args),
+}));
+
+const mockFetchRivalCandidates = jest.fn<() => Promise<UserProfile[]>>(() => Promise.resolve([]));
+const mockUpdateProfile = jest.fn<() => Promise<UserProfile>>(() => Promise.resolve(mockCreatedProfile));
+jest.mock("../../lib/profile-api", () => ({
+  fetchRivalCandidates: () => mockFetchRivalCandidates(),
+  updateProfile: () => mockUpdateProfile(),
+  UsernameTakenError: class UsernameTakenError extends Error {},
 }));
 
 const fillIdentityAndGames = async (getByTestId: (id: string) => any) => {

@@ -16,8 +16,11 @@ describe("profile-api mappers", () => {
         no_go: ["Infinites"],
         wins: 10,
         losses: 5,
+        draws: 2,
         points: 300,
         monthly_points: 120,
+        rival_ids: ["user-2"],
+        last_rival_refresh: "2026-07-05T19:00:00.000Z",
       };
 
       expect(mapRowToProfile(row)).toEqual({
@@ -32,8 +35,11 @@ describe("profile-api mappers", () => {
         noGo: ["Infinites"],
         wins: 10,
         losses: 5,
+        draws: 2,
         points: 300,
         monthlyPoints: 120,
+        rivalIds: ["user-2"],
+        lastRivalRefresh: "2026-07-05T19:00:00.000Z",
       });
     });
 
@@ -50,8 +56,11 @@ describe("profile-api mappers", () => {
         no_go: [],
         wins: 0,
         losses: 0,
+        draws: 0,
         points: 0,
         monthly_points: 0,
+        rival_ids: [],
+        last_rival_refresh: null,
       };
 
       expect(mapRowToProfile(row).displayName).toBeUndefined();
@@ -71,8 +80,10 @@ describe("profile-api mappers", () => {
         noGo: ["Infinites"],
         wins: 10,
         losses: 5,
+        draws: 2,
         points: 300,
         monthlyPoints: 120,
+        rivalIds: ["user-2"],
       });
 
       expect(row).toEqual({
@@ -86,8 +97,10 @@ describe("profile-api mappers", () => {
         no_go: ["Infinites"],
         wins: 10,
         losses: 5,
+        draws: 2,
         points: 300,
         monthly_points: 120,
+        rival_ids: ["user-2"],
       });
     });
 
