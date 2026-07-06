@@ -15,6 +15,20 @@ PlayLink is an Expo Router app (v57) built with React Native and TypeScript. Use
 - `npx jest -t "normalizes invalid"` — run tests matching a name pattern
 - `npm run lint` — run ESLint via expo lint
 
+### Never put a test file inside `src/app/`
+
+`src/app/` is Expo Router's configured root (see `app.json`) — every `.tsx`/`.ts` file directly
+inside it gets scanned into the route table regardless of naming, `*.test.tsx` included. A test
+file for a screen (e.g. `sign-in.tsx`) placed at `src/app/sign-in.test.tsx` gets bundled into the
+real app, pulling in test-only packages (`@testing-library/react-native`, `jest`, etc.) that
+aren't safe for the native/web runtime — e.g. `@testing-library/react-native` imports Node's
+`console` module, which fails to bundle with "the native React runtime does not include the Node
+standard library." This is easy to miss because every *other* test file in this repo (`src/utils/`,
+`src/lib/`) is safely colocated next to its source, since those directories aren't scanned by the
+router. Screen tests belong in `src/__tests__/app/<screen>.test.tsx` instead (mirrors the `app/`
+path, but outside the scanned root) — Jest's default `testMatch` already covers `__tests__/`
+directories anywhere, no config change needed.
+
 ### Git binary location
 
 If `git` is not in your system PATH, your machine-specific path to the git executable is
