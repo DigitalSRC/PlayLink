@@ -47,7 +47,7 @@ const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lor
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, rivals } = useApp();
+  const { currentUser, groups, groupsLoading, rivals } = useApp();
   const colors = useThemeColors();
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
@@ -117,6 +117,7 @@ export default function BrowseScreen() {
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
+    if (groupsLoading || joinGroupMutation.isPending) return;
     const code = codeValue.toUpperCase().trim();
     if (code.length !== 6) {
       Alert.alert('Invalid code', 'Join codes are 6 characters long.');
@@ -142,6 +143,7 @@ export default function BrowseScreen() {
 
   const handleJoin = async (group: Group) => {
     if (!currentUser) return;
+    if (groupsLoading || joinGroupMutation.isPending) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group before joining another.');
       return;
@@ -209,6 +211,7 @@ export default function BrowseScreen() {
 
   const handleCreate = async () => {
     if (!currentUser) return;
+    if (groupsLoading || createGroupMutation.isPending) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group first.');
       return;
@@ -373,9 +376,9 @@ export default function BrowseScreen() {
                   </View>
                 ) : (
                   <Pressable
-                    style={[styles.joinBtn, isFull && styles.joinBtnDisabled]}
+                    style={[styles.joinBtn, (isFull || groupsLoading || joinGroupMutation.isPending) && styles.joinBtnDisabled]}
                     onPress={(e) => { e.stopPropagation(); handleJoin(group); }}
-                    disabled={isFull}
+                    disabled={isFull || groupsLoading || joinGroupMutation.isPending}
                   >
                     <Text style={styles.joinBtnText}>{isFull ? 'Full' : 'Join →'}</Text>
                   </Pressable>
@@ -414,7 +417,11 @@ export default function BrowseScreen() {
                 <Pressable style={styles.modalCancelBtn} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
                   <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
                 </Pressable>
-                <Pressable style={styles.codeJoinBtn} onPress={handleJoinByCode}>
+                <Pressable
+                  style={[styles.codeJoinBtn, (groupsLoading || joinGroupMutation.isPending) && styles.joinBtnDisabled]}
+                  onPress={handleJoinByCode}
+                  disabled={groupsLoading || joinGroupMutation.isPending}
+                >
                   <Text style={styles.codeJoinText}>Join →</Text>
                 </Pressable>
               </View>
@@ -425,9 +432,13 @@ export default function BrowseScreen() {
 
       {/* ── Create-group popup, overlays this tab ── */}
       {showCreate && (
-        <Pressable style={styles.modalBackdrop} onPress={requestCloseCreate}>
-          <Pressable style={[styles.createFormSheet, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            <ScrollView contentContainerStyle={styles.createFormScrollContent}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdropFill} onPress={requestCloseCreate}>
+            <Pressable style={[styles.createFormSheet, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+            <ScrollView contentContainerStyle={styles.createFormScrollContent} keyboardShouldPersistTaps="handled">
               <View style={styles.createFormHeader}>
                 <Text style={[styles.createTitle, { color: colors.textPrimary }]}>Post a Group</Text>
                 <Pressable style={styles.createCloseBtn} onPress={requestCloseCreate}>
@@ -577,12 +588,17 @@ export default function BrowseScreen() {
                 })}
               </View>
 
-              <Pressable style={styles.postBtn} onPress={handleCreate}>
-                <Text style={styles.postBtnText}>Post Group</Text>
+              <Pressable
+                style={[styles.postBtn, (groupsLoading || createGroupMutation.isPending) && styles.joinBtnDisabled]}
+                onPress={handleCreate}
+                disabled={groupsLoading || createGroupMutation.isPending}
+              >
+                <Text style={styles.postBtnText}>{createGroupMutation.isPending ? 'Posting…' : 'Post Group'}</Text>
               </Pressable>
             </ScrollView>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       )}
     </View>
   );
