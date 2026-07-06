@@ -11,16 +11,18 @@ import { UserProfile } from '../data/types';
 const DILLON_ID = '113';
 
 /**
- * Computes a player's win rate as a fraction between 0 and 1.
- * Used internally to rank rival candidates by closeness of skill level to the current user.
- * Parameters: p (any UserProfile with wins and losses fields).
- * Returns: wins / (wins + losses), or 0.5 when the player has no recorded games.
- * Edge cases: returns 0.5 for a brand-new profile with zero games to avoid skewing the ranking.
+ * Computes how far apart two players' monthly points are.
+ * Used internally to rank rival candidates by closeness of *current-season* standing to the
+ * current user, rather than lifetime record, since monthlyPoints is what the leaderboard sorts
+ * by and what resets to 0 for everyone at the start of each month.
+ * Parameters: a, b (any two UserProfiles with monthlyPoints fields).
+ * Returns: the absolute difference between the two players' monthlyPoints.
+ * Edge cases: two players who both have 0 monthlyPoints (e.g. right after a monthly reset)
+ * are treated as a perfect match (distance 0), which is intentional — a fresh season should
+ * still be able to pair up rivals immediately rather than waiting for points to accrue.
  */
-const winRate = (p: UserProfile): number => {
-  const total = p.wins + p.losses;
-  return total === 0 ? 0.5 : p.wins / total;
-};
+const monthlyPointsDistance = (a: UserProfile, b: UserProfile): number =>
+  Math.abs(a.monthlyPoints - b.monthlyPoints);
 
 /**
  * Builds a version of Dillon Carroll whose games, formats, and brackets
@@ -40,8 +42,10 @@ const buildDillonForUser = (dillon: UserProfile, user: UserProfile): UserProfile
 /**
  * Finds up to maxRivals rival candidates for the current user.
  * Candidates are filtered to only profiles that share at least one game with the user,
- * then ranked by closeness of win rate. Dillon Carroll (id 113) is always injected
- * as the first result with his profile adapted to mirror the user's games.
+ * then ranked by closeness of monthly points — the same metric the leaderboard sorts by,
+ * so a rival match stays aligned with the current month's standings and reshuffles along
+ * with everyone else's fresh start when monthlyPoints resets. Dillon Carroll (id 113) is
+ * always injected as the first result with his profile adapted to mirror the user's games.
  * Parameters: currentUser (the logged-in user), allProfiles (pool to match against), maxRivals (cap, default 3).
  * Returns: array of up to maxRivals profiles; Dillon is always index 0 when present in allProfiles.
  * Edge cases: if no game-matching profiles exist beyond Dillon, returns only Dillon; excludes currentUser by id.
@@ -51,7 +55,6 @@ export const findRivals = (
   allProfiles: UserProfile[],
   maxRivals: number = 3
 ): UserProfile[] => {
-  const userRate = winRate(currentUser);
   const dillonBase = allProfiles.find((p) => p.id === DILLON_ID);
 
   const candidates = allProfiles.filter(
@@ -62,9 +65,9 @@ export const findRivals = (
   );
 
   const ranked = candidates
-    .map((p) => ({ profile: p, diff: Math.abs(winRate(p) - userRate) }))
+    .map((p) => ({ profile: p, diff: monthlyPointsDistance(currentUser, p) }))
     .sort((a, b) => {
-      if (Math.abs(a.diff - b.diff) < 0.001) return Math.random() - 0.5;
+      if (a.diff === b.diff) return Math.random() - 0.5;
       return a.diff - b.diff;
     })
     .slice(0, dillonBase ? maxRivals - 1 : maxRivals)

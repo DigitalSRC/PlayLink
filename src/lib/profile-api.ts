@@ -13,8 +13,11 @@ interface ProfileRow {
   no_go: string[];
   wins: number;
   losses: number;
+  draws: number;
   points: number;
   monthly_points: number;
+  rival_ids: string[];
+  last_rival_refresh: string | null;
 }
 
 /**
@@ -53,8 +56,11 @@ export const mapRowToProfile = (row: ProfileRow): UserProfile => ({
   noGo: row.no_go as NoGoRule[],
   wins: row.wins,
   losses: row.losses,
+  draws: row.draws,
   points: row.points,
   monthlyPoints: row.monthly_points,
+  rivalIds: row.rival_ids,
+  lastRivalRefresh: row.last_rival_refresh ?? undefined,
 });
 
 /**
@@ -81,8 +87,10 @@ export const mapProfileToRow = (
   if ('noGo' in profile) row.no_go = profile.noGo;
   if ('wins' in profile) row.wins = profile.wins;
   if ('losses' in profile) row.losses = profile.losses;
+  if ('draws' in profile) row.draws = profile.draws;
   if ('points' in profile) row.points = profile.points;
   if ('monthlyPoints' in profile) row.monthly_points = profile.monthlyPoints;
+  if ('rivalIds' in profile) row.rival_ids = profile.rivalIds;
   return row;
 };
 
@@ -127,6 +135,90 @@ export const fetchProfile = async (userId: string): Promise<UserProfile | null> 
 
   if (error) throw error;
   return data ? mapRowToProfile(data as ProfileRow) : null;
+};
+
+/**
+ * Fetches every profile row whose id is in the given list, in no particular order.
+ * Used to resolve a user's stored `rivalIds` (uuids) into full rival profiles for display.
+ * Parameters: ids (auth user ids / UserProfile.id values to look up).
+ * Returns: the matching UserProfile rows; ids with no matching row are simply absent from the
+ * result rather than causing an error.
+ * Edge cases: returns an empty array immediately for an empty `ids` list, without a network
+ * round trip, since `.in('id', [])` would otherwise still fire a request for nothing.
+ */
+export const fetchProfilesByIds = async (ids: string[]): Promise<UserProfile[]> => {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from('profiles').select('*').in('id', ids);
+  if (error) throw error;
+  return (data as ProfileRow[]).map(mapRowToProfile);
+};
+
+/**
+ * Looks up a single profile by its username, case-insensitively (matching the DB's unique
+ * index on lower(username)). Used by player-profile.tsx to resolve a rival's screen from a
+ * username route param.
+ * Parameters: username (the username to search for).
+ * Returns: the matching UserProfile, or null if no profile has that username.
+ * Edge cases: throws on any Postgres/network error other than "no row found".
+ */
+export const fetchProfileByUsername = async (username: string): Promise<UserProfile | null> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .ilike('username', username)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapRowToProfile(data as ProfileRow) : null;
+};
+
+/**
+ * Fetches the top profiles for a single game's leaderboard, ranked by this month's points.
+ * Only profiles that list `game` among their played games are included, so a Pokemon player
+ * never sees Magic-only players cluttering their ranking (and vice versa).
+ * Parameters: game (the GameType to rank), excludeUserId (optional id to omit, e.g. so a
+ * screen can render "you" separately from the fetched list), limit (row cap, default 50).
+ * Returns: UserProfile rows sorted by monthlyPoints descending.
+ * Edge cases: returns an empty array if no profile plays that game yet; ties in monthlyPoints
+ * fall back to Postgres's default (stable but unspecified) ordering.
+ */
+export const fetchLeaderboard = async (
+  game: GameType,
+  excludeUserId?: string,
+  limit: number = 50
+): Promise<UserProfile[]> => {
+  let query = supabase
+    .from('profiles')
+    .select('*')
+    .contains('games', [game])
+    .order('monthly_points', { ascending: false })
+    .limit(limit);
+  if (excludeUserId) query = query.neq('id', excludeUserId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data as ProfileRow[]).map(mapRowToProfile);
+};
+
+/**
+ * Fetches a pool of other players' profiles to search for rival matches against.
+ * Parameters: excludeUserId (the profile doing the search, omitted from its own results),
+ * limit (row cap, default 200 — generous enough that findRivals's own game/points filtering
+ * has a real pool to work with without pulling the entire table on every signup).
+ * Returns: an array of UserProfile candidates, in no particular order (findRivals does the
+ * actual ranking).
+ * Edge cases: returns an empty array if this is the very first profile in the table, which
+ * callers already handle (findRivals just returns no rivals in that case).
+ */
+export const fetchRivalCandidates = async (
+  excludeUserId: string,
+  limit: number = 200
+): Promise<UserProfile[]> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .neq('id', excludeUserId)
+    .limit(limit);
+  if (error) throw error;
+  return (data as ProfileRow[]).map(mapRowToProfile);
 };
 
 /**
