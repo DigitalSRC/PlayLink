@@ -87,6 +87,30 @@ export const mapProfileToRow = (
 };
 
 /**
+ * Mirrors username/displayName into the Supabase auth user's own metadata (user_metadata), so
+ * the Authentication > Users view in Supabase Studio shows a meaningful identity instead of
+ * just an email, and can be inspected or hand-edited there directly if ever needed.
+ * Parameters: fields (whichever of username/displayName changed — checked by key presence, not
+ * truthiness, so an explicit `displayName: undefined` still clears it in metadata, matching
+ * mapProfileToRow's convention for the same field).
+ * Returns: a promise that resolves once the sync attempt finishes either way.
+ * Edge cases: best-effort — the `profiles` table is this app's actual source of truth, so a
+ * failure here is logged and swallowed rather than thrown, and never blocks a profile
+ * create/update from succeeding; a no-op if neither field is present on the input.
+ */
+const syncAuthUserMetadata = async (
+  fields: Partial<Pick<UserProfile, 'username' | 'displayName'>>
+): Promise<void> => {
+  const data: Record<string, string | null> = {};
+  if ('username' in fields) data.username = fields.username ?? null;
+  if ('displayName' in fields) data.display_name = fields.displayName ?? null;
+  if (Object.keys(data).length === 0) return;
+
+  const { error } = await supabase.auth.updateUser({ data });
+  if (error) console.warn('Failed to sync auth user metadata:', error.message);
+};
+
+/**
  * Fetches the signed-in user's profile row by their Supabase auth user id.
  * Parameters: userId (the auth.users.id / UserProfile.id to look up).
  * Returns: the matching UserProfile, or null if no profile row exists yet for this user
@@ -112,7 +136,9 @@ export const fetchProfile = async (userId: string): Promise<UserProfile | null> 
  * collected by onboarding, everything except id).
  * Returns: the newly created UserProfile, as stored (including any DB-applied defaults).
  * Edge cases: throws UsernameTakenError if the username collides case-insensitively with an
- * existing profile (Postgres unique_violation, code 23505); rethrows any other error unchanged.
+ * existing profile (Postgres unique_violation, code 23505); rethrows any other error unchanged;
+ * also syncs username/displayName to the auth user's metadata (see syncAuthUserMetadata) so
+ * Supabase Studio's user list reflects the new profile — failures there don't affect the result.
  */
 export const insertProfile = async (
   userId: string,
@@ -125,6 +151,7 @@ export const insertProfile = async (
     if (error.code === '23505') throw new UsernameTakenError();
     throw error;
   }
+  await syncAuthUserMetadata({ username: draft.username, displayName: draft.displayName });
   return mapRowToProfile(data as ProfileRow);
 };
 
@@ -135,7 +162,9 @@ export const insertProfile = async (
  * left untouched).
  * Returns: the full updated UserProfile after the patch is applied.
  * Edge cases: throws if no row exists for userId (update matches zero rows) or on any other
- * Postgres/network error; RLS silently prevents updating any row other than the caller's own.
+ * Postgres/network error; RLS silently prevents updating any row other than the caller's own;
+ * also syncs username/displayName to the auth user's metadata whenever the patch touches either
+ * (see syncAuthUserMetadata), so Supabase Studio's user list stays current after an edit.
  */
 export const updateProfile = async (
   userId: string,
@@ -150,5 +179,8 @@ export const updateProfile = async (
     .single();
 
   if (error) throw error;
+  if ('username' in patch || 'displayName' in patch) {
+    await syncAuthUserMetadata({ username: patch.username, displayName: patch.displayName });
+  }
   return mapRowToProfile(data as ProfileRow);
 };
