@@ -181,6 +181,32 @@ export default function GroupDetail() {
     }
   };
 
+  const handleDeletePosting = () => {
+    const otherPlayers = group.players.filter((p) => p.id !== currentUser.id).length;
+    Alert.alert(
+      'Delete this posting?',
+      otherPlayers > 0
+        ? `This removes the group for everyone, including the other ${otherPlayers} player${otherPlayers > 1 ? 's' : ''} in it. This can't be undone.`
+        : "This can't be undone.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Posting',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMutation.mutateAsync({ groupId: group.id });
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.back();
+            } catch (err) {
+              Alert.alert('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleMakeHost = async (playerId: string) => {
     if (!isHost) return;
     const previousHost = group.players.find((p) => p.role === 'Host');
@@ -523,14 +549,29 @@ export default function GroupDetail() {
           </Pressable>
         ))}
 
-        {/* Join / Leave */}
+        {/* Join / Leave / Delete */}
         <View style={styles.actionSection}>
           {isInGroup ? (
-            <Pressable style={styles.leaveBtn} onPress={handleLeave}>
-              <Text style={styles.leaveBtnText}>
-                {isHost ? 'Leave & Transfer Host' : 'Leave Group'}
-              </Text>
-            </Pressable>
+            isHost ? (
+              group.players.length > 1 ? (
+                <View style={styles.hostActionRow}>
+                  <Pressable style={[styles.leaveBtn, styles.hostActionHalf]} onPress={handleLeave}>
+                    <Text style={styles.leaveBtnText}>Leave (Transfers Host)</Text>
+                  </Pressable>
+                  <Pressable style={[styles.deletePostingBtn, styles.hostActionHalf]} onPress={handleDeletePosting}>
+                    <Text style={styles.deletePostingBtnText}>Delete Posting</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable style={styles.deletePostingBtn} onPress={handleDeletePosting}>
+                  <Text style={styles.deletePostingBtnText}>Delete Posting</Text>
+                </Pressable>
+              )
+            ) : (
+              <Pressable style={styles.leaveBtn} onPress={handleLeave}>
+                <Text style={styles.leaveBtnText}>Leave Group</Text>
+              </Pressable>
+            )
           ) : (
             <Pressable
               style={[styles.joinBtn, isFull && styles.joinBtnDisabled]}
@@ -929,6 +970,26 @@ const styles = StyleSheet.create({
   },
   leaveBtnText: {
     color: '#C0392B',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  hostActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  hostActionHalf: {
+    flex: 1,
+  },
+  deletePostingBtn: {
+    backgroundColor: '#1C1C24',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  deletePostingBtnText: {
+    color: '#AAA',
     fontWeight: '700',
     fontSize: 16,
   },
