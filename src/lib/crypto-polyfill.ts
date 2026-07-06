@@ -7,7 +7,9 @@ const DIGEST_ALGORITHM_MAP: Record<string, CryptoDigestAlgorithm> = {
   'SHA-512': CryptoDigestAlgorithm.SHA512,
 };
 
-const subtleDigest = (algorithm: AlgorithmIdentifier, data: BufferSource): Promise<ArrayBuffer> => {
+// async so an unmapped algorithm rejects the returned promise rather than throwing
+// synchronously — matching the real SubtleCrypto.digest contract, which never throws directly.
+const subtleDigest = async (algorithm: AlgorithmIdentifier, data: BufferSource): Promise<ArrayBuffer> => {
   const name = typeof algorithm === 'string' ? algorithm : algorithm.name;
   const mapped = DIGEST_ALGORITHM_MAP[name];
   if (!mapped) throw new Error(`crypto-polyfill: unsupported digest algorithm "${name}"`);
