@@ -199,6 +199,29 @@ export const fetchLeaderboard = async (
 };
 
 /**
+ * Fetches a pool of other players' profiles to search for rival matches against.
+ * Parameters: excludeUserId (the profile doing the search, omitted from its own results),
+ * limit (row cap, default 200 — generous enough that findRivals's own game/points filtering
+ * has a real pool to work with without pulling the entire table on every signup).
+ * Returns: an array of UserProfile candidates, in no particular order (findRivals does the
+ * actual ranking).
+ * Edge cases: returns an empty array if this is the very first profile in the table, which
+ * callers already handle (findRivals just returns no rivals in that case).
+ */
+export const fetchRivalCandidates = async (
+  excludeUserId: string,
+  limit: number = 200
+): Promise<UserProfile[]> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .neq('id', excludeUserId)
+    .limit(limit);
+  if (error) throw error;
+  return (data as ProfileRow[]).map(mapRowToProfile);
+};
+
+/**
  * Creates a new profile row for a freshly authenticated user, at the end of the
  * profile-creation onboarding flow.
  * Parameters: userId (the auth.users.id this profile belongs to), draft (the profile fields
