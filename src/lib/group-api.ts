@@ -184,6 +184,18 @@ export const leaveGroup = async (groupId: string, playerId: string): Promise<voi
 };
 
 /**
+ * Deletes a group entirely (cascades to its group_players and group_results rows).
+ * Parameters: groupId.
+ * Returns: a promise that resolves once the delete completes.
+ * Edge cases: none beyond the standard Postgres/network error; callers are responsible for
+ * deciding when a group should be deleted (this app does so when its last player leaves).
+ */
+export const deleteGroup = async (groupId: string): Promise<void> => {
+  const { error } = await supabase.from('groups').delete().eq('id', groupId);
+  if (error) throw error;
+};
+
+/**
  * Reassigns a group's host role from one player to another.
  * Parameters: groupId, newHostId, previousHostId.
  * Returns: a promise that resolves once both role updates complete.

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
@@ -11,6 +11,7 @@ import {
   useProfileQuery,
   useUpdateProfileMutation,
 } from '../hooks/useProfileQueries';
+import { useGroupsQuery } from '../hooks/useGroupQueries';
 
 export type AppTheme = 'dark' | 'light';
 
@@ -20,13 +21,13 @@ interface AppState {
   profileLoading: boolean;
   currentUser: UserProfile | null;
   groups: Group[];
+  groupsLoading: boolean;
   rivals: UserProfile[];
   chosenRivalId: string | null;
   mostPlayedAgainst: UserProfile | null;
   theme: AppTheme;
   devDateOffset: number;
   clearCurrentUser: () => void;
-  setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   setRivals: (rivals: UserProfile[]) => void;
   setChosenRivalId: (id: string) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
@@ -61,8 +62,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const { data: currentUser, isLoading: profileLoading } = useProfileQuery(userId);
   const updateProfileMutation = useUpdateProfileMutation();
+  const { data: groups, isLoading: groupsLoading } = useGroupsQuery();
 
-  const [groups, setGroups] = useState<Group[]>([]);
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
@@ -150,9 +151,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     <AppContext.Provider
       value={{
         session, authLoading, profileLoading,
-        currentUser: currentUser ?? null, groups, rivals, chosenRivalId, mostPlayedAgainst,
+        currentUser: currentUser ?? null, groups: groups ?? [], groupsLoading,
+        rivals, chosenRivalId, mostPlayedAgainst,
         theme, devDateOffset,
-        clearCurrentUser, setGroups, setRivals,
+        clearCurrentUser, setRivals,
         setChosenRivalId, setMostPlayedAgainst,
         awardPoints, addWin, addLoss, addDraw, resetMonthlyPoints,
         setTheme, setDevDateOffset, getNow,
