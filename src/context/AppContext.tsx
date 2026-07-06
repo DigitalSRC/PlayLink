@@ -130,6 +130,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const addDraw = () => {
     if (!currentUser) return;
     applyProfilePatch({
+      draws: currentUser.draws + 1,
       points: currentUser.points + 10,
       monthlyPoints: currentUser.monthlyPoints + 10,
     });
