@@ -9,7 +9,7 @@ export type NoGoRule =
   | 'Land Destruction';
 
 export interface UserProfile {
-  id: number;
+  id: string;
   username: string;
   displayName?: string;
   isDeveloper?: boolean;
@@ -22,7 +22,7 @@ export interface UserProfile {
   losses: number;
   points: number;
   monthlyPoints: number;
-  rivalIds?: number[];
+  rivalIds?: string[];
 }
 
 export const GAME_LABELS: Record<GameType, string> = {

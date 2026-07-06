@@ -1,7 +1,14 @@
 import { UserProfile } from '../data/types';
 
-// Seed-profile id for Dillon Carroll, the always-present rival whose preferences are mirrored from the current user.
-const DILLON_ID = 113;
+// Seed-profile id for Dillon Carroll, the always-present rival whose preferences are mirrored
+// from the current user. Stored as a string to match UserProfile.id (now a Supabase auth UUID
+// as of the `database` branch). On this branch RIVAL_POOL is always empty (see
+// profile-creation.tsx), so this constant is inert here — it exists purely so this file
+// type-checks against the new string id. rival-system's copy of this file (and
+// seed-profiles.ts) still uses the numeric id 113 and will conflict with this line when
+// rival-system is eventually merged into development — that conflict is expected; resolve it
+// by migrating rival-system's seed ids to UUIDs at that time, not by reverting this branch.
+const DILLON_ID = '113';
 
 /**
  * Computes a player's win rate as a fraction between 0 and 1.

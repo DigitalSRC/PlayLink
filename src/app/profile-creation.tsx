@@ -1,7 +1,9 @@
-﻿import * as Haptics from "expo-haptics";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Pressable,
   ScrollView,
@@ -22,26 +24,75 @@ import {
   NoGoRule,
   UserProfile,
 } from "../data/types";
-import { SEED_PROFILES } from "../data/seed-profiles";
+import { useCreateProfileMutation } from "../hooks/useProfileQueries";
+import { UsernameTakenError } from "../lib/profile-api";
 import { findRivals } from "../utils/rival-utils";
+
+// Rival matching against real player data (SEED_PROFILES) is still in development on the
+// `rival-system` branch — deliberately excluded from development/main until that feature is
+// finished; see CLAUDE.md git workflow. RIVAL_POOL stays empty here so findRivals, the rival
+// reveal step, and the "login as existing seed profile" flow below all keep compiling and
+// degrading safely (no candidates, no login suggestions, isDeveloper never becomes true)
+// without needing SEED_PROFILES. Swap back to `import { SEED_PROFILES } from
+// '../data/seed-profiles'` and rename the three usages below once rival-system merges in.
+const RIVAL_POOL: UserProfile[] = [];
 
 // Ordered labels for the four-step onboarding flow displayed in the progress indicator.
 // Index corresponds to the currentStep state value; length determines total step count for the progress bar.
 // Changing this array requires updating all step-index comparisons throughout ProfileCreation.
 const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
 
+// A user who signs up, fills in part of this form, then closes the app (or the app crashes,
+// or they just get pulled away) comes back to a blank step 0 on remount — there's nowhere else
+// this WIP state lives, since the real profiles row isn't written until step 2 completes. This
+// key namespaces a local snapshot of that WIP state per signed-in user so it survives a remount.
+const draftStorageKey = (userId: string) => `profile-creation-draft:${userId}`;
+
+interface ProfileCreationDraft {
+  step: number;
+  username: string;
+  displayName: string;
+  location: string;
+  selectedGames: GameType[];
+  selectedFormats: Partial<Record<GameType, string[]>>;
+  selectedBrackets: number[];
+  selectedNoGo: NoGoRule[];
+}
+
 /**
  * Multi-step onboarding screen that collects the player's full profile.
  * Steps: identity (username + location), game selection, preferences (formats, bracket, no-go), rival reveal.
- * Computes rivals on completion and saves them to global context before navigating home.
- * Also supports one-tap login for any existing seed profile via the identity step.
- * Parameters: none.
+ * On the games-to-preferences transition, writes the profile to Supabase (createProfileMutation,
+ * keyed to the signed-in user's session id) before computing rivals and advancing to the reveal
+ * step. Also supports one-tap login for any existing seed profile via the identity step.
+ * Parameters: none; reads the Supabase session from useApp() to attribute the new profile row.
  * Returns: a React Native screen with animated step transitions and haptic feedback on progression.
- * Edge cases: blocks progression if required fields are missing; rival reveal animates in automatically.
+ * Edge cases: blocks progression if required fields are missing; shows a field-level error and
+ * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
+ * generic inline error for any other save failure; the submit button shows a spinner and can't
+ * be pressed again while a save is in flight. If no rivals are found (RIVAL_POOL is empty on
+ * this branch, so this is always the case right now), the reveal step is skipped entirely and
+ * the user goes straight to the tabs — otherwise it would be a dead end, since the reveal
+ * step's Continue button can't be enabled without a rival to pick; the button reads "Create
+ * Profile" instead of "Find My Rivals" whenever RIVAL_POOL is empty, since the latter would be
+ * a lie about what pressing it actually does. Entering the tabs (from either this fast path or
+ * the reveal step's "Enter the Arena") sets awaitingHomeEntry rather than navigating directly —
+ * the create-profile mutation resolving only means the query cache has been written, not that
+ * AppContext's currentUser has re-rendered with it yet, and navigating before that propagates
+ * would make the tabs' own routing gate see a stale null currentUser and bounce straight back
+ * here. If the user left
+ * mid-onboarding (steps 0-2) and comes back, a locally-persisted draft (see
+ * ProfileCreationDraft) restores their progress and a "Welcome back" banner briefly confirms
+ * it; the draft is cleared once the profile actually saves. A "Sign Out" link in the header
+ * (see handleSignOut) is this screen's only way back to /sign-in — necessary because a session
+ * can land here with no way to ever leave (e.g. the profiles row was deleted directly in the
+ * database after the session was established), and the normal logout button lives on the
+ * profile tab, which is unreachable without a profile.
  */
 export default function ProfileCreation() {
   const router = useRouter();
-  const { setCurrentUser, setRivals, setChosenRivalId } = useApp();
+  const { session, currentUser, setCurrentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
+  const createProfileMutation = useCreateProfileMutation();
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
@@ -53,7 +104,12 @@ export default function ProfileCreation() {
   const [selectedBrackets, setSelectedBrackets] = useState<number[]>([2]);
   const [selectedNoGo, setSelectedNoGo] = useState<NoGoRule[]>([]);
   const [computedRivals, setComputedRivals] = useState<UserProfile[]>([]);
-  const [pickedRivalId, setPickedRivalId] = useState<number | null>(null);
+  const [pickedRivalId, setPickedRivalId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [welcomeBackEmail, setWelcomeBackEmail] = useState<string | null>(null);
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
+  const [awaitingHomeEntry, setAwaitingHomeEntry] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rivalCardAnims = useRef([
@@ -71,6 +127,65 @@ export default function ProfileCreation() {
     }).start();
   };
 
+  // Restore any in-progress draft for this user before the save-effect below gets a chance to
+  // run — otherwise it would immediately overwrite the stored draft with the blank initial
+  // state. Runs once per signed-in user id.
+  useEffect(() => {
+    if (!session) return;
+    let isMounted = true;
+
+    AsyncStorage.getItem(draftStorageKey(session.user.id)).then((raw) => {
+      if (!isMounted) return;
+      if (raw) {
+        try {
+          const draft: ProfileCreationDraft = JSON.parse(raw);
+          setStep(draft.step);
+          setUsername(draft.username);
+          setDisplayName(draft.displayName);
+          setLocation(draft.location);
+          setSelectedGames(draft.selectedGames);
+          setSelectedFormats(draft.selectedFormats);
+          setSelectedBrackets(draft.selectedBrackets);
+          setSelectedNoGo(draft.selectedNoGo);
+
+          if (session.user.email) {
+            setWelcomeBackEmail(session.user.email);
+            setTimeout(() => setWelcomeBackEmail(null), 3000);
+          }
+        } catch {
+          // Corrupted draft — ignore it and start fresh rather than blocking onboarding.
+        }
+      }
+      setHasLoadedDraft(true);
+    });
+
+    return () => { isMounted = false; };
+  }, [session?.user.id]);
+
+  // Persists WIP onboarding fields so they survive the user leaving mid-creation (see
+  // ProfileCreationDraft above). Gated on hasLoadedDraft so this can't fire with the initial
+  // blank state before the restore effect above has had a chance to run.
+  useEffect(() => {
+    if (!session || !hasLoadedDraft) return;
+    const draft: ProfileCreationDraft = {
+      step, username, displayName, location,
+      selectedGames, selectedFormats, selectedBrackets, selectedNoGo,
+    };
+    AsyncStorage.setItem(draftStorageKey(session.user.id), JSON.stringify(draft));
+  }, [
+    session, hasLoadedDraft, step, username, displayName, location,
+    selectedGames, selectedFormats, selectedBrackets, selectedNoGo,
+  ]);
+
+  // Navigates to the tabs once currentUser (populated by the just-completed create-profile
+  // mutation, via AppContext's useProfileQuery) has actually propagated down to this component -
+  // see the awaitingHomeEntry comment in nextStep for why this can't just navigate immediately.
+  useEffect(() => {
+    if (awaitingHomeEntry && currentUser) {
+      router.replace('/(tabs)/home');
+    }
+  }, [awaitingHomeEntry, currentUser, router]);
+
   const USERNAME_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
   const validateUsername = (value: string) => {
@@ -83,15 +198,17 @@ export default function ProfileCreation() {
     return true;
   };
 
-  const nextStep = () => {
+  const nextStep = async () => {
     if (step === 0) {
       if (!validateUsername(username)) return;
     }
     if (step === 1 && selectedGames.length === 0) return;
 
     if (step === 2) {
+      if (!session || isSubmitting) return;
+
       const newProfile: UserProfile = {
-        id: Date.now(),
+        id: session.user.id,
         username: username.trim(),
         displayName: displayName.trim() || undefined,
         location: location.trim() || "Nearby",
@@ -105,9 +222,46 @@ export default function ProfileCreation() {
         monthlyPoints: 0,
       };
 
-      const rivals = findRivals(newProfile, SEED_PROFILES, 3);
+      setSubmitError("");
+      setIsSubmitting(true);
+      try {
+        const { id: _id, ...draft } = newProfile;
+        await createProfileMutation.mutateAsync({ userId: session.user.id, draft });
+      } catch (err) {
+        setIsSubmitting(false);
+        if (err instanceof UsernameTakenError) {
+          setUsernameError(err.message);
+          setStep(0);
+        } else {
+          setSubmitError(
+            err instanceof Error ? err.message : "Couldn't save your profile. Please try again."
+          );
+        }
+        return;
+      }
+      AsyncStorage.removeItem(draftStorageKey(session.user.id));
+
+      const rivals = findRivals(newProfile, RIVAL_POOL, 3);
+
+      // No candidates to show — either RIVAL_POOL is empty (rival matching isn't shipped on
+      // this branch yet, see the RIVAL_POOL comment above) or this particular user just has no
+      // matches. Either way there's nothing to pick from, so the reveal step would be a dead
+      // end (canProceed requires pickedRivalId, which can never be set). Skip straight to home.
+      if (rivals.length === 0) {
+        // Don't navigate immediately: the mutation resolving only means the query cache has
+        // been written, not that AppContext's currentUser (read from that same cache by a
+        // different component, higher up the tree) has actually re-rendered with it yet. If
+        // /(tabs)/home's routing gate mounts before that propagates, it sees a stale null
+        // currentUser, decides there's no profile, and bounces straight back here - which looks
+        // like the whole flow silently restarting. Instead, stay "submitting" (keeps the button
+        // spinner up and blocks a duplicate submit) and let the effect below navigate once
+        // currentUser has actually caught up.
+        setAwaitingHomeEntry(true);
+        return;
+      }
+
+      setIsSubmitting(false);
       setComputedRivals(rivals);
-      setCurrentUser(newProfile);
       setRivals(rivals);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -166,15 +320,27 @@ export default function ProfileCreation() {
 
   const loginAsExisting = (profile: UserProfile) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const rivals = findRivals(profile, SEED_PROFILES.filter((p) => p.id !== profile.id), 3);
+    const rivals = findRivals(profile, RIVAL_POOL.filter((p) => p.id !== profile.id), 3);
     setCurrentUser(profile);
     setRivals(rivals);
     if (rivals.length > 0) setChosenRivalId(rivals[0].id);
     router.replace('/(tabs)/home');
   };
 
+  // Escape hatch for a session with no reachable profile — e.g. the profiles row was deleted
+  // directly in Supabase, or this account was never meant to be finished. Without this, a user
+  // in that state has no way back to /sign-in: the session persists (by design), so index.tsx
+  // always routes here instead of to sign-in, and the tabs (where the normal logout lives) are
+  // unreachable without a profile.
+  const handleSignOut = () => {
+    if (session) AsyncStorage.removeItem(draftStorageKey(session.user.id));
+    Haptics.selectionAsync();
+    clearCurrentUser();
+    router.replace('/sign-in');
+  };
+
   const matchedProfiles = username.trim().length > 0
-    ? SEED_PROFILES.filter((p) => {
+    ? RIVAL_POOL.filter((p) => {
         const q = username.trim().toLowerCase();
         return p.username.toLowerCase().includes(q) ||
           (p.displayName ?? '').toLowerCase().includes(q);
@@ -197,6 +363,7 @@ export default function ProfileCreation() {
       <Text style={styles.label}>Username</Text>
       <Text style={styles.labelHint}>Letters, numbers, underscores only — no spaces</Text>
       <TextInput
+        testID="profile-creation-username-input"
         style={[styles.input, !!usernameError && styles.inputError]}
         placeholder="e.g. DarkRitualDave"
         placeholderTextColor="#999"
@@ -265,6 +432,7 @@ export default function ProfileCreation() {
         return (
           <Pressable
             key={game}
+            testID={`profile-creation-game-${game}`}
             style={[
               styles.gameOption,
               selected && {
@@ -380,6 +548,8 @@ export default function ProfileCreation() {
           })}
         </View>
       </View>
+
+      {!!submitError && <Text style={styles.errorText}>{submitError}</Text>}
     </ScrollView>
   );
 
@@ -457,15 +627,28 @@ export default function ProfileCreation() {
   );
 
   const canProceed =
-    (step === 0 && username.trim().length > 0) ||
-    (step === 1 && selectedGames.length > 0) ||
-    step === 2 ||
-    (step === 3 && pickedRivalId !== null);
+    !isSubmitting && (
+      (step === 0 && username.trim().length > 0) ||
+      (step === 1 && selectedGames.length > 0) ||
+      step === 2 ||
+      (step === 3 && pickedRivalId !== null)
+    );
 
   return (
     <View style={styles.container}>
+      {!!welcomeBackEmail && (
+        <View style={styles.welcomeBackBanner}>
+          <Text style={styles.welcomeBackText}>Welcome back, {welcomeBackEmail}!</Text>
+        </View>
+      )}
+
       <View style={styles.header}>
-        <Text style={styles.brand}>PlayLink</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.brand}>PlayLink</Text>
+          <Pressable testID="profile-creation-sign-out" onPress={handleSignOut} hitSlop={8}>
+            <Text style={styles.signOutLink}>Sign Out</Text>
+          </Pressable>
+        </View>
         {renderStepDots()}
       </View>
 
@@ -481,21 +664,27 @@ export default function ProfileCreation() {
       <View style={styles.footer}>
         {step < 3 ? (
           <Pressable
+            testID="profile-creation-next-button"
             style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
             onPress={nextStep}
             disabled={!canProceed}
           >
-            <Text style={styles.nextBtnText}>
-              {step === 2 ? "Find My Rivals →" : "Continue →"}
-            </Text>
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.nextBtnText}>
+                {step === 2 ? (RIVAL_POOL.length > 0 ? "Find My Rivals →" : "Create Profile →") : "Continue →"}
+              </Text>
+            )}
           </Pressable>
         ) : (
           <Pressable
+            testID="profile-creation-next-button"
             style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
             disabled={!canProceed}
             onPress={() => {
               if (pickedRivalId !== null) setChosenRivalId(pickedRivalId);
-              router.replace("/(tabs)/home");
+              setAwaitingHomeEntry(true);
             }}
           >
             <Text style={styles.nextBtnText}>
@@ -518,13 +707,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginBottom: 32,
   },
+  headerTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  signOutLink: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#888",
+    textDecorationLine: "underline",
+  },
+  welcomeBackBanner: {
+    marginHorizontal: 24,
+    marginBottom: 16,
+    backgroundColor: "#0A2A0A",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#1C5A1C",
+  },
+  welcomeBackText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#34C759",
+    textAlign: "center",
+  },
   brand: {
     fontSize: 13,
     fontWeight: "700",
     color: "#007AFF",
     letterSpacing: 2,
     textTransform: "uppercase",
-    marginBottom: 16,
   },
   dots: {
     flexDirection: "row",
