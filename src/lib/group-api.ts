@@ -284,6 +284,8 @@ export interface GroupResult {
   disputeWindowEndsAt: number;
   finalizedAt?: number;
   disputedBy: string[];
+  /** One entry per disputing player id, holding the reason they gave when flagging the round. */
+  disputeReasons: Record<string, string>;
   appliedBy: string[];
   placements: GroupResultPlacement[];
 }
@@ -298,6 +300,7 @@ interface GroupResultRow {
   dispute_window_ends_at: string;
   finalized_at: string | null;
   disputed_by: string[];
+  dispute_reasons: Record<string, string>;
   applied_by: string[];
   placements: GroupResultPlacement[];
 }
@@ -312,6 +315,7 @@ const mapResultRow = (row: GroupResultRow): GroupResult => ({
   disputeWindowEndsAt: new Date(row.dispute_window_ends_at).getTime(),
   finalizedAt: row.finalized_at ? new Date(row.finalized_at).getTime() : undefined,
   disputedBy: row.disputed_by,
+  disputeReasons: row.dispute_reasons ?? {},
   appliedBy: row.applied_by,
   placements: row.placements,
 });
@@ -365,16 +369,27 @@ export const submitGroupResult = async (
 /**
  * Flags a pending result as disputed by a group member, permanently blocking it from
  * auto-finalizing — the host must cancel it (cancelGroupResult) and resubmit rather than the
- * dispute ever being "resolved" in place, keeping the anti-cheat model simple.
- * Parameters: result (the result being disputed), playerId (who's disputing it).
+ * dispute ever being "resolved" in place, keeping the anti-cheat model simple. The reason is
+ * required so the host has some idea of what to fix before resubmitting, rather than just
+ * knowing *that* someone objected.
+ * Parameters: result (the result being disputed), playerId (who's disputing it), reason (their
+ * required explanation of what's wrong with the round).
  * Returns: a promise that resolves once the update completes.
- * Edge cases: no-op if this player already disputed it.
+ * Edge cases: no-op if this player already disputed it (their original reason is kept).
  */
-export const disputeGroupResult = async (result: GroupResult, playerId: string): Promise<void> => {
+export const disputeGroupResult = async (
+  result: GroupResult,
+  playerId: string,
+  reason: string
+): Promise<void> => {
   if (result.disputedBy.includes(playerId)) return;
   const { error } = await supabase
     .from('group_results')
-    .update({ disputed_by: [...result.disputedBy, playerId], status: 'disputed' })
+    .update({
+      disputed_by: [...result.disputedBy, playerId],
+      dispute_reasons: { ...result.disputeReasons, [playerId]: reason },
+      status: 'disputed',
+    })
     .eq('id', result.id);
   if (error) throw error;
 };
