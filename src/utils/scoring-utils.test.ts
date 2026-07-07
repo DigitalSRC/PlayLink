@@ -87,4 +87,35 @@ describe("computePlacementScores", () => {
     ]);
     expect(results.map((r) => r.playerId)).toEqual(["z", "y", "x"]);
   });
+
+  // group-detail.tsx's drag-and-drop report modal (see docs/version-control-workflow.md's
+  // game-scoring entry) assigns each row a placement equal to its 1-indexed position, only
+  // reusing the previous row's value for a "tied with above" pair — so a tied pair followed by
+  // more players produces a gap (e.g. 1, 1, 3, 4), never a compacted 1, 1, 2, 3. These two cases
+  // must score identically, since only the relative order of distinct placement values matters
+  // here, not their absolute spacing.
+  it("scores a gapped placement sequence (from a tied pair followed by solo ranks) the same as the equivalent compact sequence", () => {
+    const gapped = computePlacementScores([
+      { playerId: "a", placement: 1 },
+      { playerId: "b", placement: 1 },
+      { playerId: "c", placement: 3 },
+      { playerId: "d", placement: 4 },
+    ]);
+    const compact = computePlacementScores([
+      { playerId: "a", placement: 1 },
+      { playerId: "b", placement: 1 },
+      { playerId: "c", placement: 2 },
+      { playerId: "d", placement: 3 },
+    ]);
+
+    const strip = (results: typeof gapped) =>
+      results.map(({ playerId, outcome, pointsAwarded }) => ({ playerId, outcome, pointsAwarded }));
+    expect(strip(gapped)).toEqual(strip(compact));
+
+    const byId = Object.fromEntries(gapped.map((r) => [r.playerId, r]));
+    expect(byId.a.outcome).toBe("draw");
+    expect(byId.b.outcome).toBe("draw");
+    expect(byId.c.outcome).toBe("draw");
+    expect(byId.d.outcome).toBe("loss");
+  });
 });
