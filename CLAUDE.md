@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-PlayLink is an Expo Router app (v57) built with React Native and TypeScript. Users create a profile and then browse, join, create, and manage play groups.
+PlayLink is an Expo Router app (v57) built with React Native and TypeScript, developed by Silvenari. Users create a profile and then browse, join, create, and manage play groups.
 
 ## Commands
 

@@ -1,5 +1,7 @@
 # PlayLink
 
+*A Silvenari product.*
+
 A React Native / Expo Router app for finding and organizing tabletop card game play groups. Users create a profile, select the games they play, get matched with rivals, and browse or create local play groups.
 
 Built with **Expo SDK 57**, **React Native**, and **TypeScript**.

@@ -5,6 +5,7 @@ commands, the mandatory git branching workflow, and the documentation requiremen
 there. Read it first; the notes below only cover what isn't already in that file.
 
 ## Project context
+- PlayLink is developed by Silvenari.
 - This repository is an Expo Router (v57) app built with React Native and TypeScript.
 - The main screens live in [src/app](src/app); route files there are the source of truth for navigation and screen behavior.
 - Shared domain logic should live in [src/utils](src/utils), while app data models and seeded data live in [src/data](src/data).

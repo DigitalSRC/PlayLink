@@ -167,7 +167,7 @@ export default function SignIn() {
       >
         <View style={styles.header}>
           <Text style={styles.brand}>{mode === "signIn" ? "Welcome Back to PlayLink" : "Welcome to PlayLink!"}</Text>
-          <Text style={styles.tagline}>Linking Players to play games!</Text>
+          <Text style={styles.tagline}>Linking Players. Filling Tables.</Text>
         </View>
 
         <Animated.View
