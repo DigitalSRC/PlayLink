@@ -1,6 +1,15 @@
 <!doctype html>
 <html lang="en">
 <head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-1NH1DLN7SL"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-1NH1DLN7SL');
+</script>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PlayLink — Find MTG Commander Groups &amp; EDH Pods Near You</title>
@@ -1206,10 +1215,10 @@
             <button type="submit" class="btn btn-primary">I'd use this — sign up</button>
           </div>
           <div class="location-field">
-            <input type="text" id="alpha-location" class="location-input" placeholder="City, State (optional — helps us find your first pod)" aria-label="Location" autocomplete="off" />
+            <input type="text" id="alpha-location" class="location-input" placeholder="City, State (optional — USA only for now)" aria-label="Location" autocomplete="off" />
             <div class="location-suggestions" id="location-suggestions" role="listbox"></div>
           </div>
-          <p class="location-hint">Pick your city from the list so it counts toward finding players near you.</p>
+          <p class="location-hint">Pick your city from the list so it counts toward finding players near you. USA only for now.</p>
           <fieldset class="game-checks">
             <legend>Which do you play? Vote for what we build after MTG EDH.</legend>
             <label><input type="checkbox" name="games" value="Magic: The Gathering" /> More Magic</label>
@@ -1247,6 +1256,17 @@
     var SUPABASE_ANON_KEY = 'sb_publishable_3DTEMiX-4hqeM5x8YpgpCQ_uFBx0V71';
     var supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    function trackEvent(name, params) {
+      if (window.gtag) window.gtag('event', name, params || {});
+    }
+
+    var howItWorksLink = document.querySelector('.hero-ctas .btn-ghost');
+    if (howItWorksLink) {
+      howItWorksLink.addEventListener('click', function () {
+        trackEvent('how_it_works_click');
+      });
+    }
+
     var form = document.getElementById('alpha-form');
     var status = document.getElementById('alpha-status');
     var seatNum = document.getElementById('seat-num');
@@ -1271,6 +1291,7 @@
     document.querySelectorAll('.game-pill[data-game]').forEach(function (pill) {
       pill.addEventListener('click', function () {
         var game = pill.getAttribute('data-game');
+        trackEvent('game_vote', { game: game });
         var checkbox = bottomForm.querySelector('input[name="games"][value="' + CSS.escape(game) + '"]');
         if (checkbox && !checkbox.disabled) {
           checkbox.checked = true;
@@ -1298,21 +1319,43 @@
       suggestionsBox.classList.remove('open');
     }
 
+    // Nominatim's display_name is a full address string (often a county or
+    // ZIP-level admin area, not a place a user would recognize) — build a
+    // clean "City, State" label from the structured address instead, and
+    // drop results that aren't a real city/town/village.
+    function cityStateLabel(place) {
+      var addr = place.address || {};
+      var city = addr.city || addr.town || addr.village || addr.hamlet;
+      if (!city || !addr.state) return null;
+      return { name: city + ', ' + addr.state, city: city, state: addr.state };
+    }
+
     function renderSuggestions(results) {
       suggestionsBox.innerHTML = '';
-      if (!results.length) { closeSuggestions(); return; }
-      results.forEach(function (place) {
+      var seen = {};
+      var places = results
+        .map(function (place) {
+          var label = cityStateLabel(place);
+          return label && { label: label.name, lat: place.lat, lon: place.lon };
+        })
+        .filter(function (place) {
+          if (!place || seen[place.label]) return false;
+          seen[place.label] = true;
+          return true;
+        });
+      if (!places.length) { closeSuggestions(); return; }
+      places.forEach(function (place) {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.setAttribute('role', 'option');
-        btn.textContent = place.display_name;
+        btn.textContent = place.label;
         btn.addEventListener('click', function () {
           selectedPlace = {
-            name: place.display_name,
+            name: place.label,
             lat: parseFloat(place.lat),
             lon: parseFloat(place.lon)
           };
-          locationInput.value = place.display_name;
+          locationInput.value = place.label;
           closeSuggestions();
         });
         suggestionsBox.appendChild(btn);
@@ -1329,7 +1372,7 @@
 
       geocodeTimer = setTimeout(function () {
         geocodeAbort = new AbortController();
-        var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=5&countrycodes=us,ca,mx&q=' + encodeURIComponent(query);
+        var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&countrycodes=us&q=' + encodeURIComponent(query);
         fetch(url, { signal: geocodeAbort.signal })
           .then(function (res) { return res.ok ? res.json() : []; })
           .then(renderSuggestions)
@@ -1378,7 +1421,7 @@
       bottomStatus.style.color = color;
     }
 
-    function submitSignup(value, extra) {
+    function submitSignup(value, extra, source) {
       var utm = getUtmParams();
       submitBtn.disabled = true;
       bottomSubmitBtn.disabled = true;
@@ -1416,6 +1459,7 @@
             return;
           }
           setStatusBoth('You\'re on the list. Watch your inbox.', 'var(--secondary)');
+          trackEvent('generate_lead', { method: source });
           form.reset();
           bottomForm.reset();
           selectedPlace = null;
@@ -1441,7 +1485,7 @@
         status.style.color = 'var(--accent)';
         return;
       }
-      submitSignup(value, {});
+      submitSignup(value, {}, 'hero');
     });
 
     bottomForm.addEventListener('submit', function (e) {
@@ -1461,7 +1505,7 @@
         lon: selectedPlace ? selectedPlace.lon : null,
         games: games.length ? games : null,
         feedback: feedbackInput.value.trim() || null
-      });
+      }, 'bottom');
     });
   })();
 </script>
