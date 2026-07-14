@@ -1,0 +1,1475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PlayLink — Find MTG Commander Groups &amp; EDH Pods Near You</title>
+<meta name="description" content="Find Magic: The Gathering Commander players and EDH pods near you — matched by bracket and format. PlayLink's still early; join the early-access list." />
+<meta name="keywords" content="Magic the Gathering groups near me, find EDH pod near me, Commander pod near me, MTG players near me, Magic the Gathering meetup, where to play Magic nearby, Commander pod finder, EDH bracket matchmaking, MTG Commander app, cEDH pod finder, tabletop card game meetup app, Pokemon TCG local play finder, Disney Lorcana playgroup, One Piece TCG players near me, board game meetup app, TTRPG group finder, D&D group finder near me, Pathfinder group finder, find local tabletop gamers" />
+<meta name="theme-color" content="#12211A" />
+<meta property="og:title" content="PlayLink — Find MTG Commander Players Near You" />
+<meta property="og:description" content="The people around you already play — you just don't know it yet. PlayLink links Magic: The Gathering Commander players nearby. Join the early-access list." />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B4%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --felt: #12211A;
+    --felt-surface: #1c2f24;
+    --paper: #f2ecdd;
+    --paper-surface: #fbf7ec;
+    --ink: #1c2620;
+    --ink-inverse: #ece6d6;
+    --ember: #b85a24;
+    --ember-strong: #8f4419;
+    --pine: #2c5c43;
+    --line: rgba(28, 38, 32, 0.18);
+    --bg: var(--paper);
+    --surface: var(--paper-surface);
+    --text: var(--ink);
+    --text-muted: #5b6358;
+    --accent: var(--ember);
+    --accent-strong: var(--ember-strong);
+    --accent-contrast: #fbf7ec;
+    --secondary: var(--pine);
+    --shadow: rgba(28, 38, 32, 0.14);
+
+    --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+    --font-body: Charter, "Iowan Old Style", Georgia, Cambria, serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--felt);
+      --surface: var(--felt-surface);
+      --text: var(--ink-inverse);
+      --text-muted: #a2ad9e;
+      --accent: #e2914f;
+      --accent-strong: #f0ab72;
+      --accent-contrast: #17241b;
+      --secondary: #7fbf9e;
+      --line: rgba(236, 230, 214, 0.16);
+      --shadow: rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: var(--felt);
+    --surface: var(--felt-surface);
+    --text: var(--ink-inverse);
+    --text-muted: #a2ad9e;
+    --accent: #e2914f;
+    --accent-strong: #f0ab72;
+    --accent-contrast: #17241b;
+    --secondary: #7fbf9e;
+    --line: rgba(236, 230, 214, 0.16);
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+  :root[data-theme="light"] {
+    --bg: var(--paper);
+    --surface: var(--paper-surface);
+    --text: var(--ink);
+    --text-muted: #5b6358;
+    --accent: var(--ember);
+    --accent-strong: var(--ember-strong);
+    --accent-contrast: #fbf7ec;
+    --secondary: var(--pine);
+    --line: rgba(28, 38, 32, 0.18);
+    --shadow: rgba(28, 38, 32, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    overflow-x: hidden;
+  }
+  ::selection { background: var(--accent); color: var(--accent-contrast); }
+
+  a { color: inherit; }
+  img, svg { max-width: 100%; }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 clamp(20px, 4vw, 48px);
+  }
+
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--secondary);
+    font-weight: 700;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    text-wrap: balance;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.05;
+    margin: 0;
+  }
+
+  h1 {
+    text-transform: none;
+    font-size: clamp(1.75rem, 1.35rem + 2.1vw, 2.85rem);
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  h2 { font-size: clamp(1.6rem, 1.3rem + 1.3vw, 2.35rem); }
+  h3 { font-size: 1.05rem; letter-spacing: 0.01em; }
+
+  p { margin: 0; }
+  .lede {
+    font-size: clamp(1.05rem, 0.98rem + 0.3vw, 1.25rem);
+    color: var(--text-muted);
+    max-width: 46ch;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    font-family: var(--font-display);
+    font-size: 0.8125rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    text-decoration: none;
+    border-radius: 3px;
+    padding: 0.95em 1.6em;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:focus-visible { outline: 2px solid var(--secondary); outline-offset: 3px; }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    box-shadow: 0 2px 0 var(--accent-strong);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 3px 0 var(--accent-strong); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--line);
+  }
+  .btn-ghost:hover { border-color: var(--secondary); color: var(--secondary); }
+
+  /* ---------- Header ---------- */
+  header.site {
+    padding: 22px 0;
+  }
+  .site-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .brand-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .logo {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(1.5rem, 1.3rem + 1vw, 2.1rem);
+    letter-spacing: 0.01em;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+  }
+  .logo .dot { color: var(--accent); }
+  .logo small {
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-family: var(--font-display);
+  }
+  .site-tagline {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: clamp(1rem, 0.92rem + 0.4vw, 1.2rem);
+    color: var(--secondary);
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    padding: clamp(28px, 6vw, 64px) 0 clamp(40px, 7vw, 88px);
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    gap: clamp(28px, 5vw, 64px);
+    align-items: center;
+  }
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; }
+  }
+  .hero-copy { display: flex; flex-direction: column; gap: 22px; }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 6px; }
+  .hero-note {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+  .hero-action { position: relative; }
+  .hero-signup { padding: 26px 24px; }
+  .hero-signup .ticket-kicker {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .hero-signup .form-fine { margin-top: 2px; }
+
+  /* Ticket stub */
+  .ticket {
+    position: relative;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border-radius: 4px;
+    padding: 28px 26px 30px;
+    box-shadow: 0 18px 40px -18px var(--shadow);
+    transform: rotate(-2.5deg);
+  }
+  .ticket::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 74px;
+    width: 0;
+    height: 100%;
+    border-left: 2px dashed rgba(0,0,0,0.28);
+    background:
+      radial-gradient(circle 6px, var(--bg) 6px, transparent 6.5px) top -6px left -6px,
+      radial-gradient(circle 6px, var(--bg) 6px, transparent 6.5px) bottom -6px left -6px;
+    background-repeat: repeat-y;
+    background-size: 12px 22px;
+    background-position: left top, left bottom;
+  }
+  .ticket-main { padding-right: 92px; }
+  .ticket-kicker {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .ticket-title {
+    font-family: var(--font-display);
+    font-size: 1.7rem;
+    margin-top: 6px;
+    letter-spacing: -0.01em;
+  }
+  .ticket-meta {
+    display: flex;
+    gap: 22px;
+    margin-top: 18px;
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .ticket-meta span { display: block; opacity: 0.7; font-size: 0.62rem; margin-bottom: 3px; }
+  .ticket-stub {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 74px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ticket-stub-text {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    opacity: 0.85;
+  }
+  .stamp {
+    position: absolute;
+    z-index: 2;
+    top: -18px;
+    left: -14px;
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
+    border: 2.5px solid var(--pine);
+    color: var(--pine);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    transform: rotate(-14deg);
+    background: var(--bg);
+    line-height: 1.15;
+    box-shadow: 0 4px 12px var(--shadow);
+  }
+
+  /* ---------- Divider ---------- */
+  .torn {
+    height: 22px;
+    background:
+      radial-gradient(circle 11px, var(--bg) 11px, transparent 11.5px) top center;
+    background-repeat: repeat-x;
+    background-size: 26px 22px;
+    margin-top: -11px;
+  }
+  .torn.on-surface { background-image: radial-gradient(circle 11px, var(--surface) 11px, transparent 11.5px); }
+
+  /* ---------- Section shell ---------- */
+  section { padding: clamp(48px, 8vw, 96px) 0; }
+  .section-head { max-width: 60ch; margin-bottom: clamp(32px, 5vw, 52px); display: flex; flex-direction: column; gap: 12px; }
+
+  /* ---------- Problem cards ---------- */
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  @media (max-width: 800px) { .problem-grid { grid-template-columns: 1fr; } }
+  .problem-card {
+    background: var(--surface);
+    padding: 28px 26px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .problem-card .tag {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .problem-card p.body { color: var(--text-muted); font-size: 0.98rem; }
+
+  /* ---------- How it works ---------- */
+  .steps {
+    display: flex;
+    flex-direction: column;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 22px;
+    padding: 26px 0;
+    border-top: 1px solid var(--line);
+  }
+  .step:last-child { border-bottom: 1px solid var(--line); }
+  .step-num {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--secondary);
+    font-weight: 700;
+  }
+  .step-body h3 { margin-bottom: 8px; }
+  .step-body p { color: var(--text-muted); max-width: 62ch; }
+
+  /* ---------- Interface mockup ---------- */
+  .mock-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(24px, 4vw, 48px);
+    align-items: start;
+  }
+  @media (max-width: 760px) { .mock-row { grid-template-columns: 1fr; } }
+
+  .phone {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 10px;
+    box-shadow: 0 24px 50px -24px var(--shadow);
+  }
+  .phone-screen {
+    background: var(--bg);
+    border-radius: 14px;
+    padding: 16px;
+    min-height: 380px;
+  }
+  .phone-caption {
+    font-family: var(--font-display);
+    font-size: 0.88rem;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    font-weight: 700;
+    margin: 0 4px 16px;
+  }
+
+  /* ---------- App demo carousel ---------- */
+  .app-carousel { display: flex; align-items: center; gap: clamp(8px, 2vw, 18px); }
+  .carousel-track { flex: 1; min-width: 0; }
+  .carousel-slide { display: none; }
+  .carousel-slide.active { display: block; }
+  .carousel-slide-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: clamp(20px, 4vw, 44px);
+    align-items: flex-start;
+  }
+  .carousel-slide-main { flex: 1.3; min-width: 260px; }
+  .carousel-slide-side { flex: 1; min-width: 240px; }
+  .carousel-rundown { flex: 1; min-width: 260px; padding-top: 6px; }
+  .carousel-rundown p { font-size: 1.08rem; line-height: 1.7; color: var(--text); }
+  @media (max-width: 700px) { .carousel-slide-row { flex-direction: column; } }
+
+  .carousel-arrow {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .carousel-arrow:hover { border-color: var(--secondary); transform: scale(1.06); }
+  .carousel-arrow:focus-visible { outline: 2px solid var(--secondary); outline-offset: 2px; }
+
+  .carousel-dots { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+  .carousel-dot { width: 9px; height: 9px; border-radius: 50%; border: none; background: var(--line); cursor: pointer; padding: 0; }
+  .carousel-dot.active { background: var(--secondary); }
+
+  .rival-present-tag {
+    display: inline-block;
+    margin-top: 8px;
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent-contrast);
+    background: var(--accent);
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+
+  .join-slot {
+    display: block;
+    width: 100%;
+    margin-top: 4px;
+    border: 1.5px dashed var(--accent);
+    border-radius: 6px;
+    padding: 12px;
+    background: transparent;
+    color: var(--accent);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .join-slot:hover { background: var(--accent); color: var(--accent-contrast); }
+
+  .rivaling-you-tag {
+    display: block;
+    margin-top: 4px;
+    font-family: var(--font-display);
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
+    color: var(--accent);
+    font-style: italic;
+  }
+
+  .rank-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--surface);
+  }
+  .rank-row.rank-you { border-color: var(--secondary); border-width: 1.5px; }
+  .rank-row .place-name { flex: 1; font-family: var(--font-body); font-weight: 700; font-size: 0.92rem; }
+  .rank-points { font-family: var(--font-display); font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+  .rank-delta { font-family: var(--font-display); font-weight: 700; font-size: 0.82rem; white-space: nowrap; margin-left: 8px; }
+  .rank-delta.up { color: var(--secondary); }
+  .rank-delta.down { color: #B23B3B; }
+  .screen-title {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .group-card {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px 12px 13px;
+    margin-bottom: 10px;
+    background: var(--surface);
+  }
+  .group-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .game-chip {
+    font-family: var(--font-display);
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 3px;
+    color: #fff;
+    font-weight: 700;
+  }
+  .group-card-name { font-family: var(--font-body); font-weight: 700; font-size: 0.95rem; margin: 8px 0 2px; }
+  .group-card-meta {
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .place-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: var(--surface);
+  }
+  .place-rank {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--secondary);
+    width: 1.4em;
+  }
+  .place-name { font-size: 0.9rem; flex: 1; }
+  .place-grip {
+    font-family: var(--font-display);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    letter-spacing: 0.1em;
+  }
+  .dispute-note {
+    margin-top: 14px;
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    line-height: 1.5;
+  }
+
+  .contenders-label {
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 16px 0 8px;
+  }
+  .rival-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--surface);
+  }
+  .rival-card.contender { opacity: 0.85; }
+  .rival-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.9rem;
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+  .rival-avatar.contender {
+    background: transparent;
+    border: 1.5px solid #8B6914;
+    color: #C9952A;
+  }
+  .rival-card-info { flex: 1; min-width: 0; }
+  .rival-card-name { font-family: var(--font-body); font-weight: 700; font-size: 0.9rem; margin: 0; }
+  .rival-card-meta { font-family: var(--font-display); font-size: 0.64rem; color: var(--text-muted); margin: 3px 0 0; letter-spacing: 0.02em; }
+  .rival-badge {
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .rival-badge-main { background: var(--accent); color: var(--accent-contrast); }
+  .rival-badge-contender { background: transparent; border: 1px solid #8B6914; color: #C9952A; }
+
+  /* ---------- Games strip ---------- */
+  .games-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .game-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 40px;
+    padding: 10px 18px 10px 12px;
+    background: var(--surface);
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  }
+  .game-pill:hover { border-color: var(--secondary); transform: translateY(-1px); }
+  .game-pill:focus-visible { outline: 2px solid var(--secondary); outline-offset: 2px; }
+  .game-pill:active { transform: translateY(0); }
+  .game-pill .swatch {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+  }
+  .game-pill .name { font-family: var(--font-display); font-size: 0.78rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .game-pill .fmt { display: block; font-family: var(--font-body); font-size: 0.72rem; color: var(--text-muted); font-style: italic; }
+  .game-pill.upcoming { border-style: dashed; opacity: 0.85; }
+  .game-pill.voted { border-style: solid; border-color: var(--secondary); background: var(--bg); opacity: 1; }
+  .game-pill .soon {
+    font-family: var(--font-display);
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--secondary);
+    margin-left: 6px;
+  }
+  .game-pill.voted .soon { color: var(--accent); }
+
+  /* ---------- Signup ---------- */
+  .signup {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: clamp(30px, 5vw, 52px);
+    position: relative;
+  }
+  .signup-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: clamp(28px, 4vw, 48px);
+    align-items: center;
+  }
+  @media (max-width: 760px) { .signup-grid { grid-template-columns: 1fr; } }
+
+  form.email-form { display: flex; flex-direction: column; gap: 12px; }
+  .field-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type="email"] {
+    flex: 1;
+    min-width: 200px;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    padding: 0.95em 1em;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+  }
+  input[type="email"]:focus-visible { outline: 2px solid var(--secondary); outline-offset: 2px; }
+  input[type="text"].location-input {
+    font-family: var(--font-body);
+    font-size: 1rem;
+    padding: 0.85em 1em;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+    width: 100%;
+  }
+  input[type="text"].location-input:focus-visible { outline: 2px solid var(--secondary); outline-offset: 2px; }
+  .location-field { position: relative; }
+  .location-suggestions {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    box-shadow: 0 10px 24px -12px var(--shadow);
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+  }
+  .location-suggestions.open { display: block; }
+  .location-suggestions button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.7em 1em;
+    border: none;
+    background: none;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .location-suggestions button:hover,
+  .location-suggestions button:focus-visible { background: var(--bg); }
+  .location-hint {
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .more-fields { margin-top: 14px; }
+  .more-fields > summary {
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-size: 0.74rem;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    list-style: none;
+    padding: 6px 0;
+  }
+  .more-fields > summary::-webkit-details-marker { display: none; }
+  .more-fields > summary:hover,
+  .more-fields[open] > summary { color: var(--secondary); }
+  .more-fields > summary:focus-visible { outline: 2px solid var(--secondary); outline-offset: 2px; }
+  .more-fields[open] > summary { margin-bottom: 8px; }
+  .more-fields > *:not(summary) { margin-top: 10px; }
+  .game-checks { border: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .game-checks legend {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0;
+    margin-bottom: 4px;
+    width: 100%;
+  }
+  .game-checks label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .game-checks input[type="checkbox"] { accent-color: var(--secondary); }
+  .form-fine {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+  .form-status {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+    min-height: 1.4em;
+    color: var(--secondary);
+    font-weight: 700;
+  }
+  .seat-counter {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-left: 1px solid var(--line);
+    padding-left: clamp(20px, 3vw, 36px);
+  }
+  @media (max-width: 760px) { .seat-counter { border-left: none; border-top: 1px solid var(--line); padding-left: 0; padding-top: 20px; } }
+  .seat-counter .num {
+    font-family: var(--font-display);
+    font-size: 2.4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .seat-counter .label { font-family: var(--font-display); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+
+  /* ---------- Footer ---------- */
+  footer.site {
+    padding: 32px 0 48px;
+    border-top: 1px solid var(--line);
+    margin-top: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  footer.site .logo { font-size: 0.9rem; }
+  footer.site .fine { font-family: var(--font-display); font-size: 0.7rem; color: var(--text-muted); letter-spacing: 0.03em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap site-head-row">
+    <div class="brand-block">
+      <div class="logo"><span>PLAYLINK</span><span class="dot">●</span><small>Early access</small></div>
+      <p class="site-tagline">Linking Players, Filling Tables, Making Games.</p>
+    </div>
+    <a class="btn btn-ghost" href="#signup">Count me in</a>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Find local Magic: The Gathering Commander groups</p>
+        <h1>Someone near you is playing MTG. With PlayLink, you can find them.</h1>
+        <p class="lede">Matched by bracket, format, and the house rules you'll actually play with — not a group chat spiral.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-ghost" href="#how-it-works">See how it works</a>
+        </div>
+      </div>
+
+      <div class="hero-action" id="signup">
+        <div class="stamp">Early<br />Interest</div>
+        <div class="signup hero-signup">
+          <p class="ticket-kicker">Would you use this?</p>
+          <form class="email-form" id="alpha-form" style="margin-top:10px" novalidate>
+            <div class="field-row">
+              <input type="email" id="alpha-email" placeholder="you@example.com" aria-label="Email address" required />
+              <button type="submit" class="btn btn-primary">I'd use this — sign up</button>
+            </div>
+            <p class="form-status" id="alpha-status" role="status"></p>
+            <p class="form-fine">No credit card. No app yet — we'll reach out if this gets built.</p>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="app-demo">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Inside the app</p>
+        <h2>PlayLink is here to connect you to the local community.</h2>
+        <p class="lede" style="margin-top:14px;max-width:56ch">Aim for the top and be the talk of the town.</p>
+      </div>
+      <div class="app-carousel" style="margin-top:20px">
+        <button type="button" class="carousel-arrow carousel-prev" aria-label="Previous screen">‹</button>
+        <div class="carousel-track">
+
+          <div class="carousel-slide active">
+            <p class="phone-caption">Your rival Dillon is playing Thursday Commander too — face him and win!</p>
+            <div class="carousel-slide-row">
+              <div class="carousel-slide-main">
+                <div class="phone">
+                  <div class="phone-screen">
+                    <p class="screen-title">Browsing MTG Groups</p>
+
+                    <div class="group-card">
+                      <div class="group-card-top">
+                        <span class="game-chip" style="background:#8B3A3A">⚔ MTG</span>
+                        <span style="font-family:var(--font-display);font-size:.62rem;color:var(--text-muted)">3 / 4 seats</span>
+                      </div>
+                      <p class="group-card-name">Thursday Commander</p>
+                      <div class="group-card-meta"><span>Bracket 3</span><span>Code 8KQW</span></div>
+                      <span class="rival-present-tag">⚔️ Rival Present</span>
+                    </div>
+
+                    <div class="group-card">
+                      <div class="group-card-top">
+                        <span class="game-chip" style="background:#8B3A3A">⚔ MTG</span>
+                        <span style="font-family:var(--font-display);font-size:.62rem;color:var(--text-muted)">2 / 4 seats</span>
+                      </div>
+                      <p class="group-card-name">Friday Modern Night</p>
+                      <div class="group-card-meta"><span>Modern</span><span>Code TL42</span></div>
+                    </div>
+
+                    <div class="group-card">
+                      <div class="group-card-top">
+                        <span class="game-chip" style="background:#8B3A3A">⚔ MTG</span>
+                        <span style="font-family:var(--font-display);font-size:.62rem;color:var(--text-muted)">1 / 4 seats</span>
+                      </div>
+                      <p class="group-card-name">Sunday Draft Pod</p>
+                      <div class="group-card-meta"><span>Draft</span><span>Code R9FM</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="carousel-slide-side">
+                <div class="phone">
+                  <div class="phone-screen">
+                    <p class="screen-title">Thursday Commander</p>
+                    <p style="font-family:var(--font-display);font-size:.68rem;color:var(--text-muted);margin:-6px 0 14px">⚔ MTG · Bracket 3 · Code 8KQW</p>
+
+                    <div class="rival-card">
+                      <span class="rival-avatar">D</span>
+                      <div class="rival-card-info">
+                        <p class="rival-card-name">Dillon C.</p>
+                        <p class="rival-card-meta">14W – 9L · ⚔️ MTG</p>
+                      </div>
+                      <span class="rival-badge rival-badge-main">⚔️ RIVAL</span>
+                    </div>
+                    <div class="rival-card">
+                      <span class="rival-avatar contender">M</span>
+                      <div class="rival-card-info">
+                        <p class="rival-card-name">Melanie D.</p>
+                        <p class="rival-card-meta">8W – 5L · ⚔️ MTG</p>
+                      </div>
+                    </div>
+                    <div class="rival-card">
+                      <span class="rival-avatar contender">J</span>
+                      <div class="rival-card-info">
+                        <p class="rival-card-name">Justin V.</p>
+                        <p class="rival-card-meta">6W – 4L · ⚔️ MTG</p>
+                      </div>
+                    </div>
+                    <button type="button" class="join-slot">+ Join this group!</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="carousel-slide">
+            <p class="phone-caption">The Rival system, explained.</p>
+            <div class="carousel-slide-row">
+              <div class="carousel-rundown">
+                <p>Pick a rival and chase them down, but look out for your contenders as they look to close the gap!</p>
+              </div>
+              <div class="carousel-slide-side" style="max-width:340px">
+                <div class="phone">
+                  <div class="phone-screen">
+                    <p class="screen-title">Your rival</p>
+                    <div class="rival-card">
+                      <span class="rival-avatar">D</span>
+                      <div class="rival-card-info">
+                        <p class="rival-card-name">Dillon C.</p>
+                        <p class="rival-card-meta">14W – 9L · ⚔️ MTG</p>
+                      </div>
+                      <span class="rival-badge rival-badge-main">⚔️ RIVAL</span>
+                    </div>
+                    <p class="contenders-label">Contenders</p>
+                    <div class="rival-card contender">
+                      <span class="rival-avatar contender">K</span>
+                      <div class="rival-card-info">
+                        <p class="rival-card-name">Kasen T.</p>
+                        <p class="rival-card-meta">11W – 7L · ⚔️ MTG</p>
+                        <span class="rivaling-you-tag">⚔️ Rivaling you back</span>
+                      </div>
+                      <span class="rival-badge rival-badge-contender">CONTENDER</span>
+                    </div>
+                    <div class="rival-card contender">
+                      <span class="rival-avatar contender">D</span>
+                      <div class="rival-card-info">
+                        <p class="rival-card-name">Danny D.</p>
+                        <p class="rival-card-meta">9W – 12L · ⚔️ MTG</p>
+                      </div>
+                      <span class="rival-badge rival-badge-contender">CONTENDER</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="carousel-slide">
+            <p class="phone-caption">Win, and watch the standings move.</p>
+            <div class="carousel-slide-row" style="justify-content:center">
+              <div class="carousel-slide-side" style="max-width:360px">
+                <div class="phone">
+                  <div class="phone-screen">
+                    <p class="screen-title">Rankings</p>
+                    <div class="rank-row rank-you">
+                      <span class="place-rank">1st</span>
+                      <span class="place-name">You</span>
+                      <span class="rank-points">1,240 pts</span>
+                      <span class="rank-delta up">▲ +30</span>
+                    </div>
+                    <div class="rank-row">
+                      <span class="place-rank">2nd</span>
+                      <span class="place-name">Dillon C. <span style="opacity:.7">(Rival)</span></span>
+                      <span class="rank-points">1,190 pts</span>
+                      <span class="rank-delta down">▼ −10</span>
+                    </div>
+                    <div class="rank-row">
+                      <span class="place-rank">3rd</span>
+                      <span class="place-name">Kasen T. <span style="opacity:.7">(Contender)</span></span>
+                      <span class="rank-points">980 pts</span>
+                    </div>
+                    <div class="rank-row">
+                      <span class="place-rank">4th</span>
+                      <span class="place-name">Danny D. <span style="opacity:.7">(Contender)</span></span>
+                      <span class="rank-points">860 pts</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <button type="button" class="carousel-arrow carousel-next" aria-label="Next screen">›</button>
+      </div>
+      <div class="carousel-dots">
+        <button type="button" class="carousel-dot active" aria-label="Go to slide 1"></button>
+        <button type="button" class="carousel-dot" aria-label="Go to slide 2"></button>
+        <button type="button" class="carousel-dot" aria-label="Go to slide 3"></button>
+      </div>
+    </div>
+  </section>
+  <div class="torn"></div>
+
+  <section style="background:var(--surface)">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Turns out</p>
+        <h2>The players were never the problem.</h2>
+        <p class="lede" style="max-width:56ch">
+          There's no shortage of Commander decks nearby — just no way to know they're there
+          before you happen to run into them.
+        </p>
+      </div>
+      <div class="problem-grid">
+        <div class="problem-card">
+          <p class="tag">Power level</p>
+          <h3>Bracket roulette.</h3>
+          <p class="body">Nobody agreed on a bracket or format before you sat down.</p>
+        </div>
+        <div class="problem-card">
+          <p class="tag">Coordination</p>
+          <h3>47 unread messages. Zero confirmed seats.</h3>
+          <p class="body">Pickup games die in group chats nobody checks in time.</p>
+        </div>
+        <div class="problem-card">
+          <p class="tag">Record-keeping</p>
+          <h3>Your win streak lives in someone's memory.</h3>
+          <p class="body">No ledger — just whoever remembers loudest.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2>Four steps between "no plans" and "pod's full"</h2>
+        <p class="lede" style="margin-top:14px;max-width:56ch">In Commander terms for now — the same engine carries over to whichever game's next.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div class="step-body">
+            <h3>Build a profile that actually filters</h3>
+            <p>Games, bracket, formats, and the house rules you won't play with.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div class="step-body">
+            <h3>Find a group or open a seat</h3>
+            <p>Browse by game and bracket, join with a code, or host your own.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div class="step-body">
+            <h3>Play, with no surprises</h3>
+            <p>Everyone already agreed on bracket, format, and rules. No pregame argument.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <div class="step-body">
+            <h3>Report the round, let it score itself</h3>
+            <p>Drag the finish order in. Points, record, and dispute window handled automatically.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">One app, every table</p>
+        <h2>Whatever's on the table, there's a pod for it</h2>
+        <p class="lede" style="max-width:56ch">Commander first. Tap any other game to vote for what's next — your pick counts when you sign up below.</p>
+      </div>
+      <div class="games-strip">
+        <button type="button" class="game-pill" data-game="Magic: The Gathering">
+          <span class="swatch" style="background:#8B3A3A">⚔️</span>
+          <span><span class="name">Magic: The Gathering<span class="soon">In development</span></span><span class="fmt">Commander first, other formats after</span></span>
+        </button>
+        <button type="button" class="game-pill upcoming" data-game="Pokémon TCG">
+          <span class="swatch" style="background:#E6A817">⚡</span>
+          <span><span class="name">Pokémon TCG<span class="soon">Voting open</span></span><span class="fmt">Standard, Expanded, Limited</span></span>
+        </button>
+        <button type="button" class="game-pill upcoming" data-game="Disney Lorcana">
+          <span class="swatch" style="background:#5B4FCF">✨</span>
+          <span><span class="name">Disney Lorcana<span class="soon">Voting open</span></span><span class="fmt">Constructed, Draft</span></span>
+        </button>
+        <button type="button" class="game-pill upcoming" data-game="One Piece TCG">
+          <span class="swatch" style="background:#C0392B">☠️</span>
+          <span><span class="name">One Piece TCG<span class="soon">Voting open</span></span><span class="fmt">OP, Draft</span></span>
+        </button>
+        <button type="button" class="game-pill upcoming" data-game="Board games">
+          <span class="swatch" style="background:#2F6F76">🎲</span>
+          <span><span class="name">Board Games<span class="soon">Voting open</span></span><span class="fmt">Family night, local pickup, whatever's on the shelf</span></span>
+        </button>
+        <button type="button" class="game-pill upcoming" data-game="TTRPGs">
+          <span class="swatch" style="background:#5C2A4D">🧙</span>
+          <span><span class="name">TTRPGs<span class="soon">Voting open</span></span><span class="fmt">D&amp;D, Pathfinder, and other tabletop RPGs</span></span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="signup-more">
+    <div class="wrap">
+      <div class="signup" style="max-width:640px;margin:0 auto">
+        <p class="eyebrow" style="text-align:center">Convinced?</p>
+        <h2 style="margin-top:10px;text-align:center">Would you use this?</h2>
+        <p class="lede" style="margin-top:10px;text-align:center">Just the email works. Add your city and games below if you want it to count for more.</p>
+        <form class="email-form" id="alpha-form-bottom" style="margin-top:22px" novalidate>
+          <div class="field-row">
+            <input type="email" id="alpha-email-bottom" placeholder="you@example.com" aria-label="Email address" required />
+            <button type="submit" class="btn btn-primary">I'd use this — sign up</button>
+          </div>
+          <div class="location-field">
+            <input type="text" id="alpha-location" class="location-input" placeholder="City, State (optional — helps us find your first pod)" aria-label="Location" autocomplete="off" />
+            <div class="location-suggestions" id="location-suggestions" role="listbox"></div>
+          </div>
+          <p class="location-hint">Pick your city from the list so it counts toward finding players near you.</p>
+          <fieldset class="game-checks">
+            <legend>Which do you play? Vote for what we build after Commander.</legend>
+            <label><input type="checkbox" name="games" value="Magic: The Gathering" /> Magic</label>
+            <label><input type="checkbox" name="games" value="Pokémon TCG" /> Pokémon TCG</label>
+            <label><input type="checkbox" name="games" value="Disney Lorcana" /> Lorcana</label>
+            <label><input type="checkbox" name="games" value="One Piece TCG" /> One Piece TCG</label>
+            <label><input type="checkbox" name="games" value="Board games" /> Board games</label>
+            <label><input type="checkbox" name="games" value="TTRPGs" /> TTRPGs</label>
+          </fieldset>
+          <input type="text" id="alpha-feedback" class="location-input" placeholder="What would make you actually use this? (optional suggestion box)" aria-label="Suggestion box" maxlength="280" />
+          <p class="form-status" id="alpha-status-bottom" role="status"></p>
+          <p class="form-fine">No spam. One email, if there's ever something real. Unsubscribe anytime.</p>
+        </form>
+      </div>
+      <div class="seat-counter" style="border:none;padding:0;margin-top:22px;align-items:center;text-align:center">
+        <span class="num" id="seat-num">—</span>
+        <span class="label">Players already on the list</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site">
+  <div class="wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;width:100%">
+    <div class="logo" style="font-size:.9rem"><span>PLAYLINK</span><span class="dot">●</span></div>
+    <p class="fine">© 2026 Silvenari · PlayLink — Linking Players, Filling Tables, Making Games.</p>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  (function () {
+    var SUPABASE_URL = 'https://vuleighklamwupryxyjj.supabase.co';
+    var SUPABASE_ANON_KEY = 'sb_publishable_3DTEMiX-4hqeM5x8YpgpCQ_uFBx0V71';
+    var supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    var form = document.getElementById('alpha-form');
+    var status = document.getElementById('alpha-status');
+    var seatNum = document.getElementById('seat-num');
+    var emailInput = document.getElementById('alpha-email');
+    var locationInput = document.getElementById('alpha-location');
+    var feedbackInput = document.getElementById('alpha-feedback');
+    var suggestionsBox = document.getElementById('location-suggestions');
+    var submitBtn = form.querySelector('button[type="submit"]');
+
+    // Bottom of the page has a lightweight second entry point into the same
+    // signup — email only, no location/games/feedback. Submitting either one
+    // locks and updates both, since they're two doors into one action.
+    var bottomForm = document.getElementById('alpha-form-bottom');
+    var bottomEmailInput = document.getElementById('alpha-email-bottom');
+    var bottomStatus = document.getElementById('alpha-status-bottom');
+    var bottomSubmitBtn = bottomForm.querySelector('button[type="submit"]');
+    var emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // Game pills up top double as a shortcut into the same "games" checkboxes
+    // in the bottom signup form — pressing one checks the matching box and
+    // jumps down, it doesn't record anything on its own until submitted.
+    document.querySelectorAll('.game-pill[data-game]').forEach(function (pill) {
+      pill.addEventListener('click', function () {
+        var game = pill.getAttribute('data-game');
+        var checkbox = bottomForm.querySelector('input[name="games"][value="' + CSS.escape(game) + '"]');
+        if (checkbox && !checkbox.disabled) {
+          checkbox.checked = true;
+          pill.classList.add('voted');
+          if (pill.classList.contains('upcoming')) {
+            var soon = pill.querySelector('.soon');
+            if (soon) soon.textContent = '✓ Voted';
+          }
+        }
+        document.getElementById('signup-more').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        bottomEmailInput.focus({ preventScroll: true });
+      });
+    });
+
+    // Location autocomplete (OpenStreetMap Nominatim — free, no API key).
+    // selectedPlace is only set when the user picks a real suggestion; any
+    // typed text that was never matched to a suggestion is dropped on submit
+    // rather than saved as unverified free text.
+    var selectedPlace = null;
+    var geocodeTimer = null;
+    var geocodeAbort = null;
+
+    function closeSuggestions() {
+      suggestionsBox.innerHTML = '';
+      suggestionsBox.classList.remove('open');
+    }
+
+    function renderSuggestions(results) {
+      suggestionsBox.innerHTML = '';
+      if (!results.length) { closeSuggestions(); return; }
+      results.forEach(function (place) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('role', 'option');
+        btn.textContent = place.display_name;
+        btn.addEventListener('click', function () {
+          selectedPlace = {
+            name: place.display_name,
+            lat: parseFloat(place.lat),
+            lon: parseFloat(place.lon)
+          };
+          locationInput.value = place.display_name;
+          closeSuggestions();
+        });
+        suggestionsBox.appendChild(btn);
+      });
+      suggestionsBox.classList.add('open');
+    }
+
+    locationInput.addEventListener('input', function () {
+      selectedPlace = null;
+      var query = locationInput.value.trim();
+      clearTimeout(geocodeTimer);
+      if (geocodeAbort) geocodeAbort.abort();
+      if (query.length < 3) { closeSuggestions(); return; }
+
+      geocodeTimer = setTimeout(function () {
+        geocodeAbort = new AbortController();
+        var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=5&countrycodes=us,ca,mx&q=' + encodeURIComponent(query);
+        fetch(url, { signal: geocodeAbort.signal })
+          .then(function (res) { return res.ok ? res.json() : []; })
+          .then(renderSuggestions)
+          .catch(function () { /* geocoder unreachable — leave suggestions closed */ });
+      }, 350);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (e.target !== locationInput && !suggestionsBox.contains(e.target)) {
+        closeSuggestions();
+      }
+    });
+
+    function getUtmParams() {
+      var params = new URLSearchParams(window.location.search);
+      return {
+        utm_source: params.get('utm_source'),
+        utm_medium: params.get('utm_medium'),
+        utm_campaign: params.get('utm_campaign')
+      };
+    }
+
+    var SEAT_COUNT_MIN_TO_SHOW = 10; // a low number here reads as a red flag, not proof — hide until it's a real signal
+
+    function refreshSeatCount() {
+      supabaseClient
+        .rpc('alpha_signup_count')
+        .then(function (res) {
+          if (typeof res.data === 'number' && res.data >= SEAT_COUNT_MIN_TO_SHOW) {
+            seatNum.textContent = res.data;
+            seatNum.parentElement.style.display = '';
+          } else {
+            seatNum.parentElement.style.display = 'none';
+          }
+        })
+        .catch(function () {
+          seatNum.parentElement.style.display = 'none';
+        });
+    }
+    refreshSeatCount();
+
+    function setStatusBoth(text, color) {
+      status.textContent = text;
+      status.style.color = color;
+      bottomStatus.textContent = text;
+      bottomStatus.style.color = color;
+    }
+
+    function submitSignup(value, extra) {
+      var utm = getUtmParams();
+      submitBtn.disabled = true;
+      bottomSubmitBtn.disabled = true;
+      setStatusBoth('Adding you to the list…', 'var(--text-muted)');
+
+      var payload = {
+        email: value,
+        location: null,
+        lat: null,
+        lon: null,
+        games: null,
+        feedback: null,
+        utm_source: utm.utm_source,
+        utm_medium: utm.utm_medium,
+        utm_campaign: utm.utm_campaign
+      };
+      for (var key in extra) { payload[key] = extra[key]; }
+
+      supabaseClient
+        .from('alpha_signups')
+        .insert(payload)
+        .then(function (res) {
+          if (res.error) {
+            if (res.error.code === '23505') {
+              setStatusBoth('That email\'s already on the list.', 'var(--secondary)');
+              emailInput.disabled = true;
+              bottomEmailInput.disabled = true;
+              locationInput.disabled = true;
+              feedbackInput.disabled = true;
+            } else {
+              setStatusBoth('Something went wrong — try again in a moment.', 'var(--accent)');
+              submitBtn.disabled = false;
+              bottomSubmitBtn.disabled = false;
+            }
+            return;
+          }
+          setStatusBoth('You\'re on the list. Watch your inbox.', 'var(--secondary)');
+          form.reset();
+          bottomForm.reset();
+          selectedPlace = null;
+          closeSuggestions();
+          emailInput.disabled = true;
+          locationInput.disabled = true;
+          feedbackInput.disabled = true;
+          bottomEmailInput.disabled = true;
+          refreshSeatCount();
+        })
+        .catch(function () {
+          setStatusBoth('Something went wrong — try again in a moment.', 'var(--accent)');
+          submitBtn.disabled = false;
+          bottomSubmitBtn.disabled = false;
+        });
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var value = emailInput.value.trim();
+      if (!emailRe.test(value)) {
+        status.textContent = 'That email doesn\'t look right — double check it.';
+        status.style.color = 'var(--accent)';
+        return;
+      }
+      submitSignup(value, {});
+    });
+
+    bottomForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var value = bottomEmailInput.value.trim();
+      if (!emailRe.test(value)) {
+        bottomStatus.textContent = 'That email doesn\'t look right — double check it.';
+        bottomStatus.style.color = 'var(--accent)';
+        return;
+      }
+      var games = Array.prototype.slice
+        .call(bottomForm.querySelectorAll('input[name="games"]:checked'))
+        .map(function (el) { return el.value; });
+      submitSignup(value, {
+        location: selectedPlace ? selectedPlace.name : null,
+        lat: selectedPlace ? selectedPlace.lat : null,
+        lon: selectedPlace ? selectedPlace.lon : null,
+        games: games.length ? games : null,
+        feedback: feedbackInput.value.trim() || null
+      });
+    });
+  })();
+</script>
+<script>
+  (function () {
+    var carousel = document.querySelector('.app-carousel');
+    if (!carousel) return;
+    var slides = Array.prototype.slice.call(carousel.querySelectorAll('.carousel-slide'));
+    var dots = Array.prototype.slice.call(document.querySelectorAll('.carousel-dot'));
+    var prevBtn = carousel.querySelector('.carousel-prev');
+    var nextBtn = carousel.querySelector('.carousel-next');
+    var current = 0;
+
+    function goTo(index) {
+      current = (index + slides.length) % slides.length;
+      slides.forEach(function (slide, i) { slide.classList.toggle('active', i === current); });
+      dots.forEach(function (dot, i) { dot.classList.toggle('active', i === current); });
+    }
+
+    prevBtn.addEventListener('click', function () { goTo(current - 1); });
+    nextBtn.addEventListener('click', function () { goTo(current + 1); });
+    dots.forEach(function (dot, i) { dot.addEventListener('click', function () { goTo(i); }); });
+  })();
+</script>
+</body>
+</html>
