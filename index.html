@@ -327,6 +327,9 @@
     line-height: 1.15;
     box-shadow: 0 4px 12px var(--shadow);
   }
+  @media (max-width: 760px) {
+    .stamp { left: auto; right: -14px; transform: rotate(14deg); }
+  }
 
   /* ---------- Divider ---------- */
   .torn {
@@ -869,7 +872,6 @@
       <div class="logo"><span>PLAYLINK</span><span class="dot">●</span><small>Early access</small></div>
       <p class="site-tagline">Linking Players, Filling Tables, Making Games.</p>
     </div>
-    <a class="btn btn-ghost" href="#signup">Count me in</a>
   </div>
 </header>
 
@@ -888,7 +890,7 @@
       <div class="hero-action" id="signup">
         <div class="stamp">Early<br />Interest</div>
         <div class="signup hero-signup">
-          <p class="ticket-kicker">Would you use this?</p>
+          <p class="ticket-kicker">Is this an app you would use?</p>
           <form class="email-form" id="alpha-form" style="margin-top:10px" novalidate>
             <div class="field-row">
               <input type="email" id="alpha-email" placeholder="you@example.com" aria-label="Email address" required />
@@ -1184,7 +1186,7 @@
     <div class="wrap">
       <div class="signup" style="max-width:640px;margin:0 auto">
         <p class="eyebrow" style="text-align:center">Convinced?</p>
-        <h2 style="margin-top:10px;text-align:center">Would you use this?</h2>
+        <h2 style="margin-top:10px;text-align:center">Is this an app you would use?</h2>
         <p class="lede" style="margin-top:10px;text-align:center">Just the email works. Add your city and games below if you want it to count for more.</p>
         <form class="email-form" id="alpha-form-bottom" style="margin-top:22px" novalidate>
           <div class="field-row">
