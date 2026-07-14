@@ -816,6 +816,12 @@
     color: var(--text-muted);
     letter-spacing: 0.02em;
   }
+  .cta-punch {
+    font-size: clamp(0.95rem, 0.88rem + 0.35vw, 1.15rem);
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 0;
+  }
   .form-status {
     font-family: var(--font-display);
     font-size: 0.78rem;
@@ -894,10 +900,16 @@
               <button type="submit" class="btn btn-primary">I'd use this — sign up</button>
             </div>
             <p class="form-status" id="alpha-status" role="status"></p>
-            <p class="form-fine">No credit card. No app yet — we'll reach out if this gets built.</p>
+            <p class="form-fine cta-punch">No scouring Google for an hour. No joining random chat servers. No bulletin boards. Just a central location to find games.</p>
           </form>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="what-it-is" style="padding:clamp(24px, 5vw, 56px) 0">
+    <div class="wrap">
+      <p class="lede" style="max-width:70ch;margin:0 auto;text-align:center;font-size:clamp(1.1rem, 1rem + 0.4vw, 1.35rem);color:var(--text)">Make or find a group in your local community. Whether you're new to town or just passing through, PlayLink is built to find you a table to play at.</p>
     </div>
   </section>
 
