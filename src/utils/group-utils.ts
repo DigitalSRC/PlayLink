@@ -1,4 +1,5 @@
 import { Group, PlayerProfile } from "../data/groups";
+import { scheduleDateKey } from "./schedule-utils";
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
@@ -60,16 +61,46 @@ export const isGroupFull = (group: Group): boolean =>
   group.players.length >= group.targetPlayers;
 
 /**
+ * Finds the group, if any, a player already belongs to on the same calendar day as a given
+ * scheduled time. This is the day-scoped replacement for "does this player have any group at
+ * all" now that a player can hold a different group on each day of the week — it buckets by the
+ * same UTC calendar day as the group_players_one_per_day database constraint, so this
+ * client-side pre-check agrees with what the server will actually accept.
+ * Parameters: groups (all available groups), playerId (the player to check), targetScheduledAtMs
+ * (the scheduled_at, in ms, of the day being checked — typically the target group's own
+ * scheduledAt).
+ * Returns: the conflicting Group on that same day, or undefined when there is none.
+ * Edge cases: returns undefined when targetScheduledAtMs is undefined (an unscheduled group never
+ * conflicts with anything) or when a candidate group itself has no scheduledAt.
+ */
+export const findGroupOnSameDay = (
+  groups: Group[],
+  playerId: string,
+  targetScheduledAtMs: number | undefined
+): Group | undefined => {
+  if (targetScheduledAtMs === undefined) return undefined;
+  const targetDateKey = scheduleDateKey(targetScheduledAtMs);
+
+  return groups.find(
+    (group) =>
+      group.scheduledAt !== undefined &&
+      scheduleDateKey(group.scheduledAt) === targetDateKey &&
+      group.players.some((player) => player.id === playerId)
+  );
+};
+
+/**
  * Decides if joining is allowed for a user.
- * Parameters: targetGroup (the requested group), currentUserGroup (the user's current group, if any).
+ * Parameters: targetGroup (the requested group), conflictingSameDayGroup (any group the user
+ * already belongs to on the same calendar day as targetGroup, from findGroupOnSameDay).
  * Returns: true when the user can join the group without conflicting memberships or capacity issues.
- * Edge cases: returns false if the user is already in another group or the target group is full.
+ * Edge cases: returns false if the user already has a group that same day or the target group is full.
  */
 export const canJoinGroup = (
   targetGroup: Group,
-  currentUserGroup: Group | undefined
+  conflictingSameDayGroup: Group | undefined
 ): boolean =>
-  !currentUserGroup && !isGroupFull(targetGroup);
+  !conflictingSameDayGroup && !isGroupFull(targetGroup);
 
 /**
  * Creates a new player object with deterministic fields.

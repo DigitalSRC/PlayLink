@@ -18,6 +18,7 @@ import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
   BRACKET_INFO,
+  DayOfWeek,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -26,9 +27,13 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
-import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
+import { findGroupOnSameDay, formatBrackets, generateJoinCode } from '../../utils/group-utils';
+import { buildScheduledAt, formatScheduledAt, scheduleDayOfWeek } from '../../utils/schedule-utils';
 import { useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
+import DateOffsetPicker from '../../components/DateOffsetPicker';
+import TimeOfDayPicker from '../../components/TimeOfDayPicker';
+import WeekCalendar from '../../components/WeekCalendar';
 
 type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
@@ -54,6 +59,7 @@ export default function BrowseScreen() {
   const joinGroupMutation = useJoinGroupMutation();
 
   const [filter, setFilter] = useState<FilterType>('myGames');
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek | undefined>(undefined);
   const [showCreate, setShowCreate] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [codeValue, setCodeValue] = useState('');
@@ -105,16 +111,17 @@ export default function BrowseScreen() {
   };
 
   const displayUser = currentUser?.username ?? 'Player';
-  const currentUserGroup = groups.find((g) =>
-    g.players.some((p) => p.id === currentUser?.id)
-  );
 
-  const filtered =
+  const filteredByGame =
     filter === 'all'
       ? groups
       : filter === 'myGames'
       ? groups.filter((g) => currentUser?.games.includes(g.gameType))
       : groups.filter((g) => g.gameType === filter);
+
+  const filtered = filteredByGame.filter(
+    (g) => !selectedDay || (g.scheduledAt !== undefined && scheduleDayOfWeek(g.scheduledAt) === selectedDay)
+  );
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
@@ -129,8 +136,8 @@ export default function BrowseScreen() {
       Alert.alert('Code not found', 'No group matches that join code. Double-check with the host.');
       return;
     }
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
+    if (findGroupOnSameDay(groups, currentUser.id, group.scheduledAt)) {
+      Alert.alert('Already scheduled that day', 'You already have a group on this day — leave it first or pick a group on a different day.');
       return;
     }
     if (group.players.length >= group.targetPlayers) {
@@ -145,8 +152,8 @@ export default function BrowseScreen() {
   const handleJoin = async (group: Group) => {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
+    if (findGroupOnSameDay(groups, currentUser.id, group.scheduledAt)) {
+      Alert.alert('Already scheduled that day', 'You already have a group on this day — leave it first or pick a group on a different day.');
       return;
     }
     if (group.players.length >= group.targetPlayers) {
@@ -213,12 +220,20 @@ export default function BrowseScreen() {
   const handleCreate = async () => {
     if (!currentUser) return;
     if (groupsLoading || createGroupMutation.isPending) return;
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group first.');
-      return;
-    }
     if (!newName.trim() || !newLocation.trim()) {
       Alert.alert('Missing info', 'Group name and location are required.');
+      return;
+    }
+
+    const scheduledAt = buildScheduledAt({
+      dateOffsetDays: newDateOffset,
+      hour: newHour,
+      minute: newMinute,
+      period: newPeriod,
+    });
+
+    if (findGroupOnSameDay(groups, currentUser.id, scheduledAt)) {
+      Alert.alert('Already scheduled that day', 'You already have a group on this day — pick a different day, or leave that group first.');
       return;
     }
 
@@ -230,16 +245,8 @@ export default function BrowseScreen() {
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
-      scheduledAt: (() => {
-        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
-        d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
-        return d.getTime();
-      })(),
-      time: (() => {
-        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
-        const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        return `${dayLabel} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}`;
-      })(),
+      scheduledAt,
+      time: formatScheduledAt(scheduledAt),
       targetPlayers: Math.max(2, Number(newTarget) || 4),
       noGo: newNoGo,
       hostBracket: currentUser.brackets[0] ?? 2,
@@ -298,6 +305,16 @@ export default function BrowseScreen() {
             <Text style={styles.createToggleText}>+ Create</Text>
           </Pressable>
         </View>
+      </View>
+
+      {/* Day filter */}
+      <View style={styles.weekCalendarWrap}>
+        <WeekCalendar
+          groups={filteredByGame}
+          selectedDay={selectedDay}
+          onSelectDay={setSelectedDay}
+          onSelectGroup={(group) => router.push({ pathname: '/group-detail', params: { id: group.id } })}
+        />
       </View>
 
       {/* Game filter chips */}
@@ -487,53 +504,17 @@ export default function BrowseScreen() {
               <LocationAutocomplete value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Seattle, WA" />
 
               <Text style={styles.fieldLabel}>Date</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
-                {Array.from({ length: 15 }, (_, i) => {
-                  const d = new Date(); d.setDate(d.getDate() + i);
-                  const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
-                    : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                  return (
-                    <Pressable
-                      key={i}
-                      style={[styles.chip, { backgroundColor: colors.bg }, newDateOffset === i && styles.chipTimeActive]}
-                      onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
-                    >
-                      <Text style={[styles.chipText, newDateOffset === i && styles.chipTextActive]}>{label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+              <DateOffsetPicker value={newDateOffset} onChange={setNewDateOffset} />
 
               <Text style={styles.fieldLabel}>Time</Text>
-              <View style={[styles.timePicker, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                <View style={styles.timeUnit}>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 12 ? 1 : h + 1); }}>
-                    <Text style={styles.timeArrowText}>▲</Text>
-                  </Pressable>
-                  <Text style={[styles.timeValue, { color: colors.textPrimary }]}>{String(newHour).padStart(2, '0')}</Text>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 1 ? 12 : h - 1); }}>
-                    <Text style={styles.timeArrowText}>▼</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.timeSeparator}>:</Text>
-                <View style={styles.timeUnit}>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => (m + 15) % 60); }}>
-                    <Text style={styles.timeArrowText}>▲</Text>
-                  </Pressable>
-                  <Text style={[styles.timeValue, { color: colors.textPrimary }]}>{String(newMinute).padStart(2, '0')}</Text>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => m === 0 ? 45 : m - 15); }}>
-                    <Text style={styles.timeArrowText}>▼</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.timePeriod}>
-                  <Pressable style={[styles.periodBtn, { backgroundColor: colors.card, borderColor: colors.border }, newPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('AM'); }}>
-                    <Text style={[styles.periodText, newPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
-                  </Pressable>
-                  <Pressable style={[styles.periodBtn, { backgroundColor: colors.card, borderColor: colors.border }, newPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('PM'); }}>
-                    <Text style={[styles.periodText, newPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
-                  </Pressable>
-                </View>
-              </View>
+              <TimeOfDayPicker
+                value={{ hour: newHour, minute: newMinute, period: newPeriod }}
+                onChange={(next) => {
+                  setNewHour(next.hour);
+                  setNewMinute(next.minute);
+                  setNewPeriod(next.period);
+                }}
+              />
 
               <View style={styles.halfField}>
                 <Text style={styles.fieldLabel}>Players Needed</Text>
@@ -664,6 +645,10 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+  weekCalendarWrap: {
+    paddingLeft: 20,
+    marginBottom: 10,
   },
   filterRow: {
     paddingLeft: 20,
@@ -859,72 +844,6 @@ const styles = StyleSheet.create({
   chipBracketActive: {
     backgroundColor: '#001A33',
     borderColor: '#007AFF',
-  },
-  chipTimeActive: {
-    backgroundColor: '#001A33',
-    borderColor: '#007AFF',
-  },
-  timePickerContent: {
-    gap: 6,
-    paddingBottom: 4,
-  },
-  timePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    gap: 12,
-    marginTop: 4,
-    alignSelf: 'flex-start',
-  },
-  timeUnit: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  timeArrow: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  timeArrowText: {
-    color: '#007AFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  timeValue: {
-    fontSize: 26,
-    fontWeight: '800',
-    minWidth: 42,
-    textAlign: 'center',
-  },
-  timeSeparator: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#555',
-    marginBottom: 2,
-  },
-  timePeriod: {
-    gap: 6,
-    marginLeft: 4,
-  },
-  periodBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1.5,
-  },
-  periodBtnActive: {
-    backgroundColor: '#001A33',
-    borderColor: '#007AFF',
-  },
-  periodText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#666',
-  },
-  periodTextActive: {
-    color: '#007AFF',
   },
   input: {
     borderWidth: 1,

@@ -1,17 +1,20 @@
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import WeekCalendar from '../../components/WeekCalendar';
 import { useApp } from '../../context/AppContext';
 import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
 import { useThemeColors } from '../../utils/theme-utils';
 
 /**
  * Home tab — the player's personal dashboard after logging in.
- * Shows the player's Points balance, win/loss record, active group, and rival hierarchy.
+ * Shows the player's Points balance, win/loss record, a weekly calendar of every group the
+ * player has joined (now that a player can hold a different group on each day of the week
+ * instead of just one "active" group at a time), and rival hierarchy.
  * Rival section distinguishes between one chosen Rival (red), up to two Contenders (gold), and an optional Familiar Foe slot for the most-played-against player.
  * A Pickup Game button launches an ad-hoc life counter session without creating a formal group.
  * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
- * Returns: a scrollable dashboard screen with a Pickup Game card and quick-action buttons for Find and Create Group.
- * Edge cases: hides the active group section when the user is in no group; hides the rivals section entirely when the rivals array is empty.
+ * Returns: a scrollable dashboard screen with a weekly group calendar and quick-action buttons for Find and Create Group.
+ * Edge cases: shows the "No Active Group" empty state when the user has joined no groups at all; hides the rivals section entirely when the rivals array is empty.
  */
 export default function HomeScreen() {
   const router = useRouter();
@@ -20,9 +23,9 @@ export default function HomeScreen() {
 
   if (!currentUser) return null;
 
-  const activeGroup = groups.find((g) =>
-    g.players.some((p) => p.username === currentUser.username)
-  );
+  const myGroups = groups
+    .filter((g) => g.players.some((p) => p.username === currentUser.username))
+    .sort((a, b) => (a.scheduledAt ?? Infinity) - (b.scheduledAt ?? Infinity));
 
   const totalGames = currentUser.wins + currentUser.losses;
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
@@ -75,23 +78,14 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      {/* Active group */}
-      {activeGroup ? (
+      {/* This week's groups */}
+      {myGroups.length > 0 ? (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your Active Group</Text>
-          <Pressable
-            style={[styles.activeGroupCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: GAME_COLOR[activeGroup.gameType] }]}
-            onPress={() => router.push({ pathname: '/group-detail', params: { id: activeGroup.id } })}
-          >
-            <Text style={[styles.activeGroupGame, { color: colors.textSecondary }]}>
-              {GAME_EMOJI[activeGroup.gameType]} {activeGroup.format}
-            </Text>
-            <Text style={[styles.activeGroupName, { color: colors.textPrimary }]}>{activeGroup.name}</Text>
-            <Text style={[styles.activeGroupMeta, { color: colors.textSecondary }]}>
-              {activeGroup.players.length}/{activeGroup.targetPlayers} players · {activeGroup.location}
-            </Text>
-            <Text style={styles.activeGroupTime}>{activeGroup.time}</Text>
-          </Pressable>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your Groups This Week</Text>
+          <WeekCalendar
+            groups={myGroups}
+            onSelectGroup={(group) => router.push({ pathname: '/group-detail', params: { id: group.id } })}
+          />
         </View>
       ) : (
         <View style={styles.section}>
@@ -302,32 +296,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
-  },
-  activeGroupCard: {
-    borderRadius: 14,
-    padding: 16,
-    borderLeftWidth: 4,
-    borderWidth: 1,
-  },
-  activeGroupGame: {
-    fontSize: 12,
-    marginBottom: 4,
-    fontWeight: '600',
-  },
-  activeGroupName: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  activeGroupMeta: {
-    fontSize: 13,
-    marginBottom: 2,
-  },
-  activeGroupTime: {
-    fontSize: 13,
-    color: '#007AFF',
-    marginTop: 4,
-    fontWeight: '600',
   },
   groupActionRow: {
     flexDirection: 'row',
