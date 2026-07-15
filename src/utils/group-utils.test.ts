@@ -4,6 +4,7 @@ import {
   buildNewPlayer,
   canJoinGroup,
   findGroupByUsername,
+  findGroupOnSameDay,
   formatBrackets,
   generateJoinCode,
   isGroupFull,
@@ -202,6 +203,43 @@ describe("group-utils", () => {
       players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")],
     });
     expect(canJoinGroup(group, group)).toBe(false);
+  });
+
+  // ── findGroupOnSameDay ────────────────────────────────────────────────────
+
+  const SAME_DAY_MORNING = Date.parse("2026-07-15T12:00:00Z");
+  const SAME_DAY_EVENING = Date.parse("2026-07-15T23:00:00Z");
+  const NEXT_DAY = Date.parse("2026-07-16T01:00:00Z");
+
+  it("returns undefined when the target has no scheduledAt", () => {
+    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    expect(findGroupOnSameDay([group], '1', undefined)).toBeUndefined();
+  });
+
+  it("finds a group the player belongs to on the same UTC calendar day, even at a different time", () => {
+    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    expect(findGroupOnSameDay([group], '1', SAME_DAY_EVENING)).toBe(group);
+  });
+
+  it("does not match a group scheduled on a different calendar day", () => {
+    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    expect(findGroupOnSameDay([group], '1', NEXT_DAY)).toBeUndefined();
+  });
+
+  it("ignores groups the player is not a member of", () => {
+    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('2', "Bob", 2, "Downtown", "Host")] });
+    expect(findGroupOnSameDay([group], '1', SAME_DAY_EVENING)).toBeUndefined();
+  });
+
+  it("ignores candidate groups that have no scheduledAt", () => {
+    const group = makeGroup({ scheduledAt: undefined, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    expect(findGroupOnSameDay([group], '1', SAME_DAY_MORNING)).toBeUndefined();
+  });
+
+  it("canJoinGroup blocks joining when a same-day conflict is passed in", () => {
+    const target = makeGroup({ targetPlayers: 4, players: [buildNewPlayer('9', "Zoe", 2, "Downtown", "Host")] });
+    const conflicting = makeGroup({ id: '2', scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
+    expect(canJoinGroup(target, conflicting)).toBe(false);
   });
 
   // ── findGroupByUsername edge cases ───────────────────────────────────────
