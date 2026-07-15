@@ -28,6 +28,7 @@ const makeGroup = (overrides: Partial<Group> = {}): Group => ({
   time: "Tonight",
   noGo: [],
   confirmed: false,
+  source: 'player',
   players: [
     {
       id: '1',
