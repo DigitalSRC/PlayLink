@@ -20,9 +20,12 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import DateOffsetPicker from '../components/DateOffsetPicker';
+import TimeOfDayPicker from '../components/TimeOfDayPicker';
 import { useApp } from '../context/AppContext';
-import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
-import { formatBrackets } from '../utils/group-utils';
+import { BRACKET_INFO, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
+import { findGroupOnSameDay, formatBrackets } from '../utils/group-utils';
+import { buildScheduledAt, formatScheduledAt, toScheduleParts } from '../utils/schedule-utils';
 import { PlacementInput } from '../utils/scoring-utils';
 import { applyGroupResultPoints, finalizeGroupResultIfReady, GroupResult } from '../lib/group-api';
 import { profileKeys } from '../hooks/useProfileQueries';
@@ -62,7 +65,7 @@ const ROW_HEIGHT = 64;                  // draggable placement row height, inclu
 export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentUser } = useApp();
+  const { currentUser, groups } = useApp();
   const queryClient = useQueryClient();
 
   const { data: group } = useGroupQuery(id);
@@ -83,16 +86,7 @@ export default function GroupDetail() {
   const [editLocation, setEditLocation] = useState(group?.location ?? '');
   const [editTarget, setEditTarget] = useState(String(group?.targetPlayers ?? 4));
   const [editBrackets, setEditBrackets] = useState<number[]>(group?.brackets ?? [2]);
-  const timeParts = (group?.time ?? '').split(' · ');
-  const parseTime = (s: string) => {
-    const m = s.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-    return m ? { h: parseInt(m[1], 10), min: parseInt(m[2], 10), p: m[3].toUpperCase() as 'AM' | 'PM' } : { h: 7, min: 0, p: 'PM' as 'AM' | 'PM' };
-  };
-  const parsedTime = parseTime(timeParts[1] ?? '');
-  const [editDay, setEditDay] = useState(timeParts[0] ?? '');
-  const [editHour, setEditHour] = useState(parsedTime.h);
-  const [editMinute, setEditMinute] = useState(parsedTime.min);
-  const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
+  const [scheduleParts, setScheduleParts] = useState(() => toScheduleParts(group?.scheduledAt));
 
   const [showReportModal, setShowReportModal] = useState(false);
   // Finish order, best first — the source of truth for the report modal's drag-and-drop list.
@@ -172,6 +166,10 @@ export default function GroupDetail() {
   const handleJoin = async () => {
     if (isFull) {
       Alert.alert('Group full', 'No open spots in this group.');
+      return;
+    }
+    if (findGroupOnSameDay(groups, currentUser.id, group.scheduledAt)) {
+      Alert.alert('Already scheduled that day', 'You already have a group on this day — leave it first or pick a group on a different day.');
       return;
     }
     try {
@@ -369,13 +367,15 @@ export default function GroupDetail() {
       Alert.alert('Missing info', 'Name and location are required.');
       return;
     }
+    const scheduledAt = buildScheduledAt(scheduleParts);
     try {
       await updateGroupMutation.mutateAsync({
         groupId: group.id,
         draft: {
           name: editName.trim(),
           location: editLocation.trim(),
-          time: `${editDay} · ${editHour}:${String(editMinute).padStart(2, '0')} ${editPeriod}`,
+          time: formatScheduledAt(scheduledAt),
+          scheduledAt,
           targetPlayers: Math.max(2, Number(editTarget) || group.targetPlayers),
           brackets: editBrackets,
         },
@@ -473,48 +473,16 @@ export default function GroupDetail() {
               <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
 
               <Text style={styles.editLabel}>Day</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                {DAYS_OF_WEEK.map((day) => (
-                  <Pressable
-                    key={day}
-                    style={[styles.editChip, editDay === day && styles.editChipActive]}
-                    onPress={() => setEditDay(day)}
-                  >
-                    <Text style={[styles.editChipText, editDay === day && styles.editChipTextActive]}>{day}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
+              <DateOffsetPicker
+                value={scheduleParts.dateOffsetDays}
+                onChange={(dateOffsetDays) => setScheduleParts((prev) => ({ ...prev, dateOffsetDays }))}
+              />
 
               <Text style={styles.editLabel}>Time</Text>
-              <View style={styles.timePicker}>
-                <View style={styles.timeUnit}>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditHour((h) => h === 12 ? 1 : h + 1); }}>
-                    <Text style={styles.timeArrowText}>▲</Text>
-                  </Pressable>
-                  <Text style={styles.timeValue}>{String(editHour).padStart(2, '0')}</Text>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditHour((h) => h === 1 ? 12 : h - 1); }}>
-                    <Text style={styles.timeArrowText}>▼</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.timeSeparator}>:</Text>
-                <View style={styles.timeUnit}>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditMinute((m) => (m + 15) % 60); }}>
-                    <Text style={styles.timeArrowText}>▲</Text>
-                  </Pressable>
-                  <Text style={styles.timeValue}>{String(editMinute).padStart(2, '0')}</Text>
-                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditMinute((m) => m === 0 ? 45 : m - 15); }}>
-                    <Text style={styles.timeArrowText}>▼</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.timePeriod}>
-                  <Pressable style={[styles.periodBtn, editPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setEditPeriod('AM'); }}>
-                    <Text style={[styles.periodText, editPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
-                  </Pressable>
-                  <Pressable style={[styles.periodBtn, editPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setEditPeriod('PM'); }}>
-                    <Text style={[styles.periodText, editPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
-                  </Pressable>
-                </View>
-              </View>
+              <TimeOfDayPicker
+                value={scheduleParts}
+                onChange={(next) => setScheduleParts((prev) => ({ ...prev, ...next }))}
+              />
 
               <Text style={styles.editLabel}>Players Needed</Text>
               <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
@@ -1273,69 +1241,6 @@ const styles = StyleSheet.create({
   },
   editChipTextActive: {
     color: '#FFF',
-  },
-  timePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F0F14',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2C2C38',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 10,
-    marginBottom: 8,
-    alignSelf: 'flex-start',
-  },
-  timeUnit: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  timeArrow: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  timeArrowText: {
-    color: '#007AFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  timeValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFF',
-    minWidth: 38,
-    textAlign: 'center',
-  },
-  timeSeparator: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#555',
-    marginBottom: 2,
-  },
-  timePeriod: {
-    gap: 6,
-    marginLeft: 4,
-  },
-  periodBtn: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 7,
-    borderWidth: 1.5,
-    borderColor: '#333',
-    backgroundColor: '#1C1C24',
-  },
-  periodBtnActive: {
-    backgroundColor: '#001A33',
-    borderColor: '#007AFF',
-  },
-  periodText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#666',
-  },
-  periodTextActive: {
-    color: '#007AFF',
   },
   modalBackdrop: {
     flex: 1,

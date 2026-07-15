@@ -228,6 +228,7 @@ export interface UpdateGroupDraft {
   name: string;
   location: string;
   time: string;
+  scheduledAt?: number;
   targetPlayers: number;
   brackets: number[];
 }
@@ -239,7 +240,9 @@ export interface UpdateGroupDraft {
  * Parameters: groupId, draft (the edited field values, already validated/parsed by the caller).
  * Returns: a promise that resolves once the update completes.
  * Edge cases: none beyond the standard Postgres/network error; does not touch gameType, format,
- * or noGo, none of which the edit form exposes.
+ * or noGo, none of which the edit form exposes. Updating scheduled_at re-fires the
+ * groups_session_date_propagate_trg trigger (see the group_players_one_per_day migration), which
+ * keeps every member's per-day conflict bucketing in sync with the new date.
  */
 export const updateGroup = async (groupId: string, draft: UpdateGroupDraft): Promise<void> => {
   const { error } = await supabase
@@ -248,6 +251,7 @@ export const updateGroup = async (groupId: string, draft: UpdateGroupDraft): Pro
       name: draft.name,
       location: draft.location,
       time: draft.time,
+      scheduled_at: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : null,
       target_players: draft.targetPlayers,
       brackets: draft.brackets,
     })
