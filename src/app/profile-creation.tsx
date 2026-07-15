@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import LocationAutocomplete from "../components/LocationAutocomplete";
 import { useApp } from "../context/AppContext";
 import {
   BRACKET_INFO,
@@ -370,12 +371,10 @@ export default function ProfileCreation() {
       />
 
       <Text style={styles.label}>Your Area</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. Downtown Seattle"
-        placeholderTextColor="#999"
+      <LocationAutocomplete
         value={location}
         onChangeText={setLocation}
+        placeholder="e.g. Seattle, WA"
       />
     </View>
   );
