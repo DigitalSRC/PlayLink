@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import LocationAutocomplete from '../../components/LocationAutocomplete';
 import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
@@ -483,7 +484,7 @@ export default function BrowseScreen() {
               <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
 
               <Text style={styles.fieldLabel}>Location</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
+              <LocationAutocomplete value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Seattle, WA" />
 
               <Text style={styles.fieldLabel}>Date</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>

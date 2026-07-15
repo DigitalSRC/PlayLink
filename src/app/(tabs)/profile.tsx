@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import LocationAutocomplete from '../../components/LocationAutocomplete';
 import { useApp } from '../../context/AppContext';
 import {
   BRACKET_INFO,
@@ -184,12 +185,10 @@ export default function ProfileScreen() {
             maxLength={32}
           />
           <Text style={[styles.fieldLabel, { color: textSec, marginTop: 10 }]}>My Location</Text>
-          <TextInput
-            style={[styles.locationInput, { color: textPrimary, borderColor: border }]}
+          <LocationAutocomplete
             value={editLocation}
             onChangeText={setEditLocation}
-            placeholder="Your area"
-            placeholderTextColor={textSec}
+            placeholder="e.g. Seattle, WA"
           />
           {currentUser.isDeveloper && (
             <View style={[styles.devBadge, { marginTop: 10 }]}>
