@@ -18,7 +18,7 @@ interface GroupRow {
   id: string;
   name: string;
   join_code: string;
-  created_by: string;
+  created_by: string | null;
   created_at: string;
   scheduled_at: string | null;
   rounds_played: number;
@@ -30,10 +30,14 @@ interface GroupRow {
   format: string;
   no_go: string[];
   confirmed: boolean;
+  source: 'player' | 'store';
+  store_id: string | null;
+  game_stores: { name: string; website_url: string } | null;
   group_players: GroupPlayerRow[];
 }
 
-const GROUP_SELECT = '*, group_players(player_id, role, bracket, profiles(username, display_name, location))';
+const GROUP_SELECT =
+  '*, group_players(player_id, role, bracket, profiles(username, display_name, location)), game_stores(name, website_url)';
 
 const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   id: row.player_id,
@@ -48,7 +52,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   id: row.id,
   name: row.name,
   joinCode: row.join_code,
-  createdBy: row.created_by,
+  createdBy: row.created_by ?? undefined,
   createdAt: new Date(row.created_at).getTime(),
   scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).getTime() : undefined,
   roundsPlayed: row.rounds_played,
@@ -61,6 +65,10 @@ const mapGroupRow = (row: GroupRow): Group => ({
   format: row.format,
   noGo: row.no_go as NoGoRule[],
   confirmed: row.confirmed,
+  source: row.source,
+  storeId: row.store_id ?? undefined,
+  storeName: row.game_stores?.name,
+  storeWebsite: row.game_stores?.website_url,
 });
 
 /**
