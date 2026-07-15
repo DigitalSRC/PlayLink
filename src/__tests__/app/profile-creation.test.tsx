@@ -31,6 +31,7 @@ jest.mock("../../context/AppContext", () => ({
     setRivals: mockSetRivals,
     setChosenRivalId: mockSetChosenRivalId,
     clearCurrentUser: mockClearCurrentUser,
+    theme: "dark",
   }),
 }));
 
