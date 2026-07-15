@@ -16,7 +16,9 @@ export interface Group {
   id: string;
   name: string;
   joinCode: string;
-  createdBy: string;
+  // Undefined for a store-sourced group (source === 'store'), which has no host player at all -
+  // never undefined for a player-created group.
+  createdBy?: string;
   createdAt: number;
   scheduledAt?: number;
   roundsPlayed: number;
@@ -29,6 +31,12 @@ export interface Group {
   format: string;
   noGo: NoGoRule[];
   confirmed: boolean;
+  // 'player' (the only kind before store-driven events existed) or 'store' (materialized by the
+  // sync-store-events Edge Function from a game store's calendar feed - see CLAUDE.md).
+  source: 'player' | 'store';
+  storeId?: string;
+  storeName?: string;
+  storeWebsite?: string;
 }
 
 // HARDCODED_GROUPS (the static mock group list this file used to export on unitTests/

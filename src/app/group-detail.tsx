@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -529,16 +530,28 @@ export default function GroupDetail() {
                   🔄 {group.roundsPlayed} round{group.roundsPlayed > 1 ? 's' : ''} completed this session
                 </Text>
               )}
-              <View style={styles.joinCodeRow}>
-                <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
-                <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
-              </View>
+              {group.source === 'store' ? (
+                <View style={styles.storeHostRow}>
+                  <Text style={styles.storeHostLabel}>🏬 Hosted by {group.storeName}</Text>
+                  {!!group.storeWebsite && (
+                    <Pressable onPress={() => Linking.openURL(group.storeWebsite!)}>
+                      <Text style={styles.storeHostLink}>Visit store →</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.joinCodeRow}>
+                  <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
+                  <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
+                </View>
+              )}
             </>
           )}
         </View>
 
-        {/* Host controls */}
-        {isHost && (
+        {/* Host controls (never shown for store-sourced groups, which have no host - the
+            groups_update_members RLS policy also blocks writes to them at the database layer) */}
+        {isHost && group.source === 'player' && (
           <View style={styles.hostControls}>
             {editing ? (
               <View style={styles.editBtnRow}>
@@ -996,6 +1009,23 @@ const styles = StyleSheet.create({
     color: '#E6A817',
     letterSpacing: 3,
     fontVariant: ['tabular-nums'],
+  },
+  storeHostRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    gap: 8,
+  },
+  storeHostLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#AAA',
+  },
+  storeHostLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#007AFF',
   },
   editInput: {
     backgroundColor: '#0F0F14',

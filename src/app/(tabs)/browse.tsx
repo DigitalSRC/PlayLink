@@ -367,6 +367,11 @@ export default function BrowseScreen() {
                     {GAME_EMOJI[group.gameType]} {group.format}
                   </Text>
                 </View>
+                {group.source === 'store' && group.storeName && (
+                  <View style={styles.storeBadge}>
+                    <Text style={styles.storeBadgeText} numberOfLines={1}>🏬 {group.storeName}</Text>
+                  </View>
+                )}
                 {rivalInGroup && (
                   <View style={styles.rivalGroupBadge}>
                     <Text style={styles.rivalGroupBadgeText}>⚔️ RIVAL HERE</Text>
@@ -895,6 +900,19 @@ const styles = StyleSheet.create({
     borderColor: '#FF3B30',
     borderWidth: 2,
     backgroundColor: '#1E1214',
+  },
+  storeBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#34495E',
+    maxWidth: 140,
+  },
+  storeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 0.3,
   },
   rivalGroupBadge: {
     paddingVertical: 3,
