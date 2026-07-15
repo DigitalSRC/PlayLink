@@ -6,6 +6,7 @@ import { GameType, NoGoRule } from './types';
 export interface PlayerProfile {
   id: string;
   username: string;
+  displayName?: string;
   bracket: number;
   location: string;
   role: string;

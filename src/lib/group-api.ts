@@ -11,7 +11,7 @@ interface GroupPlayerRow {
   player_id: string;
   role: string;
   bracket: number;
-  profiles: { username: string; location: string } | null;
+  profiles: { username: string; display_name: string | null; location: string } | null;
 }
 
 interface GroupRow {
@@ -33,11 +33,12 @@ interface GroupRow {
   group_players: GroupPlayerRow[];
 }
 
-const GROUP_SELECT = '*, group_players(player_id, role, bracket, profiles(username, location))';
+const GROUP_SELECT = '*, group_players(player_id, role, bracket, profiles(username, display_name, location))';
 
 const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   id: row.player_id,
   username: row.profiles?.username ?? 'Unknown',
+  displayName: row.profiles?.display_name ?? undefined,
   bracket: row.bracket,
   location: row.profiles?.location ?? '',
   role: row.role,
@@ -221,6 +222,37 @@ export const setGroupHost = async (
     .eq('group_id', groupId)
     .eq('player_id', previousHostId);
   if (demoteError) throw demoteError;
+};
+
+export interface UpdateGroupDraft {
+  name: string;
+  location: string;
+  time: string;
+  targetPlayers: number;
+  brackets: number[];
+}
+
+/**
+ * Persists edits made through group-detail.tsx's Edit Group form: name, location, day/time,
+ * players needed, and Commander brackets. This was previously local-state-only (the form's Save
+ * button just showed a "coming soon" alert), so nothing typed here ever reached the `groups` row.
+ * Parameters: groupId, draft (the edited field values, already validated/parsed by the caller).
+ * Returns: a promise that resolves once the update completes.
+ * Edge cases: none beyond the standard Postgres/network error; does not touch gameType, format,
+ * or noGo, none of which the edit form exposes.
+ */
+export const updateGroup = async (groupId: string, draft: UpdateGroupDraft): Promise<void> => {
+  const { error } = await supabase
+    .from('groups')
+    .update({
+      name: draft.name,
+      location: draft.location,
+      time: draft.time,
+      target_players: draft.targetPlayers,
+      brackets: draft.brackets,
+    })
+    .eq('id', groupId);
+  if (error) throw error;
 };
 
 /**

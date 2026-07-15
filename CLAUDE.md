@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-PlayLink is an Expo Router app (v57) built with React Native and TypeScript. Users create a profile and then browse, join, create, and manage play groups.
+PlayLink is an Expo Router app (v57) built with React Native and TypeScript, developed by Silvenari. Users create a profile and then browse, join, create, and manage play groups.
 
 ## Commands
 
@@ -56,13 +56,13 @@ index (landing / welcome)
 
 Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`.
 
-`pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-the-mvp) — they've been removed from `main`/`development` until that feature is finished (see Git workflow below). `group-detail`'s "Start Game" button is temporarily disabled (`GAME_SESSIONS_ENABLED = false`) as a result.
+`pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-the-mvp) — they've been removed from `main`/`development` until that feature is finished (see Git workflow below), and neither has any entry point on `development`/`main` today (no disabled button or flag stands in for them — see that section for why). `group-detail`'s round-reporting/scoring flow (a separate, unrelated feature — see [Groups & game scoring](#groups--game-scoring-supabase) below) is fully live on `development`/`main`.
 
 `dev-tools` also exists as a root-stack screen, but only on the dedicated `dev-tools` branch (and `unitTests`/`test/<feature>`) — see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below.
 
 ### State management
 
-Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `session`/`authLoading`/`profileLoading` (Supabase auth status — see Auth & data below), `currentUser` (`UserProfile | null`, fetched and cached via React Query rather than plain local state), `groups` (seeded from `HARDCODED_GROUPS` on `unitTests`/`test/<feature>`; seeded empty on `development`/`main` — see below), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. [src/utils/auth-status.ts](src/utils/auth-status.ts)'s `useAuthStatus()` combines session/profile status into `'loading' | 'unauthenticated' | 'no-profile' | 'ready'`; `index.tsx` and the tab layout both branch on it to redirect to `/sign-in`, `/profile-creation`, or render normally.
+Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `session`/`authLoading`/`profileLoading` (Supabase auth status — see Auth & data below), `currentUser` (`UserProfile | null`, fetched and cached via React Query rather than plain local state), `groups`/`groupsLoading` (fetched live from Supabase via `useGroupsQuery()` — see [Groups & game scoring](#groups--game-scoring-supabase) below, not seeded locally on any branch), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. [src/utils/auth-status.ts](src/utils/auth-status.ts)'s `useAuthStatus()` combines session/profile status into `'loading' | 'unauthenticated' | 'no-profile' | 'ready'`; `index.tsx` and the tab layout both branch on it to redirect to `/sign-in`, `/profile-creation`, or render normally.
 
 ### Auth & data (Supabase)
 
@@ -75,6 +75,15 @@ PlayLink authenticates and persists user profiles via [Supabase](https://supabas
 - `UserProfile.id` is a Supabase auth UUID (`string`), matching `auth.users.id` 1:1 so RLS policies on `profiles` are a one-line `auth.uid() = id` check.
 - **[src/lib/crypto-polyfill.ts](src/lib/crypto-polyfill.ts)** — a `SubtleCrypto.digest` shim backed by `expo-crypto`, since React Native has no native `crypto.subtle`. Supabase's PKCE auth flow needs it to hash the code verifier; `subtleDigest` is async so an unmapped algorithm rejects the returned promise rather than throwing synchronously, matching the real `SubtleCrypto.digest` contract.
 
+### Groups & game scoring (Supabase)
+
+Groups have real backend persistence (schema in `supabase/migrations/`, starting at `20260705140000_create_groups.sql`) — `AppContext`'s `groups` is fetched live via `useGroupsQuery()`, not client-only state (see [Data layer](#data-layer) below for what `HARDCODED_GROUPS` still is).
+
+- **[src/lib/group-api.ts](src/lib/group-api.ts)** — Supabase CRUD for groups/rosters (`fetchGroups`, `fetchGroupById`, `createGroup`, `joinGroup`, `leaveGroup`, `deleteGroup`, `setGroupHost`, `updateGroup`, `confirmGroup`), plus the round-scoring/dispute workflow: `submitGroupResult` scores placements via `scoring-utils.ts` and inserts a `group_results` row in `'pending'` status with a `DISPUTE_WINDOW_MS` (15 min) countdown; `disputeGroupResult` requires a reason and flips it to `'disputed'`, permanently blocking auto-finalization until the host calls `cancelGroupResult` and resubmits (there is no in-place "resolve" path, by design); `finalizeGroupResultIfReady` lazily flips an undisputed `'pending'` result to `'finalized'` once its window elapses (checked on read via the same `getNow()`/`devDateOffset` pattern `AppContext` uses elsewhere, not a scheduled job); `applyGroupResultPoints` applies the *caller's own* point/win-loss-draw delta to their profile — RLS only allows writing your own profile row, so a group's points don't fully settle until every participant has separately opened the app.
+- **[src/hooks/useGroupQueries.ts](src/hooks/useGroupQueries.ts)** — React Query wrappers around `group-api.ts` (`groupKeys` cache-key factory; `useGroupsQuery`/`useGroupQuery`/`useGroupResultsQuery` reads; create/join/leave/delete/setHost/update/confirm/submitResult/disputeResult/cancelResult mutations, each invalidating the relevant list/detail/results query key on success).
+- **[src/utils/scoring-utils.ts](src/utils/scoring-utils.ts)** — `computePlacementScores`, pure and unit-testable: the winner's base point pool is `10 * (participants - 1)`, each subsequent distinct rank earns half of the rank before it, the last distinct rank always scores zero placement points (overriding the halving formula), and every player additionally gets a flat `PARTICIPATION_POINTS` (10) regardless of standing. Tied placements score identically and are reported as `'draw'`, even when the tied rank is last.
+- [group-detail.tsx](src/app/group-detail.tsx) is the only consumer of this flow: host confirms the group (30-minute `CONFIRM_LOCK_MS` age lock plus a minimum-attendee check), reports each round via drag-and-drop placement order, and members can dispute a pending result with a required reason before it auto-finalizes.
+
 ### Data layer
 
 **[src/data/types.ts](src/data/types.ts)** is the canonical type file. It defines:
@@ -82,7 +91,7 @@ PlayLink authenticates and persists user profiles via [Supabase](https://supabas
 - `GameType` (`'mtg' | 'pokemon' | 'lorcana' | 'onepiece'`) and associated display constants (`GAME_LABELS`, `GAME_EMOJI`, `GAME_COLOR`).
 - `NoGoRule`, `FORMAT_OPTIONS`, `BRACKET_INFO`, `TIME_SLOTS`, `DAYS_OF_WEEK`.
 
-**[src/data/groups.ts](src/data/groups.ts)** exports `PlayerProfile` and `Group` everywhere. `HARDCODED_GROUPS` (a static seed list; it does not use `Math.random()`) exists only on `unitTests`/`test/<feature>` — removed from `development`/`main` (see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below).
+**[src/data/groups.ts](src/data/groups.ts)** exports `PlayerProfile` and `Group` everywhere. `PlayerProfile.id` is a Supabase auth UUID (`profiles.id` / `group_players.player_id`), not a locally-generated number, now that groups persist for real (see [Groups & game scoring](#groups--game-scoring-supabase) above). `HARDCODED_GROUPS` (a static seed list; it does not use `Math.random()`) exists only on `unitTests`/`test/<feature>` — removed from `development`/`main` (see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below) and predates the real backend anyway (its ids aren't UUIDs).
 
 **[src/data/seed-profiles.ts](src/data/seed-profiles.ts)** provides the pool of `UserProfile` objects used for rival matching. Exists only on `rival-system`, `unitTests`, and `test/<feature>` — removed from `development`/`main`/`shop`/`life-counter` along with the rest of rival matching (see below).
 
@@ -93,6 +102,8 @@ PlayLink authenticates and persists user profiles via [Supabase](https://supabas
 **[src/utils/group-utils.ts](src/utils/group-utils.ts)** — pure group business logic: `findGroupByUsername`, `isHostForUser`, `isGroupFull`, `canJoinGroup`, `buildNewPlayer`, `normalizePositiveInt`, `removePlayerFromGroup`, `setPlayerAsHost`, `generateJoinCode`, `formatBrackets`. Unit tested in `src/utils/group-utils.test.ts` on the `unitTests` branch (test files don't live on `development`/`main` — see Git workflow below).
 
 **[src/utils/rival-utils.ts](src/utils/rival-utils.ts)** — exports `findRivals`, which ranks seed profiles by win-rate proximity to the current user and always injects Dillon Carroll (id 113) as the first rival with his preferences mirrored from the current user. Unit tested in `src/utils/rival-utils.test.ts` on the `unitTests` branch (same rule — not on `development`/`main`).
+
+**[src/utils/scoring-utils.ts](src/utils/scoring-utils.ts)** — exports `computePlacementScores`; see [Groups & game scoring](#groups--game-scoring-supabase) above. Always shipped (no gating) — round scoring is a finished, live feature.
 
 When adding new group or rival behavior, put the logic in the appropriate utils file — do not inline it in screen components. Write or update its tests on the `unitTests`/`test/<feature>` lane (§2.5 of the workflow doc), not directly on `development` or `main`.
 
@@ -150,7 +161,7 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 ```
 
 - `life-counter` itself only advances to `development` when the developer explicitly says the feature is ready to come back — do not do this proactively, even if `life-counter` has been sitting untouched for a while.
-- `main`/`development` currently have life-counter's route and its entry points (group-detail's "Start Game" button, the secondary "Life Counter" button, and home's "Quick Actions" pickup card) removed/disabled behind a `GAME_SESSIONS_ENABLED` flag in [src/app/group-detail.tsx](src/app/group-detail.tsx). Restoring the feature means reverting that removal (or manually re-wiring) in addition to merging `life-counter` in — the merge alone will not restore the entry points, by design (see the removal commit's message for why).
+- `main`/`development` currently have life-counter's route (`pickup-setup.tsx`, `life-counter.tsx`) and every one of its entry points removed outright — there is no disabled button or feature flag standing in for them today (an earlier `GAME_SESSIONS_ENABLED` flag on `group-detail.tsx` briefly played that role but no longer exists in the code; the round-reporting/scoring flow that now lives on `group-detail.tsx` is the unrelated `game-scoring` feature, not life-counter). Restoring life-counter means merging it into `development` **and** adding new entry points (a "Start Game"/"Life Counter" button, home's pickup card, etc.) from scratch — there is nothing left to flag back on.
 
 ### Rival matching, Dev Tools, and mock group data (features gated off `development`/`main`)
 
@@ -158,7 +169,9 @@ Three more things have been removed from `development`/`main` for the same reaso
 
 - **Rival matching** (`src/data/seed-profiles.ts` and the parts of `profile-creation.tsx`, `stats.tsx`, and `player-profile.tsx` that consumed it). `seed-profiles.ts` exists only on `rival-system`, `unitTests`, and `test/<feature>`. On `development`/`main`/`shop`/`life-counter`, those three files each define a local, empty `RIVAL_POOL: UserProfile[]` placeholder in its place, so rival computation, the leaderboard, and profile lookups keep compiling and degrade safely instead of breaking. `rival-utils.ts` is unaffected — `findRivals` is generic and has no `SEED_PROFILES` dependency, so it stays a permanent, always-shipped domain utility.
 - **Dev Tools** (`src/app/dev-tools.tsx`). Removed from every branch except the dedicated `dev-tools` branch and `unitTests`/`test/<feature>`. On `development`/`main`, `(tabs)/profile.tsx`'s Dev Tools badge is gated behind `DEV_TOOLS_ENABLED = false`; the button's `router.push('/dev-tools')` call was deleted outright rather than flag-gated, because Expo Router's typed routes (`app.json` → `experiments.typedRoutes`) type-check route strings against files that exist — a runtime flag can't keep a deleted route compiling.
-- **Mock group data** (`HARDCODED_GROUPS` in `src/data/groups.ts`). Removed from every branch except `unitTests`/`test/<feature>` — it's the seed data behind Browse/Home/Group Detail, standing in for a real backend, not shippable content. `AppContext.tsx` seeds `groups` as `[]` instead. The `Group`/`PlayerProfile` types stay everywhere.
+- **Mock group data** (`HARDCODED_GROUPS` in `src/data/groups.ts`). Removed from every branch except `unitTests`/`test/<feature>` — it's stale seed data (numeric ids, predates the real groups backend) not shippable content. On `development`/`main`, `groups` is fetched live from Supabase instead (see [Groups & game scoring](#groups--game-scoring-supabase) above) — it is **not** seeded as `[]`; that only describes what `AppContext` looked like before the `game-scoring`/`database` features landed. The `Group`/`PlayerProfile` types stay everywhere.
+
+Despite the client-side rival UI being gated off, the server-side infra that backs it keeps running on **every** branch: `supabase/functions/refresh-rivals` is a daily Edge Function (scheduled by the `pg_cron`/`pg_net` job in `supabase/migrations/20260705130000_rival_refresh_cron.sql`, deployed with `--no-verify-jwt` and checking its own `x-cron-secret` header) that recomputes rival matches and, once a month, resets every profile's `monthlyPoints` to 0. This matters because `monthlyPoints` also drives the leaderboard in `(tabs)/stats.tsx`, which *is* live on `development`/`main` — the monthly reset isn't dead code tied to the gated feature, it's a shared Supabase project (one set of migrations, no per-branch isolation) feeding a screen that ships. `AppContext`'s local `resetMonthlyPoints` mutator still exists for client-driven resets, but the automatic monthly rollover happens server-side regardless of what's checked out locally.
 
 ### Commit rules
 
