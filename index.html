@@ -1010,8 +1010,8 @@
   <div class="modal-overlay" id="feature-survey-overlay" role="dialog" aria-modal="true" aria-labelledby="feature-survey-title">
     <div class="modal">
       <button type="button" class="modal-close" id="feature-survey-close" aria-label="Skip and close">&times;</button>
-      <h2 class="modal-title" id="feature-survey-title">What would you most like to see out of a gaming app?</h2>
-      <p class="modal-sub">Totally optional — pick as many as you want, or skip straight to the list.</p>
+      <h2 class="modal-title" id="feature-survey-title">What would you most like to see out of this app?</h2>
+      <p class="modal-sub">Totally optional: pick as many as you want, or skip straight to the list.</p>
       <form id="feature-survey-form">
         <fieldset class="feature-checks">
           <legend>Features</legend>
@@ -1023,6 +1023,7 @@
           <label><input type="checkbox" name="feature" value="Local event & tournament calendar" /> Local event &amp; tournament calendar</label>
           <label><input type="checkbox" name="feature" value="In-app group chat & scheduling" /> In-app group chat &amp; scheduling</label>
           <label><input type="checkbox" name="feature" value="Card & rules lookup tool" /> Card &amp; rules lookup tool</label>
+          <label><input type="checkbox" name="feature" value="Compatibility for other games" /> Compatibility for other games</label>
         </fieldset>
         <fieldset class="platform-pref">
           <legend>Would you use this more as a website or a mobile app?</legend>
@@ -1415,10 +1416,14 @@
     var featureForm = document.getElementById('feature-survey-form');
     var featureSkipBtn = document.getElementById('feature-survey-skip');
     var featureCloseBtn = document.getElementById('feature-survey-close');
-    var pendingEmail = null;
+    var pendingSignup = null;
 
-    function openFeatureSurvey(email) {
-      pendingEmail = email;
+    // Both entry points (hero email-only, and the fuller bottom form) route
+    // through this same popup before actually submitting — whatever the
+    // triggering form already collected rides along in `extra` and gets
+    // merged with the survey answers once the popup closes.
+    function openFeatureSurvey(email, extra, source) {
+      pendingSignup = { email: email, extra: extra || {}, source: source };
       featureForm.reset();
       featureOverlay.classList.add('open');
       document.body.classList.add('modal-open');
@@ -1431,15 +1436,15 @@
       document.body.classList.remove('modal-open');
     }
 
-    function finishHeroSignup(featureInterests, platformPreference) {
+    function finishSurveyAndSignup(featureInterests, platformPreference) {
       closeFeatureSurvey();
-      var email = pendingEmail;
-      pendingEmail = null;
-      if (!email) return;
-      submitSignup(email, {
-        feature_interests: featureInterests && featureInterests.length ? featureInterests : null,
-        platform_preference: platformPreference || null
-      }, 'hero');
+      var pending = pendingSignup;
+      pendingSignup = null;
+      if (!pending) return;
+      var extra = pending.extra;
+      extra.feature_interests = featureInterests && featureInterests.length ? featureInterests : null;
+      extra.platform_preference = platformPreference || null;
+      submitSignup(pending.email, extra, pending.source);
     }
 
     featureForm.addEventListener('submit', function (e) {
@@ -1449,30 +1454,30 @@
         .map(function (el) { return el.value; });
       var platformInput = featureForm.querySelector('input[name="platform_preference"]:checked');
       trackEvent('feature_survey_submit', { count: picks.length });
-      finishHeroSignup(picks, platformInput ? platformInput.value : null);
+      finishSurveyAndSignup(picks, platformInput ? platformInput.value : null);
     });
 
     featureSkipBtn.addEventListener('click', function () {
       trackEvent('feature_survey_skip');
-      finishHeroSignup([], null);
+      finishSurveyAndSignup([], null);
     });
 
     featureCloseBtn.addEventListener('click', function () {
       trackEvent('feature_survey_skip');
-      finishHeroSignup([], null);
+      finishSurveyAndSignup([], null);
     });
 
     featureOverlay.addEventListener('click', function (e) {
       if (e.target === featureOverlay) {
         trackEvent('feature_survey_skip');
-        finishHeroSignup([], null);
+        finishSurveyAndSignup([], null);
       }
     });
 
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && featureOverlay.classList.contains('open')) {
         trackEvent('feature_survey_skip');
-        finishHeroSignup([], null);
+        finishSurveyAndSignup([], null);
       }
     });
 
@@ -1691,7 +1696,7 @@
         status.style.color = 'var(--accent)';
         return;
       }
-      openFeatureSurvey(value);
+      openFeatureSurvey(value, {}, 'hero');
     });
 
     bottomForm.addEventListener('submit', function (e) {
@@ -1705,7 +1710,7 @@
       var games = Array.prototype.slice
         .call(bottomForm.querySelectorAll('input[name="games"]:checked'))
         .map(function (el) { return el.value; });
-      submitSignup(value, {
+      openFeatureSurvey(value, {
         location: selectedPlace ? selectedPlace.name : null,
         lat: selectedPlace ? selectedPlace.lat : null,
         lon: selectedPlace ? selectedPlace.lon : null,
