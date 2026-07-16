@@ -819,6 +819,97 @@
     color: var(--text-muted);
   }
   .game-checks input[type="checkbox"] { accent-color: var(--secondary); }
+
+  /* ---------- Feature survey modal ---------- */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 24px;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+  }
+  .modal-overlay.open { display: flex; }
+  body.modal-open { overflow: hidden; }
+  .modal {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 24px 60px -20px var(--shadow);
+    max-width: 460px;
+    width: 100%;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    padding: clamp(24px, 5vw, 34px);
+  }
+  .modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .modal-close:hover { color: var(--text); border-color: var(--secondary); }
+  .modal-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.05rem, 1rem + 0.4vw, 1.25rem);
+    letter-spacing: 0.01em;
+    margin: 0 32px 8px 0;
+  }
+  .modal-sub {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin: 0 0 18px;
+  }
+  .feature-checks, .platform-pref {
+    border: none;
+    margin: 0 0 18px;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .feature-checks legend, .platform-pref legend {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0;
+    margin-bottom: 4px;
+    width: 100%;
+  }
+  .feature-checks label, .platform-pref label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .feature-checks input, .platform-pref input { accent-color: var(--secondary); }
+  .modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
   .form-fine {
     font-family: var(--font-display);
     font-size: 0.68rem;
@@ -915,6 +1006,37 @@
       </div>
     </div>
   </section>
+
+  <div class="modal-overlay" id="feature-survey-overlay" role="dialog" aria-modal="true" aria-labelledby="feature-survey-title">
+    <div class="modal">
+      <button type="button" class="modal-close" id="feature-survey-close" aria-label="Skip and close">&times;</button>
+      <h2 class="modal-title" id="feature-survey-title">What would you most like to see out of a gaming app?</h2>
+      <p class="modal-sub">Totally optional — pick as many as you want, or skip straight to the list.</p>
+      <form id="feature-survey-form">
+        <fieldset class="feature-checks">
+          <legend>Features</legend>
+          <label><input type="checkbox" name="feature" value="Life counter / turn tracker" /> Life counter / turn tracker</label>
+          <label><input type="checkbox" name="feature" value="Create & find groups to play with" /> Create &amp; find groups to play with</label>
+          <label><input type="checkbox" name="feature" value="Trade binder for direct trades" /> Trade binder for direct trades</label>
+          <label><input type="checkbox" name="feature" value="Track play statistics" /> Track play statistics</label>
+          <label><input type="checkbox" name="feature" value="Deck & collection builder" /> Deck &amp; collection builder</label>
+          <label><input type="checkbox" name="feature" value="Local event & tournament calendar" /> Local event &amp; tournament calendar</label>
+          <label><input type="checkbox" name="feature" value="In-app group chat & scheduling" /> In-app group chat &amp; scheduling</label>
+          <label><input type="checkbox" name="feature" value="Card & rules lookup tool" /> Card &amp; rules lookup tool</label>
+        </fieldset>
+        <fieldset class="platform-pref">
+          <legend>Would you use this more as a website or a mobile app?</legend>
+          <label><input type="radio" name="platform_preference" value="Website" /> Website</label>
+          <label><input type="radio" name="platform_preference" value="Mobile app" /> Mobile app</label>
+          <label><input type="radio" name="platform_preference" value="Both equally" /> Both equally</label>
+        </fieldset>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="feature-survey-skip">Skip</button>
+          <button type="submit" class="btn btn-primary">Submit &amp; join the list</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <section id="what-it-is" style="padding:clamp(24px, 5vw, 56px) 0">
     <div class="wrap">
@@ -1229,7 +1351,8 @@
             <label><input type="checkbox" name="games" value="TTRPGs" /> TTRPGs</label>
             <label><input type="checkbox" name="games" value="Other" /> Other</label>
           </fieldset>
-          <input type="text" id="alpha-feedback" class="location-input" placeholder="What would make you actually use this? (optional suggestion box)" aria-label="Suggestion box" maxlength="280" />
+          <label for="alpha-feedback" class="location-hint" style="display:block">What would make you actually use this? (optional)</label>
+          <input type="text" id="alpha-feedback" class="location-input" placeholder="e.g. a way to find cEDH pods specifically" aria-label="What would make you actually use this?" maxlength="280" />
           <p class="form-status" id="alpha-status-bottom" role="status"></p>
           <p class="form-fine">No spam. One email, if there's ever something real. Unsubscribe anytime.</p>
         </form>
@@ -1284,6 +1407,74 @@
     var bottomStatus = document.getElementById('alpha-status-bottom');
     var bottomSubmitBtn = bottomForm.querySelector('button[type="submit"]');
     var emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // Hero "Opt In" doesn't sign up right away — it opens this optional survey
+    // first (what features they want, website vs. app), then completes the
+    // signup either way. Skipping/closing it never blocks the actual opt-in.
+    var featureOverlay = document.getElementById('feature-survey-overlay');
+    var featureForm = document.getElementById('feature-survey-form');
+    var featureSkipBtn = document.getElementById('feature-survey-skip');
+    var featureCloseBtn = document.getElementById('feature-survey-close');
+    var pendingEmail = null;
+
+    function openFeatureSurvey(email) {
+      pendingEmail = email;
+      featureForm.reset();
+      featureOverlay.classList.add('open');
+      document.body.classList.add('modal-open');
+      var firstCheckbox = featureForm.querySelector('input[type="checkbox"]');
+      if (firstCheckbox) firstCheckbox.focus();
+    }
+
+    function closeFeatureSurvey() {
+      featureOverlay.classList.remove('open');
+      document.body.classList.remove('modal-open');
+    }
+
+    function finishHeroSignup(featureInterests, platformPreference) {
+      closeFeatureSurvey();
+      var email = pendingEmail;
+      pendingEmail = null;
+      if (!email) return;
+      submitSignup(email, {
+        feature_interests: featureInterests && featureInterests.length ? featureInterests : null,
+        platform_preference: platformPreference || null
+      }, 'hero');
+    }
+
+    featureForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var picks = Array.prototype.slice
+        .call(featureForm.querySelectorAll('input[name="feature"]:checked'))
+        .map(function (el) { return el.value; });
+      var platformInput = featureForm.querySelector('input[name="platform_preference"]:checked');
+      trackEvent('feature_survey_submit', { count: picks.length });
+      finishHeroSignup(picks, platformInput ? platformInput.value : null);
+    });
+
+    featureSkipBtn.addEventListener('click', function () {
+      trackEvent('feature_survey_skip');
+      finishHeroSignup([], null);
+    });
+
+    featureCloseBtn.addEventListener('click', function () {
+      trackEvent('feature_survey_skip');
+      finishHeroSignup([], null);
+    });
+
+    featureOverlay.addEventListener('click', function (e) {
+      if (e.target === featureOverlay) {
+        trackEvent('feature_survey_skip');
+        finishHeroSignup([], null);
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && featureOverlay.classList.contains('open')) {
+        trackEvent('feature_survey_skip');
+        finishHeroSignup([], null);
+      }
+    });
 
     // Game pills up top double as a shortcut into the same "games" checkboxes
     // in the bottom signup form — pressing one checks the matching box and
@@ -1421,43 +1612,58 @@
       bottomStatus.style.color = color;
     }
 
+    // Duplicate resubmissions are handled by the alpha_signup_upsert RPC
+    // (see supabase/migrations/20260710000005_add_feature_survey.sql) rather
+    // than a plain insert — it returns 'inserted' for a brand-new signup or
+    // 'updated' when the email already existed, so a second visit can still
+    // save new details (survey answers, or city/games/feedback) against the
+    // same row instead of just bouncing off a duplicate-key error.
     function submitSignup(value, extra, source) {
       var utm = getUtmParams();
       submitBtn.disabled = true;
       bottomSubmitBtn.disabled = true;
       setStatusBoth('Adding you to the list…', 'var(--text-muted)');
 
-      var payload = {
-        email: value,
-        location: null,
-        lat: null,
-        lon: null,
-        games: null,
-        feedback: null,
-        utm_source: utm.utm_source,
-        utm_medium: utm.utm_medium,
-        utm_campaign: utm.utm_campaign
-      };
-      for (var key in extra) { payload[key] = extra[key]; }
-
       supabaseClient
-        .from('alpha_signups')
-        .insert(payload)
+        .rpc('alpha_signup_upsert', {
+          p_email: value,
+          p_location: 'location' in extra ? extra.location : null,
+          p_lat: 'lat' in extra ? extra.lat : null,
+          p_lon: 'lon' in extra ? extra.lon : null,
+          p_games: 'games' in extra ? extra.games : null,
+          p_feedback: 'feedback' in extra ? extra.feedback : null,
+          p_feature_interests: 'feature_interests' in extra ? extra.feature_interests : null,
+          p_platform_preference: 'platform_preference' in extra ? extra.platform_preference : null,
+          p_utm_source: utm.utm_source,
+          p_utm_medium: utm.utm_medium,
+          p_utm_campaign: utm.utm_campaign
+        })
         .then(function (res) {
           if (res.error) {
-            if (res.error.code === '23505') {
-              setStatusBoth('That email\'s already on the list.', 'var(--secondary)');
+            setStatusBoth('Something went wrong — try again in a moment.', 'var(--accent)');
+            submitBtn.disabled = false;
+            bottomSubmitBtn.disabled = false;
+            return;
+          }
+
+          if (res.data === 'updated') {
+            if (source === 'hero') {
+              setStatusBoth('Already on the list — add your city and games below ↓', 'var(--secondary)');
+              submitBtn.disabled = false;
+              bottomSubmitBtn.disabled = false;
+              bottomEmailInput.value = value;
+              document.getElementById('signup-more').scrollIntoView({ behavior: 'smooth', block: 'start' });
+              bottomEmailInput.focus({ preventScroll: true });
+            } else {
+              setStatusBoth('Thanks — details added to your signup.', 'var(--secondary)');
               emailInput.disabled = true;
               bottomEmailInput.disabled = true;
               locationInput.disabled = true;
               feedbackInput.disabled = true;
-            } else {
-              setStatusBoth('Something went wrong — try again in a moment.', 'var(--accent)');
-              submitBtn.disabled = false;
-              bottomSubmitBtn.disabled = false;
             }
             return;
           }
+
           setStatusBoth('You\'re on the list. Watch your inbox.', 'var(--secondary)');
           trackEvent('generate_lead', { method: source });
           form.reset();
@@ -1485,7 +1691,7 @@
         status.style.color = 'var(--accent)';
         return;
       }
-      submitSignup(value, {}, 'hero');
+      openFeatureSurvey(value);
     });
 
     bottomForm.addEventListener('submit', function (e) {
