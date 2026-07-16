@@ -773,11 +773,13 @@
   .location-suggestions button:hover,
   .location-suggestions button:focus-visible { background: var(--bg); }
   .location-hint {
+    display: block;
     font-family: var(--font-display);
     font-size: 0.66rem;
     letter-spacing: 0.02em;
     color: var(--text-muted);
     margin-top: 2px;
+    line-height: 1.4;
   }
   .more-fields { margin-top: 14px; }
   .more-fields > summary {
@@ -999,6 +1001,8 @@
               <input type="email" id="alpha-email" placeholder="you@example.com" aria-label="Email address" required />
               <button type="submit" class="btn btn-primary">I'd use this! Opt In</button>
             </div>
+            <label for="alpha-feedback-hero" class="location-hint">What's your biggest issue you run into in the gaming community? (optional)</label>
+            <input type="text" id="alpha-feedback-hero" class="location-input" placeholder="e.g. hard to find serious players nearby" aria-label="What's your biggest issue you run into in the gaming community?" maxlength="280" />
             <p class="form-status" id="alpha-status" role="status"></p>
             <p class="form-fine cta-punch">No Googling for an hour, no random chat servers, no bulletin boards. Just one place to find games.</p>
           </form>
@@ -1352,8 +1356,8 @@
             <label><input type="checkbox" name="games" value="TTRPGs" /> TTRPGs</label>
             <label><input type="checkbox" name="games" value="Other" /> Other</label>
           </fieldset>
-          <label for="alpha-feedback" class="location-hint" style="display:block">What would make you actually use this? (optional)</label>
-          <input type="text" id="alpha-feedback" class="location-input" placeholder="e.g. a way to find cEDH pods specifically" aria-label="What would make you actually use this?" maxlength="280" />
+          <label for="alpha-feedback" class="location-hint">What's your biggest issue you run into in the gaming community? (optional)</label>
+          <input type="text" id="alpha-feedback" class="location-input" placeholder="e.g. hard to find serious players nearby" aria-label="What's your biggest issue you run into in the gaming community?" maxlength="280" />
           <p class="form-status" id="alpha-status-bottom" role="status"></p>
           <p class="form-fine">No spam. One email, if there's ever something real. Unsubscribe anytime.</p>
         </form>
@@ -1395,6 +1399,7 @@
     var status = document.getElementById('alpha-status');
     var seatNum = document.getElementById('seat-num');
     var emailInput = document.getElementById('alpha-email');
+    var heroFeedbackInput = document.getElementById('alpha-feedback-hero');
     var locationInput = document.getElementById('alpha-location');
     var feedbackInput = document.getElementById('alpha-feedback');
     var suggestionsBox = document.getElementById('location-suggestions');
@@ -1662,6 +1667,7 @@
             } else {
               setStatusBoth('Thanks — details added to your signup.', 'var(--secondary)');
               emailInput.disabled = true;
+              heroFeedbackInput.disabled = true;
               bottomEmailInput.disabled = true;
               locationInput.disabled = true;
               feedbackInput.disabled = true;
@@ -1676,6 +1682,7 @@
           selectedPlace = null;
           closeSuggestions();
           emailInput.disabled = true;
+          heroFeedbackInput.disabled = true;
           locationInput.disabled = true;
           feedbackInput.disabled = true;
           bottomEmailInput.disabled = true;
@@ -1696,7 +1703,7 @@
         status.style.color = 'var(--accent)';
         return;
       }
-      openFeatureSurvey(value, {}, 'hero');
+      openFeatureSurvey(value, { feedback: heroFeedbackInput.value.trim() || null }, 'hero');
     });
 
     bottomForm.addEventListener('submit', function (e) {
