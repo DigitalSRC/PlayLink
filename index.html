@@ -905,6 +905,7 @@
     color: var(--text-muted);
   }
   .feature-checks input, .platform-pref input { accent-color: var(--secondary); }
+  .feature-checks label:has(input:disabled) { opacity: 0.4; cursor: not-allowed; }
   .modal-actions {
     display: flex;
     align-items: center;
@@ -985,7 +986,7 @@
     <div class="wrap hero-grid">
       <div class="hero-copy">
         <p class="eyebrow">Find local Magic: The Gathering Commander groups</p>
-        <h1>Someone near you is playing MTG. With PlayLink, you can find them.</h1>
+        <h1>Someone near you is playing your game. With PlayLink, you can find them.</h1>
         <p class="lede">Search for your ideal group to play with when you're traveling, friends are busy or just want to meet new people.</p>
         <div class="hero-ctas">
           <a class="btn btn-ghost" href="#how-it-works">See how it works</a>
@@ -1015,10 +1016,10 @@
     <div class="modal">
       <button type="button" class="modal-close" id="feature-survey-close" aria-label="Skip and close">&times;</button>
       <h2 class="modal-title" id="feature-survey-title">What would you most like to see out of this app?</h2>
-      <p class="modal-sub">Totally optional: pick as many as you want, or skip straight to the list.</p>
+      <p class="modal-sub">Totally optional: pick your top 3, or skip straight to the list.</p>
       <form id="feature-survey-form">
         <fieldset class="feature-checks">
-          <legend>Features</legend>
+          <legend>Choose up to 3</legend>
           <label><input type="checkbox" name="feature" value="Life counter / turn tracker" /> Life counter / turn tracker</label>
           <label><input type="checkbox" name="feature" value="Create & find groups to play with" /> Create &amp; find groups to play with</label>
           <label><input type="checkbox" name="feature" value="Trade binder for direct trades" /> Trade binder for direct trades</label>
@@ -1028,6 +1029,7 @@
           <label><input type="checkbox" name="feature" value="In-app group chat & scheduling" /> In-app group chat &amp; scheduling</label>
           <label><input type="checkbox" name="feature" value="Card & rules lookup tool" /> Card &amp; rules lookup tool</label>
           <label><input type="checkbox" name="feature" value="Compatibility for other games" /> Compatibility for other games</label>
+          <label><input type="checkbox" name="feature" value="Compatibility for other activities" /> Compatibility for other activities</label>
         </fieldset>
         <fieldset class="platform-pref">
           <legend>Would you use this more as a website or a mobile app?</legend>
@@ -1427,9 +1429,24 @@
     // through this same popup before actually submitting — whatever the
     // triggering form already collected rides along in `extra` and gets
     // merged with the survey answers once the popup closes.
+    var FEATURE_PICK_LIMIT = 3;
+    var featureCheckboxes = Array.prototype.slice.call(featureForm.querySelectorAll('input[name="feature"]'));
+
+    function enforceFeaturePickLimit() {
+      var checkedCount = featureCheckboxes.filter(function (el) { return el.checked; }).length;
+      featureCheckboxes.forEach(function (el) {
+        el.disabled = !el.checked && checkedCount >= FEATURE_PICK_LIMIT;
+      });
+    }
+
+    featureCheckboxes.forEach(function (el) {
+      el.addEventListener('change', enforceFeaturePickLimit);
+    });
+
     function openFeatureSurvey(email, extra, source) {
       pendingSignup = { email: email, extra: extra || {}, source: source };
       featureForm.reset();
+      enforceFeaturePickLimit();
       featureOverlay.classList.add('open');
       document.body.classList.add('modal-open');
       var firstCheckbox = featureForm.querySelector('input[type="checkbox"]');
