@@ -129,7 +129,7 @@ export default function GroupDetail() {
   useEffect(() => {
     if (!group || !activeResult) return;
     if (activeResult.status !== 'pending' || Date.now() < activeResult.disputeWindowEndsAt) return;
-    finalizeGroupResultIfReady(activeResult, group.roundsPlayed).then(() => {
+    finalizeGroupResultIfReady(activeResult).then(() => {
       queryClient.invalidateQueries({ queryKey: groupKeys.results(group.id) });
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(group.id) });
     });
