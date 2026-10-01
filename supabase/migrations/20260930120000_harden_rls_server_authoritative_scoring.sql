@@ -83,6 +83,10 @@ revoke insert, update, delete on public.group_results from authenticated;
 -- that function (there is a unit-test suite pinning the TS version on the unitTests branch); if the
 -- scoring rule ever changes, change both. Input: jsonb array of { playerId, placement }. Output:
 -- jsonb array of { playerId, placement, outcome, pointsAwarded }.
+-- Edge cases: empty or NULL input returns '[]'. Tied placements share a rank, score identically,
+-- and are reported 'draw' (even a tie for last). The last distinct rank always scores 0 placement
+-- points; a sole first is 'win', a sole last 'loss'; a single-player pod scores a win worth only
+-- the participation bonus (no opponent to beat).
 create or replace function public.compute_placement_scores(raw jsonb)
 returns jsonb
 language plpgsql
@@ -158,6 +162,10 @@ $$;
 -- Host submits a round. Scores are computed here from the raw placement order, so a host cannot
 -- send inflated pointsAwarded. Only the group's host may call this, and every placed player must
 -- actually be a member of the group.
+-- Edge cases: raises if the caller is unauthenticated, is not the group's host, or if any
+-- placement names a non-member. Does not itself prevent duplicate round_number values — the
+-- caller passes rounds_played + 1; a retry could create a second row, which the dispute/finalize
+-- flow then governs.
 create or replace function public.submit_group_result(
   p_group_id uuid,
   p_round_number int,
@@ -203,6 +211,9 @@ $$;
 
 -- Any member may dispute a pending round, with a required reason. Only appends the caller's own id
 -- and reason; cannot touch placements or another member's entry.
+-- Edge cases: raises if unauthenticated, the result doesn't exist, the caller isn't a group
+-- member, the reason is blank/whitespace, or the round is already finalized. No-op (keeps the
+-- original reason) if the caller already disputed it.
 create or replace function public.dispute_group_result(p_result_id uuid, p_reason text)
 returns void
 language plpgsql
@@ -244,6 +255,10 @@ $$;
 
 -- Lazily finalizes a pending, undisputed round once its dispute window has elapsed, and bumps the
 -- group's rounds_played atomically. Any member may trigger it (the time check is what gates it).
+-- Edge cases: raises if unauthenticated, the result doesn't exist, or the caller isn't a group
+-- member. No-op if the round isn't still pending or its window hasn't elapsed. The guarded UPDATE
+-- (status = 'pending') means a dispute landing from another device in the same instant wins —
+-- rounds_played is only bumped when this call actually flips the row (row_count = 1).
 create or replace function public.finalize_group_result(p_result_id uuid)
 returns void
 language plpgsql
@@ -284,6 +299,9 @@ $$;
 -- Applies the CALLER'S OWN share of a finalized round to their profile exactly once. Points and
 -- win/loss/draw come from the server-computed placements, not from anything the client sends, and
 -- this is the only path that can write those locked profile columns for a normal user.
+-- Edge cases: raises if unauthenticated, the result doesn't exist, or the round isn't finalized.
+-- No-op if the caller already applied it (idempotent via applied_by, so a reload never
+-- double-awards) or didn't participate in the round.
 create or replace function public.apply_group_result(p_result_id uuid)
 returns void
 language plpgsql
@@ -340,6 +358,9 @@ $$;
 -- Host-only cancel of a non-finalized round so a disputed round can be resubmitted. Also closes a
 -- latent gap: group_results never had a DELETE policy, so the old client-side cancelGroupResult
 -- (a direct .delete()) silently affected zero rows.
+-- Edge cases: raises if unauthenticated, the caller isn't the group's host, or the round is
+-- already finalized (finalized rounds are permanent — points may already be applied). No-op if
+-- the result no longer exists.
 create or replace function public.cancel_group_result(p_result_id uuid)
 returns void
 language plpgsql
