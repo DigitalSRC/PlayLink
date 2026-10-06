@@ -172,60 +172,59 @@ export const joinGroup = async (
   if (error) throw error;
 };
 
+/** What leave_group did: the caller left, the caller was last so the group is gone, or nothing. */
+export type LeaveGroupOutcome = 'left' | 'deleted' | 'not_member';
+
 /**
- * Removes a player from a group's roster.
- * Parameters: groupId, playerId.
- * Returns: a promise that resolves once the membership row is deleted.
- * Edge cases: no-op (no error) if the player wasn't a member; does not reassign the host role —
- * callers must call setGroupHost first if the leaving player is the host and others remain.
+ * Removes the signed-in user from a group via the leave_group database function. The server does
+ * the whole thing in one transaction: if they were the last member the group is deleted, and if
+ * they were the host with others remaining, the longest-standing member becomes host. There is
+ * deliberately no playerId argument - the server acts on whoever is signed in, so this can never
+ * be used to remove someone else.
+ * Parameters: groupId.
+ * Returns: 'left', 'deleted' (the caller was the last member), or 'not_member' (nothing changed).
+ * Edge cases: resolves to 'not_member' rather than throwing if the group no longer exists or the
+ * user wasn't in it, so leaving twice or leaving an already-cleaned-up group is harmless; throws
+ * if the user isn't signed in or on a Postgres/network error.
  */
-export const leaveGroup = async (groupId: string, playerId: string): Promise<void> => {
-  const { error } = await supabase
-    .from('group_players')
-    .delete()
-    .eq('group_id', groupId)
-    .eq('player_id', playerId);
+export const leaveGroup = async (groupId: string): Promise<LeaveGroupOutcome> => {
+  const { data, error } = await supabase.rpc('leave_group', { p_group_id: groupId });
   if (error) throw error;
+  return data as LeaveGroupOutcome;
 };
 
 /**
- * Deletes a group entirely (cascades to its group_players and group_results rows).
+ * Deletes a group for everyone via the delete_group database function (cascades to its roster
+ * and results). Only the group's host is allowed to; the server checks, not this client.
+ * This replaces a direct .delete(), which silently affected zero rows because `groups` never had
+ * a DELETE policy - so the old call reported success without deleting anything.
  * Parameters: groupId.
- * Returns: a promise that resolves once the delete completes.
- * Edge cases: none beyond the standard Postgres/network error; callers are responsible for
- * deciding when a group should be deleted (this app does so when its last player leaves).
+ * Returns: a promise that resolves once the group is gone.
+ * Edge cases: resolves without error if the group no longer exists (a repeated tap, or the
+ * stale-group cron got there first); throws if the caller isn't the host.
  */
 export const deleteGroup = async (groupId: string): Promise<void> => {
-  const { error } = await supabase.from('groups').delete().eq('id', groupId);
+  const { error } = await supabase.rpc('delete_group', { p_group_id: groupId });
   if (error) throw error;
 };
 
 /**
- * Reassigns a group's host role from one player to another.
- * Parameters: groupId, newHostId, previousHostId.
- * Returns: a promise that resolves once both role updates complete.
- * Edge cases: if the promotion succeeds but the demotion fails, the group is left with two
- * "Host" rows rather than none — acceptable since isHostForUser only checks for a match, not
- * exclusivity, and a caller can retry the demotion.
+ * Hands a group's host role to another member via the transfer_group_host database function.
+ * The server promotes the new host and demotes the old one in a single transaction, so the group
+ * always ends up with exactly one host. Only the current host may call it.
+ * This replaces two direct .update() calls, which silently affected zero rows because
+ * `group_players` never had an UPDATE policy - host transfer never actually persisted.
+ * Parameters: groupId, newHostId.
+ * Returns: a promise that resolves once the role has moved.
+ * Edge cases: no-op if newHostId is already the host; throws if the caller isn't the host, the
+ * target isn't a member of the group, or the group no longer exists.
  */
-export const setGroupHost = async (
-  groupId: string,
-  newHostId: string,
-  previousHostId: string
-): Promise<void> => {
-  const { error: promoteError } = await supabase
-    .from('group_players')
-    .update({ role: 'Host' })
-    .eq('group_id', groupId)
-    .eq('player_id', newHostId);
-  if (promoteError) throw promoteError;
-
-  const { error: demoteError } = await supabase
-    .from('group_players')
-    .update({ role: 'Member' })
-    .eq('group_id', groupId)
-    .eq('player_id', previousHostId);
-  if (demoteError) throw demoteError;
+export const setGroupHost = async (groupId: string, newHostId: string): Promise<void> => {
+  const { error } = await supabase.rpc('transfer_group_host', {
+    p_group_id: groupId,
+    p_new_host_id: newHostId,
+  });
+  if (error) throw error;
 };
 
 export interface UpdateGroupDraft {

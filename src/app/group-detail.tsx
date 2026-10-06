@@ -187,28 +187,13 @@ export default function GroupDetail() {
   };
 
   const handleLeave = async () => {
-    const leavingPlayer = group.players.find((p) => p.id === currentUser.id);
-    if (!leavingPlayer) return;
-
-    const remaining = group.players.filter((p) => p.id !== leavingPlayer.id);
-    const wasHost = leavingPlayer.role === 'Host';
+    if (!group.players.some((p) => p.id === currentUser.id)) return;
 
     try {
-      if (remaining.length === 0) {
-        await deleteMutation.mutateAsync({ groupId: group.id });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        router.back();
-        return;
-      }
-
-      if (wasHost) {
-        await setHostMutation.mutateAsync({
-          groupId: group.id,
-          newHostId: remaining[0].id,
-          previousHostId: leavingPlayer.id,
-        });
-      }
-      await leaveMutation.mutateAsync({ groupId: group.id, playerId: leavingPlayer.id });
+      // One server call: it removes this user, deletes the group if they were the last member,
+      // and appoints a new host if they were the host. Doing those as separate requests from
+      // here could leave the group half-changed if the app dropped off in between.
+      await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
     } catch (err) {
@@ -244,11 +229,9 @@ export default function GroupDetail() {
 
   const handleMakeHost = async (playerId: string) => {
     if (!isHost) return;
-    const previousHost = group.players.find((p) => p.role === 'Host');
-    if (!previousHost) return;
     Haptics.selectionAsync();
     try {
-      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId, previousHostId: previousHost.id });
+      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
     } catch (err) {
       Alert.alert('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
     }

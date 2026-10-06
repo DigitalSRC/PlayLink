@@ -62,6 +62,33 @@ security checklist.
 
 ---
 
+## Status update — 2026-10-06
+
+Work done since this file was written. None of it is applied to the Supabase project yet.
+
+- **Issue 4 (group lifecycle) is written.** Migration
+  `supabase/migrations/20261006140000_group_lifecycle_rpcs.sql` adds `leave_group`,
+  `delete_group` and `transfer_group_host` (SECURITY DEFINER, one transaction each), drops the
+  "any member can delete any member" policy, and revokes the direct UPDATE/DELETE grants.
+  `group-api.ts` / `useGroupQueries.ts` / `group-detail.tsx` call the functions. There is still
+  no kick feature, by design. Remaining for issue 4: apply it and try the flows in the app.
+- **Issue 1, partly done.** Both migrations were run against a local in-memory Postgres (PGlite)
+  with stand-ins for Supabase's `auth` schema and roles, then exercised as host / member /
+  outsider / signed-out. 65 checks pass, including: the old exploits fail (set own points, make
+  self developer, rewrite a result, kick a member, promote self), the submit -> dispute -> cancel
+  -> resubmit -> finalize -> apply flow works and awards points exactly once, and
+  `compute_placement_scores` matches `scoring-utils.ts` on all 3,413 placement combinations for
+  1-5 players. That covers the "validate parity" and "attempt the old exploits" tasks against a
+  stand-in; they still need repeating against the real project after `db push`, since PGlite is
+  not Supabase.
+- **Found and fixed by that run:** the scoring RPCs were not actually locked away from signed-out
+  callers. Supabase grants EXECUTE on new `public` functions to `anon` and `authenticated` by
+  name, so `revoke ... from public` alone did nothing for them; only each function's own
+  "Not authenticated" check stood in the way, and `compute_placement_scores` was callable by any
+  client. The revokes now name `anon` (and `authenticated` for the internal function).
+
+---
+
 ## Issue 1 — Apply & validate the RLS hardening migration
 
 **Title:** `Apply & validate the server-authoritative scoring / RLS migration`

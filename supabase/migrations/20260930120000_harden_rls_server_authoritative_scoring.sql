@@ -393,15 +393,17 @@ begin
 end;
 $$;
 
--- New functions are granted EXECUTE to PUBLIC by default, which would include the anon role.
--- Lock each to authenticated only. compute_placement_scores is internal (called by the definer
+-- New functions are executable by PUBLIC by default, and Supabase additionally grants EXECUTE on
+-- every new function in `public` to anon and authenticated by name (its default privileges). So
+-- revoking from PUBLIC alone changes nothing for those two roles - they must be named. Lock each
+-- RPC to authenticated only. compute_placement_scores is internal (called by the definer
 -- functions, which run as owner) so it is not exposed to clients at all.
-revoke execute on function public.compute_placement_scores(jsonb) from public;
-revoke execute on function public.submit_group_result(uuid, int, jsonb) from public;
-revoke execute on function public.dispute_group_result(uuid, text) from public;
-revoke execute on function public.finalize_group_result(uuid) from public;
-revoke execute on function public.apply_group_result(uuid) from public;
-revoke execute on function public.cancel_group_result(uuid) from public;
+revoke execute on function public.compute_placement_scores(jsonb) from public, anon, authenticated;
+revoke execute on function public.submit_group_result(uuid, int, jsonb) from public, anon;
+revoke execute on function public.dispute_group_result(uuid, text) from public, anon;
+revoke execute on function public.finalize_group_result(uuid) from public, anon;
+revoke execute on function public.apply_group_result(uuid) from public, anon;
+revoke execute on function public.cancel_group_result(uuid) from public, anon;
 
 grant execute on function public.submit_group_result(uuid, int, jsonb) to authenticated;
 grant execute on function public.dispute_group_result(uuid, text) to authenticated;
