@@ -4,16 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-PlayLink is an Expo Router app (v57) built with React Native and TypeScript, developed by Silvenari. Users create a profile and then browse, join, create, and manage play groups.
+PlayLink is an Expo Router app (v57) built with React Native and TypeScript, developed by Silvenari. Users sign in, create a profile, and then browse, join, create, and manage tabletop card game play groups, report round results for points, and get matched with rivals. The backend is Supabase (auth, Postgres with RLS, one Edge Function, `pg_cron` jobs).
+
+Everything in this file describes `development` unless it says otherwise. `main` is the `v0.1.0-mvp` release and predates the Supabase backend entirely (no `src/lib/`, no sign-in screen, rival data stubbed out) — don't infer how the app works from `main`.
 
 ## Commands
 
 - `npm install` — install dependencies
 - `npm start` / `npx expo start` — start the dev server (add `--android`, `--ios`, or `--web` to target a platform)
-- `npm test` — run all Jest tests (only meaningful on `unitTests` or a `test/<feature>` branch — test files are never present on `development`/`main`, see Git workflow below)
+- `npx tsc --noEmit` — type-check. There is no npm script for it. Errors under `example/` are noise (an untracked, gitignored Expo template whose `@/` imports don't resolve here); only errors under `src/` count. `supabase/functions/**` is excluded in `tsconfig.json` because it's Deno code.
+- `npm run lint` — run ESLint via expo lint. The baseline is **not** clean: it already reports dozens of errors under `src/`, almost all `react-hooks/refs`, `react-hooks/rules-of-hooks`, and `react/no-unescaped-entities`. Compare against the baseline rather than expecting zero, and don't mass-fix them as a side effect of other work.
+- `npm test` — run all Jest tests (`jest --runInBand`; only meaningful on `unitTests` or a `test/<feature>` branch — test files are never present on `development`/`main`, see Git workflow below)
 - `npx jest --testPathPattern=group-utils` — run a single test file by path fragment
 - `npx jest -t "normalizes invalid"` — run tests matching a name pattern
-- `npm run lint` — run ESLint via expo lint
+- `npx supabase functions deploy refresh-rivals --no-verify-jwt` — deploy the one Edge Function (CLI login/link details are in `CLAUDE.local.md`)
+
+Jest uses the `jest-expo` preset with `jsdom`. [jest.setup.env.js](jest.setup.env.js) injects placeholder `EXPO_PUBLIC_SUPABASE_*` values because `src/lib/supabase.ts` throws at import time without them, and `jest.config.js` maps AsyncStorage to its official mock — so a test can import anything that transitively touches the Supabase client without a real `.env`.
 
 ### Never put a test file inside `src/app/`
 
@@ -41,67 +47,90 @@ Before changing Expo or routing behavior, read the versioned docs at https://doc
 
 ### Navigation flow
 
-Expo Router file-based routing. [src/app/_layout.tsx](src/app/_layout.tsx) wraps the entire app in `AppProvider` and a `<Stack />` with headers hidden globally.
+Expo Router file-based routing. [src/app/_layout.tsx](src/app/_layout.tsx) nests, outermost first: `GestureHandlerRootView` (required at the root for `group-detail`'s drag-and-drop) → `PersistQueryClientProvider` → `AppProvider` → a `<Stack />` with headers hidden globally. The order matters: `AppProvider` calls React Query hooks, so the query client must sit above it.
 
 ```
-index (landing / welcome)
-  └─ profile-creation  (collects username, games, location, brackets)
-       └─ (tabs)/         ← authenticated zone; redirects to profile-creation if no user
-            ├─ home       (joined groups, upcoming sessions)
-            ├─ browse     (discover and join groups)
-            ├─ stats      (wins/losses/points, rivals)
-            ├─ shop       (placeholder)
-            └─ profile    (user settings, theme, sign-out)
+index             (no UI of its own — a spinner, then a Redirect based on useAuthStatus())
+  ├─ sign-in           (no session: email/password sign-up or sign-in)
+  ├─ profile-creation  (session but no profiles row: identity → games → preferences → rival reveal)
+  └─ (tabs)/           ← authenticated zone; its layout re-runs the same gate and redirects
+       ├─ stats          to /sign-in or /profile-creation if the user isn't 'ready'
+       ├─ shop         (placeholder)
+       ├─ home         (joined groups, upcoming sessions) — centered, rendered larger
+       ├─ browse       (discover, create, and join groups; tab label is "Find")
+       └─ profile      (user settings, theme, change password, sign-out)
 ```
+
+The tabs are listed above in their on-screen order (Stats, Shop, Home, Find, Profile), which is deliberate — see the comment in [(tabs)/_layout.tsx](src/app/(tabs)/_layout.tsx).
+
+`sign-in` does not rely on the auth listener alone to leave the screen: `index` and `sign-in` are sibling routes, so `index`'s gate only re-evaluates when remounted. After a successful sign-in the screen explicitly navigates back to `/`.
 
 Modal-like screens pushed on the root stack (not tabs): `group-detail`, `player-profile`.
 
 `pickup-setup` and `life-counter` also exist as root-stack screens, but only on the [life-counter branch](#the-life-counter-branch-feature-under-active-development-excluded-from-the-mvp) — they've been removed from `main`/`development` until that feature is finished (see Git workflow below), and neither has any entry point on `development`/`main` today (no disabled button or flag stands in for them — see that section for why). `group-detail`'s round-reporting/scoring flow (a separate, unrelated feature — see [Groups & game scoring](#groups--game-scoring-supabase) below) is fully live on `development`/`main`.
 
-`dev-tools` also exists as a root-stack screen, but only on the dedicated `dev-tools` branch (and `unitTests`/`test/<feature>`) — see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below.
+`dev-tools` also exists as a root-stack screen, but only on the dedicated `dev-tools` branch (and `unitTests`/`test/<feature>`) — see [Dev Tools and leftover seed data](#dev-tools-and-leftover-seed-data-gated-off-developmentmain) below.
 
 ### State management
 
-Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `session`/`authLoading`/`profileLoading` (Supabase auth status — see Auth & data below), `currentUser` (`UserProfile | null`, fetched and cached via React Query rather than plain local state), `groups`/`groupsLoading` (fetched live from Supabase via `useGroupsQuery()` — see [Groups & game scoring](#groups--game-scoring-supabase) below, not seeded locally on any branch), `rivals`, `chosenRivalId`, `mostPlayedAgainst`, `theme`, and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates). All screens read and mutate this state via the `useApp()` hook. [src/utils/auth-status.ts](src/utils/auth-status.ts)'s `useAuthStatus()` combines session/profile status into `'loading' | 'unauthenticated' | 'no-profile' | 'ready'`; `index.tsx` and the tab layout both branch on it to redirect to `/sign-in`, `/profile-creation`, or render normally.
+Global state lives in [src/context/AppContext.tsx](src/context/AppContext.tsx). `AppProvider` wraps the root layout and holds: `session`/`authLoading`/`profileLoading` (Supabase auth status — see Auth & data below), `currentUser` (`UserProfile | null`, fetched and cached via React Query rather than plain local state), `groups`/`groupsLoading` (fetched live from Supabase via `useGroupsQuery()` — see [Groups & game scoring](#groups--game-scoring-supabase) below, not seeded locally on any branch), `rivals` (rehydrated from the profile's stored `rivalIds` via `fetchProfilesByIds` whenever the profile loads or changes — see [Rival matching](#rival-matching) below), `chosenRivalId`, `mostPlayedAgainst`, `theme` (plain local state, defaults to `'dark'`, not persisted), and `devDateOffset` (a millisecond offset used in dev tools to simulate future dates; read it through `getNow()` rather than calling `Date.now()` in time-dependent logic). All screens read and mutate this state via the `useApp()` hook. [src/utils/auth-status.ts](src/utils/auth-status.ts)'s `useAuthStatus()` combines session/profile status into `'loading' | 'unauthenticated' | 'no-profile' | 'ready'`; `index.tsx` and the tab layout both branch on it to redirect to `/sign-in`, `/profile-creation`, or render normally.
 
 ### Auth & data (Supabase)
 
 PlayLink authenticates and persists user profiles via [Supabase](https://supabase.com). Requires `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in a local `.env` (see `.env.example`) — the app throws at startup if either is missing.
 
 - **[src/lib/supabase.ts](src/lib/supabase.ts)** — the Supabase client singleton (PKCE flow, AsyncStorage-backed session persistence). Only passes AsyncStorage as auth storage outside the Node SSR prerender pass that `app.json`'s `web.output: "static"` performs — see the file's comments before touching this.
-- **[src/lib/auth-api.ts](src/lib/auth-api.ts)** — `signInWithGoogle` (hosted OAuth redirect via `expo-web-browser`) and `signInWithApple` (native Sign in with Apple, iOS-only). Both need external console setup (Supabase Auth provider config, a Google Cloud OAuth client, an Apple Developer Services ID) before they work end-to-end.
-- **[src/lib/profile-api.ts](src/lib/profile-api.ts)** — `fetchProfile`/`insertProfile`/`updateProfile` wrapping the `profiles` table (schema in `supabase/migrations/`), plus the snake_case↔camelCase converters that keep the DB's column naming out of the rest of the app. `insertProfile`/`updateProfile` also best-effort sync `username`/`displayName` into the auth user's own metadata (`syncAuthUserMetadata`, via `supabase.auth.updateUser({ data })`) so Supabase Studio's Authentication → Users view shows a real identity instead of a blank one; failures there are logged, not thrown — `profiles` stays the source of truth.
+- **[src/lib/auth-api.ts](src/lib/auth-api.ts)** — `signUpWithEmail`/`signInWithEmail`/`updatePassword` are the live path: email/password is the only sign-in method currently surfaced, and the Supabase project has email confirmation disabled, so sign-up establishes a session immediately. `signInWithGoogle` (hosted OAuth redirect via `expo-web-browser`) and `signInWithApple` (native Sign in with Apple, iOS-only) are fully built but hidden behind `OAUTH_ENABLED = false` in [sign-in.tsx](src/app/sign-in.tsx) until their external console setup is done (Supabase Auth provider config, a Google Cloud OAuth client, an Apple Developer Services ID).
+- **[src/lib/profile-api.ts](src/lib/profile-api.ts)** — `fetchProfile`/`insertProfile`/`updateProfile` wrapping the `profiles` table (schema in `supabase/migrations/`), the read helpers behind other screens (`fetchProfilesByIds`, `fetchProfileByUsername` for `player-profile`, `fetchLeaderboard` for `stats`, `fetchRivalCandidates` for onboarding), plus the snake_case↔camelCase converters (`mapRowToProfile`/`mapProfileToRow`) that keep the DB's column naming out of the rest of the app. `insertProfile` throws `UsernameTakenError` on a case-insensitive username collision. `insertProfile`/`updateProfile` also best-effort sync `username`/`displayName` into the auth user's own metadata (`syncAuthUserMetadata`, via `supabase.auth.updateUser({ data })`) so Supabase Studio's Authentication → Users view shows a real identity instead of a blank one; failures there are logged, not thrown — `profiles` stays the source of truth.
 - **[src/hooks/useAuthSession.ts](src/hooks/useAuthSession.ts)** and **[src/hooks/useProfileQueries.ts](src/hooks/useProfileQueries.ts)** — React Query hooks (`useProfileQuery`, `useCreateProfileMutation`, `useUpdateProfileMutation`) that `AppContext` adapts into `currentUser` and its mutators (`awardPoints`/`addWin`/`addLoss`/`addDraw`/`resetMonthlyPoints`), using optimistic updates so they still feel instant. Cached via [src/lib/query-client.ts](src/lib/query-client.ts) (`PersistQueryClientProvider` in `_layout.tsx`), persisted to AsyncStorage, so a cached profile renders instantly on cold start before the network refetch completes.
 - `UserProfile.id` is a Supabase auth UUID (`string`), matching `auth.users.id` 1:1 so RLS policies on `profiles` are a one-line `auth.uid() = id` check.
 - **[src/lib/crypto-polyfill.ts](src/lib/crypto-polyfill.ts)** — a `SubtleCrypto.digest` shim backed by `expo-crypto`, since React Native has no native `crypto.subtle`. Supabase's PKCE auth flow needs it to hash the code verifier; `subtleDigest` is async so an unmapped algorithm rejects the returned promise rather than throwing synchronously, matching the real `SubtleCrypto.digest` contract.
 
 ### Groups & game scoring (Supabase)
 
-Groups have real backend persistence (schema in `supabase/migrations/`, starting at `20260705140000_create_groups.sql`) — `AppContext`'s `groups` is fetched live via `useGroupsQuery()`, not client-only state (see [Data layer](#data-layer) below for what `HARDCODED_GROUPS` still is).
+Groups have real backend persistence (schema in `supabase/migrations/`, starting at `20260705140000_create_groups.sql`: `groups`, `group_players`, `group_results`) — `AppContext`'s `groups` is fetched live via `useGroupsQuery()`, not client-only state.
+
+Two rules are enforced in the database, not just the client, and both affect how the UI must behave:
+
+- **One group per player.** `group_players.player_id` has a global unique index (`20260706120000_one_group_per_player.sql`), so a second create/join fails at the DB even if the client-side "already in a group" check was fooled by a not-yet-loaded groups list.
+- **Stale groups delete themselves.** An hourly `pg_cron` job (`20260706130000_stale_group_cleanup_cron.sql`) deletes any group whose `scheduled_at` is more than 12 hours in the past. Groups with no `scheduled_at` are never touched. A group vanishing between two reads is therefore normal, not a bug.
 
 - **[src/lib/group-api.ts](src/lib/group-api.ts)** — Supabase CRUD for groups/rosters (`fetchGroups`, `fetchGroupById`, `createGroup`, `joinGroup`, `leaveGroup`, `deleteGroup`, `setGroupHost`, `updateGroup`, `confirmGroup`), plus the round-scoring/dispute workflow: `submitGroupResult` scores placements via `scoring-utils.ts` and inserts a `group_results` row in `'pending'` status with a `DISPUTE_WINDOW_MS` (15 min) countdown; `disputeGroupResult` requires a reason and flips it to `'disputed'`, permanently blocking auto-finalization until the host calls `cancelGroupResult` and resubmits (there is no in-place "resolve" path, by design); `finalizeGroupResultIfReady` lazily flips an undisputed `'pending'` result to `'finalized'` once its window elapses (checked on read via the same `getNow()`/`devDateOffset` pattern `AppContext` uses elsewhere, not a scheduled job); `applyGroupResultPoints` applies the *caller's own* point/win-loss-draw delta to their profile — RLS only allows writing your own profile row, so a group's points don't fully settle until every participant has separately opened the app.
 - **[src/hooks/useGroupQueries.ts](src/hooks/useGroupQueries.ts)** — React Query wrappers around `group-api.ts` (`groupKeys` cache-key factory; `useGroupsQuery`/`useGroupQuery`/`useGroupResultsQuery` reads; create/join/leave/delete/setHost/update/confirm/submitResult/disputeResult/cancelResult mutations, each invalidating the relevant list/detail/results query key on success).
 - **[src/utils/scoring-utils.ts](src/utils/scoring-utils.ts)** — `computePlacementScores`, pure and unit-testable: the winner's base point pool is `10 * (participants - 1)`, each subsequent distinct rank earns half of the rank before it, the last distinct rank always scores zero placement points (overriding the halving formula), and every player additionally gets a flat `PARTICIPATION_POINTS` (10) regardless of standing. Tied placements score identically and are reported as `'draw'`, even when the tied rank is last.
 - [group-detail.tsx](src/app/group-detail.tsx) is the only consumer of this flow: host confirms the group (30-minute `CONFIRM_LOCK_MS` age lock plus a minimum-attendee check), reports each round via drag-and-drop placement order, and members can dispute a pending result with a required reason before it auto-finalizes.
 
+### Rival matching
+
+Rival matching is live on `development` and runs against real `profiles` rows — there is no seed pool involved. It is computed in two places that must agree:
+
+- **Client, once, at signup.** [profile-creation.tsx](src/app/profile-creation.tsx) calls `fetchRivalCandidates` and ranks them with `findRivals` from [rival-utils.ts](src/utils/rival-utils.ts), then best-effort persists the result to the profile's `rivalIds`. If nobody matches (e.g. the very first profile), the rival-reveal step is skipped rather than shown as a dead end.
+- **Server, daily.** `supabase/functions/refresh-rivals` (Deno; scheduled by the `pg_cron`/`pg_net` job in `supabase/migrations/20260705130000_rival_refresh_cron.sql`, deployed with `--no-verify-jwt` and checking its own `x-cron-secret` header) rewrites every profile's `rival_ids` and is the long-term source of truth. Its `rankRivals` is a **hand-maintained duplicate** of `findRivals`, because an Edge Function can't import app source — change the ranking rule in one and you must change it in the other.
+
+The ranking rule in both: candidates must share at least one game with the user, then are ordered by closeness of `monthlyPoints` (not lifetime win rate), capped at 3.
+
+The same Edge Function also resets every profile's `monthlyPoints` to 0 when the calendar month rolls over in Pacific time. `monthlyPoints` is what `(tabs)/stats.tsx`'s leaderboard (`fetchLeaderboard`) sorts by, so that reset is the season boundary for the leaderboard and rival matching together. `AppContext`'s local `resetMonthlyPoints` mutator still exists for client-driven resets, but the automatic rollover happens server-side. All branches share one Supabase project (one set of migrations, no per-branch isolation), so these jobs run regardless of what's checked out locally.
+
+`rival-utils.ts` still contains a leftover from the seed-data era: a hardcoded "Dillon Carroll" profile (`DILLON_ID = '113'`) that is injected as the first rival if the pool contains that id. Real profile ids are UUIDs, so this branch is inert in the shipped app — but the unit tests exercise it, and the file's header comment about `RIVAL_POOL` being empty "on this branch" is out of date.
+
 ### Data layer
 
 **[src/data/types.ts](src/data/types.ts)** is the canonical type file. It defines:
 - `UserProfile` — the logged-in user's full identity (games, brackets, noGo rules, wins/losses/points).
 - `GameType` (`'mtg' | 'pokemon' | 'lorcana' | 'onepiece'`) and associated display constants (`GAME_LABELS`, `GAME_EMOJI`, `GAME_COLOR`).
-- `NoGoRule`, `FORMAT_OPTIONS`, `BRACKET_INFO`, `TIME_SLOTS`, `DAYS_OF_WEEK`.
+- `NoGoRule`, `NO_GO_OPTIONS`, `FORMAT_OPTIONS`, `BRACKET_INFO`, `TIME_SLOTS`, `DAYS_OF_WEEK`.
 
-**[src/data/groups.ts](src/data/groups.ts)** exports `PlayerProfile` and `Group` everywhere. `PlayerProfile.id` is a Supabase auth UUID (`profiles.id` / `group_players.player_id`), not a locally-generated number, now that groups persist for real (see [Groups & game scoring](#groups--game-scoring-supabase) above). `HARDCODED_GROUPS` (a static seed list; it does not use `Math.random()`) exists only on `unitTests`/`test/<feature>` — removed from `development`/`main` (see [Rival matching, Dev Tools, and mock group data](#rival-matching-dev-tools-and-mock-group-data-features-gated-off-developmentmain) below) and predates the real backend anyway (its ids aren't UUIDs).
+**[src/data/groups.ts](src/data/groups.ts)** exports the `PlayerProfile` and `Group` types and nothing else. `PlayerProfile.id` is a Supabase auth UUID (`profiles.id` / `group_players.player_id`), not a locally-generated number.
 
-**[src/data/seed-profiles.ts](src/data/seed-profiles.ts)** provides the pool of `UserProfile` objects used for rival matching. Exists only on `rival-system`, `unitTests`, and `test/<feature>` — removed from `development`/`main`/`shop`/`life-counter` along with the rest of rival matching (see below).
+[src/data/random-data.ts](src/data/random-data.ts) holds string pools (names, locations, times) for possible future seeding; nothing imports it today.
 
-[src/data/random-data.ts](src/data/random-data.ts) holds string pools (names, locations, times) used by any future dynamic seeding.
+`src/lib/` is the only layer that talks to Supabase; `src/hooks/` wraps it in React Query; screens and `AppContext` consume the hooks (a few screens call `lib` read helpers directly inside their own `useQuery`). `src/utils/` stays pure and Supabase-free.
 
 ### Domain utilities
 
 **[src/utils/group-utils.ts](src/utils/group-utils.ts)** — pure group business logic: `findGroupByUsername`, `isHostForUser`, `isGroupFull`, `canJoinGroup`, `buildNewPlayer`, `normalizePositiveInt`, `removePlayerFromGroup`, `setPlayerAsHost`, `generateJoinCode`, `formatBrackets`. Unit tested in `src/utils/group-utils.test.ts` on the `unitTests` branch (test files don't live on `development`/`main` — see Git workflow below).
 
-**[src/utils/rival-utils.ts](src/utils/rival-utils.ts)** — exports `findRivals`, which ranks seed profiles by win-rate proximity to the current user and always injects Dillon Carroll (id 113) as the first rival with his preferences mirrored from the current user. Unit tested in `src/utils/rival-utils.test.ts` on the `unitTests` branch (same rule — not on `development`/`main`).
+**[src/utils/rival-utils.ts](src/utils/rival-utils.ts)** — exports `findRivals`; see [Rival matching](#rival-matching) above. Unit tested in `src/utils/rival-utils.test.ts` on the `unitTests` branch (same rule — not on `development`/`main`).
 
 **[src/utils/scoring-utils.ts](src/utils/scoring-utils.ts)** — exports `computePlacementScores`; see [Groups & game scoring](#groups--game-scoring-supabase) above. Always shipped (no gating) — round scoring is a finished, live feature.
 
@@ -120,6 +149,11 @@ the authoritative, detailed document. This section is the condensed summary an A
 needs to not violate it.
 
 ### Branch structure
+
+`origin` holds only the three base branches (`main`, `development`, `unitTests`) plus the
+`LandingPage` deployment branch. Every other branch in the model below is **local-only** — it
+exists on the machine of the developer working on it and is never pushed. See "What lives on
+`origin`" below.
 
 ```
 main                 ← RELEASE ONLY. What ships to MVP testers. Advances only when the
@@ -141,15 +175,27 @@ test/<feature>       ← created fresh per test cycle as a merge of `unitTests` 
                        Tests are written/run here.
 ```
 
+On `origin`: `main`, `development`, `unitTests`, `LandingPage`. Local only: every `<feature>`,
+`feature/<function>`, and `test/<feature>` branch.
+
+### What lives on `origin`
+
+- **Only `main`, `development`, and `unitTests` are pushed**, plus `LandingPage` (see below). Never push a `<feature>`, `feature/<function>`, or `test/<feature>` branch, and never set an upstream for one (`git push -u` on a feature branch is a mistake). Work reaches `origin` only by being merged into one of the base branches, which are then pushed.
+- **Claim work through GitHub Issues, not branches.** A local branch is invisible to everyone else, so it can't signal that a feature is taken. Before starting a feature, assign yourself its GitHub issue (create one if none exists). An assigned issue means someone is working on it; don't start parallel work on the same thing. Unassign yourself if you drop it.
+- **`LandingPage` is the one exception.** It holds the static marketing site (`index.html`, its own Supabase migrations) and GitHub Pages deploys straight from `origin/LandingPage` (Settings → Pages). Deleting it from `origin` takes the site down and breaks the flyer's QR code. It's worked on through a separate worktree (path in `CLAUDE.local.md`), never merged into the app branches, and is pushed directly.
+- **Local-only means no off-machine backup.** A disk failure or OS reinstall loses any feature branch that hasn't been merged into a base branch yet. Commit often, keep features small enough to merge promptly, and if a branch has to live for a long time, keep a backup of the repo folder.
+- **Pushing the base branches** happens right after they change: `git push origin development` after a feature merge, `git push origin unitTests` after a sync or after passing tests are merged back. `main` is pushed only as part of an explicitly-requested release, together with its tag (`git push origin main --tags`).
+- **Remote cleanup (2026-10-06):** every other branch was deleted from `origin` when this policy was adopted. Each one still exists locally on the machine that did the cleanup, and none had commits that weren't also in a local branch.
+
 - **`main` is release-only and off-limits for all routine work.** Never commit to it directly, and never merge into it without the developer explicitly asking to cut a release. Finishing a feature, passing tests, or merging into `development` does **not** imply permission to touch `main` — treat every `development → main` merge as requiring fresh, explicit authorization, same bar as a force-push.
 - **`development` is the default integration target, but merging into it is never automatic.** A green `test/<feature>` run is necessary but **not sufficient** — do not run `git checkout development && git merge <feature>` just because tests passed. Merging into `development` additionally requires the developer (or another developer) to explicitly confirm the feature is ready to land there. If that confirmation hasn't been given, stop after the tests pass and say so instead of merging. When older instructions or commit messages say "merge to main," that now means `development`, unless the developer is explicitly talking about cutting a release.
 - **Top-level feature branches still fork from `development`** — that part of the model is unchanged. Name them after the feature with no prefix: `life-counter`, `rival-system`, `shop`. See §5 of the full workflow doc for the current list. (The confirmation gate above is about what's allowed to merge back *into* `development`, not about where new branches originate from it.)
 - **Sub-work within a feature** uses `feature/<specific-function>` branched off that feature's own branch (e.g. `feature/rotate-button` off `life-counter`), merging back into it.
 - **Testing is a separate lane**, not a step inside `development`. `unitTests` stays synced with `development`; `test/<feature>` is a throwaway-and-recreate merge of `unitTests` + the feature branch, used to write and run tests. Passing tests promotes the tests into `unitTests` — it does **not** by itself promote the feature into `development`; that still needs explicit developer confirmation. Failing tests sends work back to the feature branch and `test/<feature>` gets recreated later.
-- **Never sync `unitTests` with a plain `git merge development`.** `development`'s history contains commits that delete unitTests-exclusive content (`dev-tools.tsx`, `seed-profiles.ts`, `HARDCODED_GROUPS`, test files) — if `unitTests` hasn't diverged since, that merge is a silent fast-forward that reapplies every one of those deletions with zero warning (this happened once, 2026-07-03). Always use `git merge development --no-ff` instead, and see §2.7 of the full workflow doc for the conflict-resolution checklist (which lines to keep from `unitTests` vs. take from `development` in the handful of partially-gated files).
+- **Never sync `unitTests` with a plain `git merge development`.** `development`'s history contains commits that delete unitTests-exclusive content (`dev-tools.tsx`, `seed-profiles.ts`, test files) — if `unitTests` hasn't diverged since, that merge is a silent fast-forward that reapplies every one of those deletions with zero warning (this happened once, 2026-07-03). Always use `git merge development --no-ff` instead, and see §2.7 of the full workflow doc for the conflict-resolution checklist (which lines to keep from `unitTests` vs. take from `development` in the handful of partially-gated files).
 - **`development` and `main` never contain test files.** No `*.test.ts` (or other test-suite files) may exist on either branch. `unitTests` and `test/<feature>` are the only branches where test files live. If a merge into `development` or a commit to `main` would introduce a test file, strip it out first — see §2.6 of the full workflow doc.
-- **Branches are not deleted as routine practice.** (A one-time cleanup happened when this document was written, removing branches whose entire history was already absorbed into `development` — see git log. That was a rare, explicit, developer-approved exception, not a standing policy.)
-- **Always update a branch from its parent before starting new work on it.** Before making any new commit on any branch, first merge in the latest state of its parent — a top-level feature branch's parent is `development`; a `feature/<function>` sub-branch's parent is the top-level feature branch it was forked from; `unitTests`'s parent is `development` via the `--no-ff` rule above. This is separate from `git pull` (which only catches up a branch with its own remote history) — a fix or update can land on the parent while a sibling branch sits untouched, and only merging the parent in surfaces it. (This was added after a bug fixed on one top-level feature branch resurfaced on a sibling top-level branch that had forked from `development` before the fix existed and was never re-synced — syncing from the parent routinely is the general habit that prevents this class of drift, even though in that specific case the fix hadn't reached `development` yet either; see the full workflow doc.)
+- **Local branches are not deleted as routine practice.** A finished feature's local branches can be kept as a reference; deleting them is the developer's call. (A one-time cleanup once removed branches whose entire history was already absorbed into `development` — that was a rare, explicit, developer-approved exception.) Remote branches are a different matter: anything on `origin` other than the base branches and `LandingPage` is a mistake and should be removed — see "What lives on `origin`" above.
+- **Always update a branch from its parent before starting new work on it.** Before making any new commit on any branch, first merge in the latest state of its parent — a top-level feature branch's parent is `development`; a `feature/<function>` sub-branch's parent is the top-level feature branch it was forked from; `unitTests`'s parent is `development` via the `--no-ff` rule above. Since feature branches have no remote, "latest `development`" means `git checkout development && git pull` first, then merge the local `development` into the feature branch. A fix or update can land on the parent while a sibling branch sits untouched, and only merging the parent in surfaces it. (This was added after a bug fixed on one top-level feature branch resurfaced on a sibling top-level branch that had forked from `development` before the fix existed and was never re-synced — syncing from the parent routinely is the general habit that prevents this class of drift, even though in that specific case the fix hadn't reached `development` yet either; see the full workflow doc.)
 
 ### The `life-counter` branch (feature under active development, excluded from the MVP)
 
@@ -163,15 +209,12 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 - `life-counter` itself only advances to `development` when the developer explicitly says the feature is ready to come back — do not do this proactively, even if `life-counter` has been sitting untouched for a while.
 - `main`/`development` currently have life-counter's route (`pickup-setup.tsx`, `life-counter.tsx`) and every one of its entry points removed outright — there is no disabled button or feature flag standing in for them today (an earlier `GAME_SESSIONS_ENABLED` flag on `group-detail.tsx` briefly played that role but no longer exists in the code; the round-reporting/scoring flow that now lives on `group-detail.tsx` is the unrelated `game-scoring` feature, not life-counter). Restoring life-counter means merging it into `development` **and** adding new entry points (a "Start Game"/"Life Counter" button, home's pickup card, etc.) from scratch — there is nothing left to flag back on.
 
-### Rival matching, Dev Tools, and mock group data (features gated off `development`/`main`)
+### Dev Tools and leftover seed data (gated off `development`/`main`)
 
-Three more things have been removed from `development`/`main` for the same reason as life-counter — they're unfinished, or they're seed/mock data standing in for a real backend rather than shippable content. Restoring any of them requires the developer's explicit go-ahead, same bar as life-counter — merging the source branch back in alone will not restore the entry points.
-
-- **Rival matching** (`src/data/seed-profiles.ts` and the parts of `profile-creation.tsx`, `stats.tsx`, and `player-profile.tsx` that consumed it). `seed-profiles.ts` exists only on `rival-system`, `unitTests`, and `test/<feature>`. On `development`/`main`/`shop`/`life-counter`, those three files each define a local, empty `RIVAL_POOL: UserProfile[]` placeholder in its place, so rival computation, the leaderboard, and profile lookups keep compiling and degrade safely instead of breaking. `rival-utils.ts` is unaffected — `findRivals` is generic and has no `SEED_PROFILES` dependency, so it stays a permanent, always-shipped domain utility.
-- **Dev Tools** (`src/app/dev-tools.tsx`). Removed from every branch except the dedicated `dev-tools` branch and `unitTests`/`test/<feature>`. On `development`/`main`, `(tabs)/profile.tsx`'s Dev Tools badge is gated behind `DEV_TOOLS_ENABLED = false`; the button's `router.push('/dev-tools')` call was deleted outright rather than flag-gated, because Expo Router's typed routes (`app.json` → `experiments.typedRoutes`) type-check route strings against files that exist — a runtime flag can't keep a deleted route compiling.
-- **Mock group data** (`HARDCODED_GROUPS` in `src/data/groups.ts`). Removed from every branch except `unitTests`/`test/<feature>` — it's stale seed data (numeric ids, predates the real groups backend) not shippable content. On `development`/`main`, `groups` is fetched live from Supabase instead (see [Groups & game scoring](#groups--game-scoring-supabase) above) — it is **not** seeded as `[]`; that only describes what `AppContext` looked like before the `game-scoring`/`database` features landed. The `Group`/`PlayerProfile` types stay everywhere.
-
-Despite the client-side rival UI being gated off, the server-side infra that backs it keeps running on **every** branch: `supabase/functions/refresh-rivals` is a daily Edge Function (scheduled by the `pg_cron`/`pg_net` job in `supabase/migrations/20260705130000_rival_refresh_cron.sql`, deployed with `--no-verify-jwt` and checking its own `x-cron-secret` header) that recomputes rival matches and, once a month, resets every profile's `monthlyPoints` to 0. This matters because `monthlyPoints` also drives the leaderboard in `(tabs)/stats.tsx`, which *is* live on `development`/`main` — the monthly reset isn't dead code tied to the gated feature, it's a shared Supabase project (one set of migrations, no per-branch isolation) feeding a screen that ships. `AppContext`'s local `resetMonthlyPoints` mutator still exists for client-driven resets, but the automatic monthly rollover happens server-side regardless of what's checked out locally.
+- **Dev Tools** (`src/app/dev-tools.tsx`). Removed from every branch except the dedicated `dev-tools` branch and `unitTests`/`test/<feature>`. On `development`/`main`, `(tabs)/profile.tsx`'s Dev Tools badge is gated behind `DEV_TOOLS_ENABLED = false`; the button's `router.push('/dev-tools')` call was deleted outright rather than flag-gated, because Expo Router's typed routes (`app.json` → `experiments.typedRoutes`) type-check route strings against files that exist — a runtime flag can't keep a deleted route compiling. Restoring it requires the developer's explicit go-ahead, same bar as life-counter, and means re-adding the file first, then the flag and button.
+- **Seed profiles** (`src/data/seed-profiles.ts`). Still present on `unitTests`, `dev-tools`, and `test/<feature>`, absent from `development`/`main`. Nothing imports it anymore now that rival matching reads real profiles (see [Rival matching](#rival-matching)), but a `unitTests` sync must still not delete it — see the `--no-ff` rule above.
+- **Mock group data** (`HARDCODED_GROUPS`). Gone from every branch, `unitTests` included, since groups got a real backend. If older docs or comments mention it, they're stale.
+- **`RIVAL_POOL` placeholders.** Before real rival matching landed, `profile-creation.tsx`, `stats.tsx`, and `player-profile.tsx` each defined a local, empty `RIVAL_POOL: UserProfile[]`. Those are gone on `development`, but still exist on `main` and on long-lived branches that haven't re-synced (`shop`, `life-counter`). Expect conflicts in those three files when such a branch merges `development` in — take `development`'s side.
 
 ### Commit rules
 
@@ -181,20 +224,21 @@ Despite the client-side rival UI being gated off, the server-side infra that bac
 
 ### Workflow steps — do this for every feature
 
-1. `git checkout <feature> && git pull`, then `git merge development` — start from the latest state of the relevant top-level feature branch (or `development` if starting a brand-new top-level feature) **and** bring in whatever has landed on `development` since this branch last synced. Don't skip the merge just because `git pull` reported nothing new — that only covers the branch's own remote history, not its parent.
+0. Claim the work: assign yourself the feature's GitHub issue (create one if it doesn't exist). Don't start on something another developer has assigned to themselves.
+1. `git checkout development && git pull`, then `git checkout <feature> && git merge development` — refresh `development` from `origin`, then bring it into the relevant top-level feature branch (for a brand-new top-level feature, `git checkout -b <feature>` from the freshly pulled `development` instead). Feature branches are local-only, so there's nothing to `git pull` on them; the merge from `development` is what keeps them current.
 2. `git checkout -b feature/<function>` — create the sub-branch for this specific piece of work. If `feature/<function>` already exists and work is resuming on it, first `git merge <feature>` (its parent, now synced per step 1) before continuing.
 3. Implement the work. Commit on the sub-branch when done.
 4. `git checkout <feature> && git merge feature/<function>` — bring it into the feature branch.
-5. When the feature is ready to test: `git checkout unitTests && git merge development --no-ff` (stay current — always `--no-ff`, see §2.7 of the workflow doc for why a plain merge can silently delete unitTests-exclusive content), then `git checkout -b test/<feature> && git merge <feature>`.
+5. When the feature is ready to test: `git checkout unitTests && git pull && git merge development --no-ff` (stay current — always `--no-ff`, see §2.7 of the workflow doc for why a plain merge can silently delete unitTests-exclusive content), then `git checkout -b test/<feature> && git merge <feature>`. `test/<feature>` is local-only like any feature branch.
 6. Write/update unit tests on `test/<feature>`. `npm test` — all tests must pass.
-7. On pass: merge the test additions back into `unitTests`. Do **not** merge into `development` yet — passing tests only clears the way to ask.
-8. Ask the developer (or confirm another developer has already signed off) that the feature is ready for `development`. Only after that explicit confirmation: `git checkout development && git merge <feature>`. Before merging, double-check the feature branch carries no test files into `development` (see §2.6 of the workflow doc) — strip any out first.
+7. On pass: merge the test additions back into `unitTests` and `git push origin unitTests`. Do **not** merge into `development` yet — passing tests only clears the way to ask.
+8. Ask the developer (or confirm another developer has already signed off) that the feature is ready for `development`. Only after that explicit confirmation: `git checkout development && git pull && git merge <feature>`, then `git push origin development`. Before merging, double-check the feature branch carries no test files into `development` (see §2.6 of the workflow doc) — strip any out first. Then close or update the feature's GitHub issue.
 9. On fail: go back to step 2–4 on the feature branch; recreate `test/<feature>` later and retry step 6.
 10. Do **not** merge to `main` at any point in this flow — that's a separate, explicitly-requested release step only.
 
 ### What to do at the start of every session
 
-1. Run `git branch -a` to orient yourself — know what branches exist.
+1. Run `git fetch --prune` then `git branch -a` to orient yourself — know what branches exist locally and on `origin`. If `origin` has any branch other than `main`, `development`, `unitTests`, and `LandingPage`, flag it to the developer rather than deleting it yourself (someone may have pushed it by mistake with work that exists nowhere else).
 2. Treat `development` as the source of truth for the current state of the project, and check it even if the session starts on a different branch. Other branches (especially `main`) can silently lag behind — `main`'s copy of this file and its workflow model once drifted out of date until a session caught it by diffing against `development` and reconciled it. When a branch's docs or code disagree with `development`, `development` wins unless the developer says otherwise; flag the drift and ask before assuming which side is correct.
 3. Ask the user which feature to work on if it is not obvious from context.
 4. Check out (or create) the appropriate branch before touching any files — a `feature/<function>` sub-branch off the relevant top-level feature branch for feature work, never off `main`.
@@ -206,7 +250,9 @@ Despite the client-side rival UI being gated off, the server-side infra that bac
 - Prefer small, focused changes that fit the existing React Native patterns instead of introducing new libraries or architecture.
 - Preserve the existing navigation flow; route params and screen names must remain consistent.
 - When modifying group-related logic, keep the `PlayerProfile` and `Group` types in [src/data/groups.ts](src/data/groups.ts) intact and update the tests in `src/utils/group-utils.test.ts` on the `unitTests`/`test/<feature>` lane when behavior changes — not on `development`/`main`.
-- Avoid editing content in [example/](example/) unless the task specifically requires it.
+- Avoid editing content in [example/](example/) unless the task specifically requires it (it's an untracked, gitignored Expo template, not part of the app).
+- Use relative imports. `tsconfig.json` defines an `@/*` → `src/*` alias, but nothing under `src/` uses it.
+- When a finished-but-not-yet-shippable capability needs hiding, follow the existing pattern: a module-level `const X_ENABLED = false` with a comment saying what flips it back on (`OAUTH_ENABLED`, `DEV_TOOLS_ENABLED`). A flag cannot hide a `router.push` to a route file that doesn't exist — typed routes won't compile it.
 
 ## Documentation requirement
 
