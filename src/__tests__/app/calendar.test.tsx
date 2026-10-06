@@ -34,6 +34,7 @@ const makeEvent = (overrides: Partial<LocalEvent>): LocalEvent => ({
   gameType: "mtg",
   format: "Commander",
   startTime: "18:00:00",
+  title: "",
   notes: "",
   ...overrides,
 });
@@ -45,6 +46,7 @@ const tuesdayNight = makeEvent({
   dayOfWeek: 2,
   startTime: "18:00:00",
   endTime: "22:00:00",
+  title: "Casual Commander",
   notes: "Casual pods",
 });
 const wednesdayNight = makeEvent({
@@ -89,6 +91,7 @@ describe("CalendarScreen", () => {
     expect(getByLabelText(/^2026-10-06, today/)).toBeTruthy();
     expect(getByText("Tuesday, October 6")).toBeTruthy();
     expect(getByText("Tuesday Game Store")).toBeTruthy();
+    expect(getByText("Casual Commander")).toBeTruthy();
     expect(getByText("6:00 PM – 10:00 PM")).toBeTruthy();
     expect(getByText("123 Example St, Reno, NV")).toBeTruthy();
     expect(getByText("Casual pods")).toBeTruthy();

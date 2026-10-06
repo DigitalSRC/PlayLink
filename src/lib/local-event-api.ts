@@ -13,11 +13,12 @@ interface LocalEventRow {
   event_date: string | null;
   start_time: string;
   end_time: string | null;
+  title: string;
   notes: string;
 }
 
 const LOCAL_EVENT_SELECT =
-  'id, area, venue_name, address, game_type, format, day_of_week, event_date, start_time, end_time, notes';
+  'id, area, venue_name, address, game_type, format, day_of_week, event_date, start_time, end_time, title, notes';
 
 const mapLocalEventRow = (row: LocalEventRow): LocalEvent => ({
   id: row.id,
@@ -30,6 +31,7 @@ const mapLocalEventRow = (row: LocalEventRow): LocalEvent => ({
   eventDate: row.event_date ?? undefined,
   startTime: row.start_time,
   endTime: row.end_time ?? undefined,
+  title: row.title,
   notes: row.notes,
 });
 
