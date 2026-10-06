@@ -56,8 +56,9 @@ a developer explicitly cuts a release.** Everything else exists to protect it.
 git checkout main          # release only — never commit here directly
 git checkout development   # integration branch — everything ready lands here
 git pull                   # refresh development from origin before branching
-git checkout -b my-feature # new top-level feature branch — stays local, never pushed
-git checkout -b feature/your-change my-feature
+git checkout -b my-feature # new top-level feature branch, owned by a team...
+git push -u origin my-feature                    # ...so share it on origin
+git checkout -b feature/your-change my-feature   # your own piece — stays local, never pushed
 ```
 
 | Branch | Lives on | Purpose |
@@ -66,13 +67,14 @@ git checkout -b feature/your-change my-feature
 | `development` | `origin` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
 | `unitTests` | `origin` | Kept in sync with `development`; feeds the `test/<feature>` cycle. |
 | `LandingPage` | `origin` | The static marketing site. GitHub Pages deploys from it, so it must stay on `origin`. |
-| `<feature>` (no prefix) | local only | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `shop`). |
-| `feature/<function>` | local only | Sub-branch of a top-level feature branch, scoped to one specific piece of work, merges back into it. |
+| `<feature>` (no prefix) | `origin`, while in progress | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `shop`). Owned by a team. Removed from `origin` once it merges into `development`. |
+| `feature/<function>` | local only | One person's piece of a feature. Sub-branch of the top-level feature branch, merges back into it. |
 | `test/<feature>` | local only | Created fresh per test cycle as `unitTests` + `<feature>`; tests are written and run here before promotion. |
 
-**Only the base branches go to `origin`.** Feature work stays on the machine of the person doing
-it and reaches `origin` by being merged into `development` (or `unitTests`), which is then pushed.
-To claim a feature so nobody else starts on it, assign yourself its GitHub issue.
+**Teams share, individuals stay local.** A feature branch is shared on `origin` so its whole team
+can work on it. Each person builds their part in a local `feature/<function>` branch, merges it
+into the team's feature branch, and pushes that. Claim work through GitHub Issues: the team is
+assigned the feature's issue, and each person assigns themselves the issue for their piece.
 
 Full details, diagrams, and the pass/fail testing cycle are documented in
 [`docs/version-control-workflow.md`](docs/version-control-workflow.md). `CLAUDE.md` has the

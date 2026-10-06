@@ -150,10 +150,11 @@ needs to not violate it.
 
 ### Branch structure
 
-`origin` holds only the three base branches (`main`, `development`, `unitTests`) plus the
-`LandingPage` deployment branch. Every other branch in the model below is **local-only** — it
-exists on the machine of the developer working on it and is never pushed. See "What lives on
-`origin`" below.
+Branches are split by **who owns them**. Shared branches live on `origin`: the base branches,
+the `LandingPage` deployment branch, and every top-level feature branch that's in progress (a
+feature is owned by a team, so the whole team needs it). Individual branches stay local: a
+`feature/<function>` is one person's piece of a feature, and `test/<feature>` is a throwaway test
+build. See "What lives on `origin`" below.
 
 ```
 main                 ← RELEASE ONLY. What ships to MVP testers. Advances only when the
@@ -166,36 +167,39 @@ development          ← integration branch. Everything finished and tested land
                        the MVP split, then briefly `Dev` — all pre-MVP history lives here.)
 <feature>            ← top-level feature branch, forked from `development`, named after the
                        feature itself with NO `feature/` prefix at this tier (e.g.
-                       `life-counter`, `rival-system`, `shop`).
+                       `life-counter`, `shop`). Owned by a team; shared on `origin`.
 feature/<function>   ← sub-branch of a top-level feature branch (forked from it, never from
                        `development` or `main`), named after the specific piece of work.
-                       Merges back into the top-level feature branch it came from.
+                       Owned by one person; local only. Merges back into the top-level
+                       feature branch it came from.
 unitTests            ← standing branch, kept up to date with `development`.
 test/<feature>       ← created fresh per test cycle as a merge of `unitTests` + `<feature>`.
                        Tests are written/run here.
 ```
 
-On `origin`: `main`, `development`, `unitTests`, `LandingPage`. Local only: every `<feature>`,
-`feature/<function>`, and `test/<feature>` branch.
+On `origin`: `main`, `development`, `unitTests`, `LandingPage`, and every in-progress `<feature>`.
+Local only: every `feature/<function>` and `test/<feature>` branch.
 
 ### What lives on `origin`
 
-- **Only `main`, `development`, and `unitTests` are pushed**, plus `LandingPage` (see below). Never push a `<feature>`, `feature/<function>`, or `test/<feature>` branch, and never set an upstream for one (`git push -u` on a feature branch is a mistake). Work reaches `origin` only by being merged into one of the base branches, which are then pushed.
-- **Claim work through GitHub Issues, not branches.** A local branch is invisible to everyone else, so it can't signal that a feature is taken. Before starting a feature, assign yourself its GitHub issue (create one if none exists). An assigned issue means someone is working on it; don't start parallel work on the same thing. Unassign yourself if you drop it.
-- **`LandingPage` is the one exception.** It holds the static marketing site (`index.html`, its own Supabase migrations) and GitHub Pages deploys straight from `origin/LandingPage` (Settings → Pages). Deleting it from `origin` takes the site down and breaks the flyer's QR code. It's worked on through a separate worktree (path in `CLAUDE.local.md`), never merged into the app branches, and is pushed directly.
-- **Local-only means no off-machine backup.** A disk failure or OS reinstall loses any feature branch that hasn't been merged into a base branch yet. Commit often, keep features small enough to merge promptly, and if a branch has to live for a long time, keep a backup of the repo folder.
-- **Pushing the base branches** happens right after they change: `git push origin development` after a feature merge, `git push origin unitTests` after a sync or after passing tests are merged back. `main` is pushed only as part of an explicitly-requested release, together with its tag (`git push origin main --tags`).
-- **Remote cleanup (2026-10-06):** every other branch was deleted from `origin` when this policy was adopted. Each one still exists locally on the machine that did the cleanup, and none had commits that weren't also in a local branch.
+- **Shared (pushed):** `main`, `development`, `unitTests`, `LandingPage`, and each top-level `<feature>` branch while it's in progress. A new top-level feature is pushed as soon as it's created (`git push -u origin <feature>`) so the rest of its team can pull it.
+- **Individual (never pushed):** `feature/<function>` and `test/<feature>`. Never push one or set an upstream for it. Your piece of a feature reaches `origin` by being merged into the team's `<feature>` branch, which you then push.
+- **A feature branch leaves `origin` once it merges into `development`.** After the merge, `git push origin --delete <feature>`. The local copy can stay as a record. This keeps `origin` limited to work that's actually in progress.
+- **Claim work through GitHub Issues.** A team claims a feature by being assigned its issue. Each person claims their piece through a smaller issue for that piece (a sub-issue of the feature's issue), assigned to them, before creating the matching `feature/<function>` branch. An assigned issue means "someone has this — don't start the same thing." Unassign yourself if you drop it.
+- **`LandingPage` is a deployment branch, not a feature.** It holds the static marketing site (`index.html`, its own Supabase migrations) and GitHub Pages deploys straight from `origin/LandingPage` (Settings → Pages). Never delete it from `origin`: that takes the site down and breaks the flyer's QR code. It's worked on through a separate worktree (path in `CLAUDE.local.md`), never merged into the app branches, and is pushed directly.
+- **Individual branches have no off-machine backup.** A disk failure or OS reinstall loses any `feature/<function>` work that hasn't been merged into its team branch and pushed. Merge your pieces up often.
+- **Pushing:** push a `<feature>` branch after merging a piece into it; `git push origin development` after a feature merge; `git push origin unitTests` after a sync or after passing tests are merged back. `main` is pushed only as part of an explicitly-requested release, together with its tag (`git push origin main --tags`).
+- **Remote cleanup (2026-10-06):** finished features and all `feature/*` and `test/*` branches were removed from `origin` when this policy was adopted. Each still exists locally on the machine that did the cleanup, and none had commits that weren't also in a local branch.
 
 - **`main` is release-only and off-limits for all routine work.** Never commit to it directly, and never merge into it without the developer explicitly asking to cut a release. Finishing a feature, passing tests, or merging into `development` does **not** imply permission to touch `main` — treat every `development → main` merge as requiring fresh, explicit authorization, same bar as a force-push.
 - **`development` is the default integration target, but merging into it is never automatic.** A green `test/<feature>` run is necessary but **not sufficient** — do not run `git checkout development && git merge <feature>` just because tests passed. Merging into `development` additionally requires the developer (or another developer) to explicitly confirm the feature is ready to land there. If that confirmation hasn't been given, stop after the tests pass and say so instead of merging. When older instructions or commit messages say "merge to main," that now means `development`, unless the developer is explicitly talking about cutting a release.
-- **Top-level feature branches still fork from `development`** — that part of the model is unchanged. Name them after the feature with no prefix: `life-counter`, `rival-system`, `shop`. See §5 of the full workflow doc for the current list. (The confirmation gate above is about what's allowed to merge back *into* `development`, not about where new branches originate from it.)
+- **Top-level feature branches still fork from `development`** — that part of the model is unchanged. Name them after the feature with no prefix: `life-counter`, `shop`. See §5 of the full workflow doc for the current list. (The confirmation gate above is about what's allowed to merge back *into* `development`, not about where new branches originate from it.)
 - **Sub-work within a feature** uses `feature/<specific-function>` branched off that feature's own branch (e.g. `feature/rotate-button` off `life-counter`), merging back into it.
 - **Testing is a separate lane**, not a step inside `development`. `unitTests` stays synced with `development`; `test/<feature>` is a throwaway-and-recreate merge of `unitTests` + the feature branch, used to write and run tests. Passing tests promotes the tests into `unitTests` — it does **not** by itself promote the feature into `development`; that still needs explicit developer confirmation. Failing tests sends work back to the feature branch and `test/<feature>` gets recreated later.
 - **Never sync `unitTests` with a plain `git merge development`.** `development`'s history contains commits that delete unitTests-exclusive content (`dev-tools.tsx`, `seed-profiles.ts`, test files) — if `unitTests` hasn't diverged since, that merge is a silent fast-forward that reapplies every one of those deletions with zero warning (this happened once, 2026-07-03). Always use `git merge development --no-ff` instead, and see §2.7 of the full workflow doc for the conflict-resolution checklist (which lines to keep from `unitTests` vs. take from `development` in the handful of partially-gated files).
 - **`development` and `main` never contain test files.** No `*.test.ts` (or other test-suite files) may exist on either branch. `unitTests` and `test/<feature>` are the only branches where test files live. If a merge into `development` or a commit to `main` would introduce a test file, strip it out first — see §2.6 of the full workflow doc.
-- **Local branches are not deleted as routine practice.** A finished feature's local branches can be kept as a reference; deleting them is the developer's call. (A one-time cleanup once removed branches whose entire history was already absorbed into `development` — that was a rare, explicit, developer-approved exception.) Remote branches are a different matter: anything on `origin` other than the base branches and `LandingPage` is a mistake and should be removed — see "What lives on `origin`" above.
-- **Always update a branch from its parent before starting new work on it.** Before making any new commit on any branch, first merge in the latest state of its parent — a top-level feature branch's parent is `development`; a `feature/<function>` sub-branch's parent is the top-level feature branch it was forked from; `unitTests`'s parent is `development` via the `--no-ff` rule above. Since feature branches have no remote, "latest `development`" means `git checkout development && git pull` first, then merge the local `development` into the feature branch. A fix or update can land on the parent while a sibling branch sits untouched, and only merging the parent in surfaces it. (This was added after a bug fixed on one top-level feature branch resurfaced on a sibling top-level branch that had forked from `development` before the fix existed and was never re-synced — syncing from the parent routinely is the general habit that prevents this class of drift, even though in that specific case the fix hadn't reached `development` yet either; see the full workflow doc.)
+- **Local branches are not deleted as routine practice.** A finished feature's local branches can be kept as a reference; deleting them is the developer's call. (A one-time cleanup once removed branches whose entire history was already absorbed into `development` — that was a rare, explicit, developer-approved exception.) Remote branches are a different matter: a feature branch is deleted from `origin` once it merges into `development`, and a `feature/*` or `test/*` branch on `origin` was pushed by mistake — see "What lives on `origin`" above.
+- **Always update a branch from its parent before starting new work on it.** Before making any new commit on any branch, first merge in the latest state of its parent — a top-level feature branch's parent is `development`; a `feature/<function>` sub-branch's parent is the top-level feature branch it was forked from; `unitTests`'s parent is `development` via the `--no-ff` rule above. "Latest" means latest from `origin`: `git pull` the parent first (and the branch itself, if it's a shared `<feature>` branch), then merge. A `feature/<function>` has no remote, so for it, pull the team's `<feature>` branch and merge that in. A fix or update can land on the parent while a sibling branch sits untouched, and only merging the parent in surfaces it. (This was added after a bug fixed on one top-level feature branch resurfaced on a sibling top-level branch that had forked from `development` before the fix existed and was never re-synced — syncing from the parent routinely is the general habit that prevents this class of drift, even though in that specific case the fix hadn't reached `development` yet either; see the full workflow doc.)
 
 ### The `life-counter` branch (feature under active development, excluded from the MVP)
 
@@ -224,21 +228,21 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 
 ### Workflow steps — do this for every feature
 
-0. Claim the work: assign yourself the feature's GitHub issue (create one if it doesn't exist). Don't start on something another developer has assigned to themselves.
-1. `git checkout development && git pull`, then `git checkout <feature> && git merge development` — refresh `development` from `origin`, then bring it into the relevant top-level feature branch (for a brand-new top-level feature, `git checkout -b <feature>` from the freshly pulled `development` instead). Feature branches are local-only, so there's nothing to `git pull` on them; the merge from `development` is what keeps them current.
-2. `git checkout -b feature/<function>` — create the sub-branch for this specific piece of work. If `feature/<function>` already exists and work is resuming on it, first `git merge <feature>` (its parent, now synced per step 1) before continuing.
+0. Claim the work: the team takes the feature's GitHub issue, and you assign yourself the issue for the specific piece you'll build (create either if it doesn't exist). Don't start on a piece someone else has assigned to themselves.
+1. `git checkout development && git pull`, then `git checkout <feature> && git pull && git merge development` — refresh `development` and the team's feature branch from `origin`, then bring `development` into the feature branch. For a brand-new top-level feature, `git checkout -b <feature>` from the freshly pulled `development` instead and `git push -u origin <feature>` so the team can use it.
+2. `git checkout -b feature/<function>` — create your local sub-branch for this specific piece of work (never pushed). If `feature/<function>` already exists and work is resuming on it, first `git merge <feature>` (its parent, now synced per step 1) before continuing.
 3. Implement the work. Commit on the sub-branch when done.
-4. `git checkout <feature> && git merge feature/<function>` — bring it into the feature branch.
-5. When the feature is ready to test: `git checkout unitTests && git pull && git merge development --no-ff` (stay current — always `--no-ff`, see §2.7 of the workflow doc for why a plain merge can silently delete unitTests-exclusive content), then `git checkout -b test/<feature> && git merge <feature>`. `test/<feature>` is local-only like any feature branch.
+4. `git checkout <feature> && git pull && git merge feature/<function>`, then `git push` — bring your piece into the team's feature branch and share it.
+5. When the feature is ready to test: `git checkout unitTests && git pull && git merge development --no-ff` (stay current — always `--no-ff`, see §2.7 of the workflow doc for why a plain merge can silently delete unitTests-exclusive content), then `git checkout -b test/<feature> && git merge <feature>`. `test/<feature>` is local-only and never pushed.
 6. Write/update unit tests on `test/<feature>`. `npm test` — all tests must pass.
 7. On pass: merge the test additions back into `unitTests` and `git push origin unitTests`. Do **not** merge into `development` yet — passing tests only clears the way to ask.
-8. Ask the developer (or confirm another developer has already signed off) that the feature is ready for `development`. Only after that explicit confirmation: `git checkout development && git pull && git merge <feature>`, then `git push origin development`. Before merging, double-check the feature branch carries no test files into `development` (see §2.6 of the workflow doc) — strip any out first. Then close or update the feature's GitHub issue.
+8. Ask the developer (or confirm another developer has already signed off) that the feature is ready for `development`. Only after that explicit confirmation: `git checkout development && git pull && git merge <feature>`, then `git push origin development`. Before merging, double-check the feature branch carries no test files into `development` (see §2.6 of the workflow doc) — strip any out first. Then `git push origin --delete <feature>` (the feature is finished; the local branch can stay), and close or update the feature's GitHub issue.
 9. On fail: go back to step 2–4 on the feature branch; recreate `test/<feature>` later and retry step 6.
 10. Do **not** merge to `main` at any point in this flow — that's a separate, explicitly-requested release step only.
 
 ### What to do at the start of every session
 
-1. Run `git fetch --prune` then `git branch -a` to orient yourself — know what branches exist locally and on `origin`. If `origin` has any branch other than `main`, `development`, `unitTests`, and `LandingPage`, flag it to the developer rather than deleting it yourself (someone may have pushed it by mistake with work that exists nowhere else).
+1. Run `git fetch --prune` then `git branch -a` to orient yourself — know what branches exist locally and on `origin`. If `origin` has a `feature/*` or `test/*` branch, or a `<feature>` branch that has already merged into `development`, flag it to the developer rather than deleting it yourself (someone may have pushed it by mistake with work that exists nowhere else).
 2. Treat `development` as the source of truth for the current state of the project, and check it even if the session starts on a different branch. Other branches (especially `main`) can silently lag behind — `main`'s copy of this file and its workflow model once drifted out of date until a session caught it by diffing against `development` and reconciled it. When a branch's docs or code disagree with `development`, `development` wins unless the developer says otherwise; flag the drift and ask before assuming which side is correct.
 3. Ask the user which feature to work on if it is not obvious from context.
 4. Check out (or create) the appropriate branch before touching any files — a `feature/<function>` sub-branch off the relevant top-level feature branch for feature work, never off `main`.
