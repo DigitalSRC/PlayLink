@@ -18,6 +18,8 @@ export interface LocalEvent {
   eventDate?: string;
   startTime: string;
   endTime?: string;
+  /** The event's own name, e.g. "Commander Free Play Wednesday"; empty when it has none. */
+  title: string;
   notes: string;
 }
 

@@ -23,7 +23,9 @@ const CALENDAR_FORMAT = 'Commander';
 /**
  * Calendar tab — a month view of the local Commander nights in the player's area.
  * Days that have a Commander night are marked with a dot and the current day is highlighted.
- * Tapping a day lists where to play that day: venue, start time, address, and any notes.
+ * Tapping a day lists where to play that day: venue, event name, start time, address, and notes.
+ * The events are synced automatically from the Wizards store locator (see
+ * supabase/functions/sync-local-events); this screen only reads the resulting table.
  * The area comes from the player's profile location and falls back to Reno-Sparks.
  * Parameters: none; reads currentUser and getNow from global context.
  * Returns: a scrollable screen with month navigation, the month grid, and the selected day's venues.
@@ -162,6 +164,9 @@ export default function CalendarScreen() {
                     style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                   >
                     <Text style={[styles.eventVenue, { color: colors.textPrimary }]}>{event.venueName}</Text>
+                    {event.title !== '' && (
+                      <Text style={[styles.eventTitle, { color: colors.textSecondary }]}>{event.title}</Text>
+                    )}
                     {start !== '' && (
                       <Text style={styles.eventTime}>{end !== '' ? `${start} – ${end}` : start}</Text>
                     )}
@@ -295,6 +300,11 @@ const styles = StyleSheet.create({
   eventVenue: {
     fontSize: 17,
     fontWeight: '700',
+    marginBottom: 4,
+  },
+  eventTitle: {
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 4,
   },
   eventTime: {

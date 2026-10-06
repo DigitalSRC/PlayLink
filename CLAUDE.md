@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-PlayLink is an Expo Router app (v57) built with React Native and TypeScript, developed by Silvenari. Users sign in, create a profile, and then browse, join, create, and manage tabletop card game play groups, report round results for points, and get matched with rivals. The backend is Supabase (auth, Postgres with RLS, one Edge Function, `pg_cron` jobs).
+PlayLink is an Expo Router app (v57) built with React Native and TypeScript, developed by Silvenari. Users sign in, create a profile, and then browse, join, create, and manage tabletop card game play groups, report round results for points, and get matched with rivals. The backend is Supabase (auth, Postgres with RLS, two Edge Functions, `pg_cron` jobs).
 
 Everything in this file describes `development` unless it says otherwise. `main` is the `v0.1.0-mvp` release and predates the Supabase backend entirely (no `src/lib/`, no sign-in screen, rival data stubbed out) — don't infer how the app works from `main`.
 
@@ -17,7 +17,7 @@ Everything in this file describes `development` unless it says otherwise. `main`
 - `npm test` — run all Jest tests (`jest --runInBand`; only meaningful on `unitTests` or a `test/<feature>` branch — test files are never present on `development`/`main`, see Git workflow below)
 - `npx jest --testPathPattern=group-utils` — run a single test file by path fragment
 - `npx jest -t "normalizes invalid"` — run tests matching a name pattern
-- `npx supabase functions deploy refresh-rivals --no-verify-jwt` — deploy the one Edge Function (CLI login/link details are in `CLAUDE.local.md`)
+- `npx supabase functions deploy refresh-rivals --no-verify-jwt` — deploy an Edge Function (CLI login/link details are in `CLAUDE.local.md`). `sync-local-events` deploys the same way.
 
 Jest uses the `jest-expo` preset with `jsdom`. [jest.setup.env.js](jest.setup.env.js) injects placeholder `EXPO_PUBLIC_SUPABASE_*` values because `src/lib/supabase.ts` throws at import time without them, and `jest.config.js` maps AsyncStorage to its official mock — so a test can import anything that transitively touches the Supabase client without a real `.env`.
 
@@ -102,9 +102,11 @@ Two rules are enforced in the database, not just the client, and both affect how
 
 ### Local events calendar
 
-The Calendar tab ([(tabs)/calendar.tsx](src/app/(tabs)/calendar.tsx)) is a read-only month view of local Commander nights — where and when organized play happens — and is deliberately separate from `groups`. Rows live in the `local_events` table (`supabase/migrations/20261006120000_create_local_events.sql`) and are developer-curated via Studio/the service role: clients have a SELECT grant and policy only, so there is no in-app way to add or edit one. An event is either weekly (`day_of_week`) or a one-off (`event_date`), and its times are venue wall-clock values with no time zone — never run them through `Date`. `source`/`external_uid` are reserved for a future feed sync.
+The Calendar tab ([(tabs)/calendar.tsx](src/app/(tabs)/calendar.tsx)) is a read-only month view of local Commander nights — where and when organized play happens — and is deliberately separate from `groups`. Rows live in the `local_events` table (`supabase/migrations/20261006120000_create_local_events.sql`). Clients have a SELECT grant and policy only, so there is no in-app way to add or edit one. An event is either weekly (`day_of_week`) or a one-off (`event_date`), and its times are venue wall-clock values with no time zone — never run them through `Date`.
 
-- **[src/data/local-events.ts](src/data/local-events.ts)** — the `LocalEvent` type and `EVENT_AREAS`. Reno-Sparks is the only area today; adding a city is one entry there plus rows with a matching `area` slug.
+Rows are filled automatically. `supabase/functions/sync-local-events` (Deno; every 6 hours via the `pg_cron` job in `20261006130000_sync_local_events_cron.sql`, deployed with `--no-verify-jwt`, reusing refresh-rivals's `CRON_SECRET`/vault `cron_secret`) pulls scheduled Commander events near each area from the service behind Wizards of the Coast's store locator (locator.wizards.com), where stores post their own events, and upserts them as `source = 'feed'` rows keyed by `external_uid`. That service is **undocumented and unsupported** — it can change without notice, so the function throws rather than accept a partial read, never deletes on a failed or empty fetch, and only ever touches `'feed'` rows. `source = 'curated'` rows are hand-added (Studio/service role) for venues the locator doesn't cover. The function's `areas.ts` is a **hand-maintained duplicate** of the app's `EVENT_AREAS` ids, same reason as `rankRivals`.
+
+- **[src/data/local-events.ts](src/data/local-events.ts)** — the `LocalEvent` type and `EVENT_AREAS`. Reno-Sparks is the only area today; adding a city is one entry there plus a matching entry (center point, radius, time zone) in `supabase/functions/sync-local-events/areas.ts` and a redeploy.
 - **[src/lib/local-event-api.ts](src/lib/local-event-api.ts)** / **[src/hooks/useLocalEventQueries.ts](src/hooks/useLocalEventQueries.ts)** — `fetchLocalEvents(area, format?)` and its React Query wrapper.
 - **[src/utils/calendar-utils.ts](src/utils/calendar-utils.ts)** — pure month-grid/date-key/event-matching helpers and `resolveEventArea`, which maps a profile's free-text location to an area (falling back to Reno-Sparks).
 - **[src/components/MonthCalendar.tsx](src/components/MonthCalendar.tsx)** — the grid itself; display only.
