@@ -55,18 +55,24 @@ a developer explicitly cuts a release.** Everything else exists to protect it.
 ```bash
 git checkout main          # release only — never commit here directly
 git checkout development   # integration branch — everything ready lands here
-git checkout life-counter  # example top-level feature branch
-git checkout -b feature/your-change life-counter
+git pull                   # refresh development from origin before branching
+git checkout -b my-feature # new top-level feature branch — stays local, never pushed
+git checkout -b feature/your-change my-feature
 ```
 
-| Branch | Purpose |
-|---|---|
-| `main` | Release only. Ships to MVP testers. Tagged at every release (e.g. `v0.1.0-mvp`). Never commit here, never merge here without an explicit release request. |
-| `development` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
-| `<feature>` (no prefix) | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `rival-system`, `shop`). |
-| `feature/<function>` | Sub-branch of a top-level feature branch, scoped to one specific piece of work, merges back into it. |
-| `unitTests` | Kept in sync with `development`; feeds the `test/<feature>` cycle. |
-| `test/<feature>` | Created fresh per test cycle as `unitTests` + `<feature>`; tests are written and run here before promotion. |
+| Branch | Lives on | Purpose |
+|---|---|---|
+| `main` | `origin` | Release only. Ships to MVP testers. Tagged at every release (e.g. `v0.1.0-mvp`). Never commit here, never merge here without an explicit release request. |
+| `development` | `origin` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
+| `unitTests` | `origin` | Kept in sync with `development`; feeds the `test/<feature>` cycle. |
+| `LandingPage` | `origin` | The static marketing site. GitHub Pages deploys from it, so it must stay on `origin`. |
+| `<feature>` (no prefix) | local only | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `shop`). |
+| `feature/<function>` | local only | Sub-branch of a top-level feature branch, scoped to one specific piece of work, merges back into it. |
+| `test/<feature>` | local only | Created fresh per test cycle as `unitTests` + `<feature>`; tests are written and run here before promotion. |
+
+**Only the base branches go to `origin`.** Feature work stays on the machine of the person doing
+it and reaches `origin` by being merged into `development` (or `unitTests`), which is then pushed.
+To claim a feature so nobody else starts on it, assign yourself its GitHub issue.
 
 Full details, diagrams, and the pass/fail testing cycle are documented in
 [`docs/version-control-workflow.md`](docs/version-control-workflow.md). `CLAUDE.md` has the
