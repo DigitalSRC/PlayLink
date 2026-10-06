@@ -55,13 +55,13 @@ index             (no UI of its own — a spinner, then a Redirect based on useA
   ├─ profile-creation  (session but no profiles row: identity → games → preferences → rival reveal)
   └─ (tabs)/           ← authenticated zone; its layout re-runs the same gate and redirects
        ├─ stats          to /sign-in or /profile-creation if the user isn't 'ready'
-       ├─ shop         (placeholder)
+       ├─ calendar     (month view of local Commander nights for the player's area)
        ├─ home         (joined groups, upcoming sessions) — centered, rendered larger
        ├─ browse       (discover, create, and join groups; tab label is "Find")
        └─ profile      (user settings, theme, change password, sign-out)
 ```
 
-The tabs are listed above in their on-screen order (Stats, Shop, Home, Find, Profile), which is deliberate — see the comment in [(tabs)/_layout.tsx](src/app/(tabs)/_layout.tsx).
+The tabs are listed above in their on-screen order (Stats, Calendar, Home, Find, Profile), which is deliberate — see the comment in [(tabs)/_layout.tsx](src/app/(tabs)/_layout.tsx). `(tabs)/shop.tsx` (a "coming soon" placeholder) still exists as a route but is hidden from the tab bar by `SHOP_TAB_ENABLED = false` in that layout; Calendar occupies its old slot until the shop is built.
 
 `sign-in` does not rely on the auth listener alone to leave the screen: `index` and `sign-in` are sibling routes, so `index`'s gate only re-evaluates when remounted. After a successful sign-in the screen explicitly navigates back to `/`.
 
@@ -99,6 +99,15 @@ Two rules are enforced in the database, not just the client, and both affect how
 - **[src/hooks/useGroupQueries.ts](src/hooks/useGroupQueries.ts)** — React Query wrappers around `group-api.ts` (`groupKeys` cache-key factory; `useGroupsQuery`/`useGroupQuery`/`useGroupResultsQuery` reads; create/join/leave/delete/setHost/update/confirm/submitResult/disputeResult/cancelResult mutations, each invalidating the relevant list/detail/results query key on success).
 - **[src/utils/scoring-utils.ts](src/utils/scoring-utils.ts)** — `computePlacementScores`, pure and unit-testable: the winner's base point pool is `10 * (participants - 1)`, each subsequent distinct rank earns half of the rank before it, the last distinct rank always scores zero placement points (overriding the halving formula), and every player additionally gets a flat `PARTICIPATION_POINTS` (10) regardless of standing. Tied placements score identically and are reported as `'draw'`, even when the tied rank is last.
 - [group-detail.tsx](src/app/group-detail.tsx) is the only consumer of this flow: host confirms the group (30-minute `CONFIRM_LOCK_MS` age lock plus a minimum-attendee check), reports each round via drag-and-drop placement order, and members can dispute a pending result with a required reason before it auto-finalizes.
+
+### Local events calendar
+
+The Calendar tab ([(tabs)/calendar.tsx](src/app/(tabs)/calendar.tsx)) is a read-only month view of local Commander nights — where and when organized play happens — and is deliberately separate from `groups`. Rows live in the `local_events` table (`supabase/migrations/20261006120000_create_local_events.sql`) and are developer-curated via Studio/the service role: clients have a SELECT grant and policy only, so there is no in-app way to add or edit one. An event is either weekly (`day_of_week`) or a one-off (`event_date`), and its times are venue wall-clock values with no time zone — never run them through `Date`. `source`/`external_uid` are reserved for a future feed sync.
+
+- **[src/data/local-events.ts](src/data/local-events.ts)** — the `LocalEvent` type and `EVENT_AREAS`. Reno-Sparks is the only area today; adding a city is one entry there plus rows with a matching `area` slug.
+- **[src/lib/local-event-api.ts](src/lib/local-event-api.ts)** / **[src/hooks/useLocalEventQueries.ts](src/hooks/useLocalEventQueries.ts)** — `fetchLocalEvents(area, format?)` and its React Query wrapper.
+- **[src/utils/calendar-utils.ts](src/utils/calendar-utils.ts)** — pure month-grid/date-key/event-matching helpers and `resolveEventArea`, which maps a profile's free-text location to an area (falling back to Reno-Sparks).
+- **[src/components/MonthCalendar.tsx](src/components/MonthCalendar.tsx)** — the grid itself; display only.
 
 ### Rival matching
 

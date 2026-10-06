@@ -335,8 +335,13 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
 - **`security-hardening`** — server-authoritative scoring and RLS hardening. The migration is
   written but not yet applied to Supabase; see `docs/security-backlog.md` (on that branch).
-- **`calendar-system`**, **`location-autocomplete`**, **`store-events`**, **`ui-polish`**,
-  **`onboarding-fixes`** — in-progress features with unmerged work.
+- **`event-calendar`** — the Calendar tab: a month view of local Commander nights from the
+  curated `local_events` table, starting with Reno-Sparks. Its migration is written but not yet
+  applied to Supabase.
+- **`calendar-system`** — shelved (2026-10-06) in favor of `event-calendar`: a weekly calendar of
+  player groups plus a one-group-per-day rule change. Kept as a reference, not planned to merge.
+- **`location-autocomplete`**, **`store-events`**, **`ui-polish`**, **`onboarding-fixes`** —
+  in-progress features with unmerged work.
 - **`LandingPage`** — the marketing site; not an app feature and never merged into the app
   branches. Lives on `origin` because GitHub Pages deploys from it (§2.9).
 
