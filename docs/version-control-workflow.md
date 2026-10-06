@@ -47,6 +47,11 @@ unitTests                Kept up to date with development at all times.
                             Tests are written and run here.
 ```
 
+**Where each tier lives** (§2.9): branches a team shares live on `origin` — `main`,
+`development`, `unitTests`, the `LandingPage` deployment branch, and every in-progress
+top-level `<feature>` branch. Branches one person owns stay local and are never pushed —
+`feature/<function>` and `test/<feature>`.
+
 ### 2.1 `main` — release only
 
 - Never commit directly.
@@ -73,10 +78,13 @@ unitTests                Kept up to date with development at all times.
 ### 2.3 Top-level feature branches — `<feature-name>`, no prefix
 
 - Forked from the current tip of `development`.
-- Named exactly after the feature: `life-counter`, `rival-system`, `shop`. Not
+- Named exactly after the feature: `life-counter`, `shop`. Not
   `feature/life-counter` — the bare name is the branch at this tier.
 - Long-lived for as long as the feature is under active development. Not deleted when
   work pauses; picked back up later from wherever it was left.
+- **Owned by a team and shared on `origin`.** Pushed as soon as it's created
+  (`git push -u origin <feature>`) so everyone on the team can pull it and merge their pieces in.
+  Deleted from `origin` once it merges into `development` (§2.9).
 - All work on that feature happens either directly here for small changes, or via
   sub-branches (below) for anything substantial enough to want its own history.
 
@@ -85,7 +93,10 @@ unitTests                Kept up to date with development at all times.
 - Forked from the top-level feature branch (e.g. `feature/rotate-button` off
   `life-counter`), not from `development` and never from `main`.
 - Scoped to one specific piece of work within the feature.
-- Merges back into its parent top-level feature branch when done.
+- Merges back into its parent top-level feature branch when done; the merged team branch is
+  then pushed.
+- **Owned by one person and local-only.** Never pushed. Each team member works on their own
+  piece in their own `feature/<function>` branch.
 
 ### 2.5 Testing lane — `unitTests` and `test/<feature>`
 
@@ -95,6 +106,8 @@ unitTests                Kept up to date with development at all times.
 - When a top-level feature branch is ready to be tested, create `test/<feature>` as a
   merge of `unitTests` (latest) and `<feature>` (latest) — e.g. `test/life-counter` =
   `unitTests` + `life-counter`.
+- `unitTests` lives on `origin`: `git pull` it before syncing, and `git push origin unitTests`
+  after every sync or test merge-back. `test/<feature>` is local-only and never pushed.
 - Write and run tests on `test/<feature>`.
   - **Tests pass:** merge the new/updated tests back into `unitTests`. This does **not**
     by itself put the feature into `development` — passing tests only clears the way to
@@ -211,9 +224,13 @@ branch last synced. The two are easy to conflate because they're both "getting c
 only the second one surfaces fixes/updates that happened elsewhere in the tree.
 
 - **Top-level feature branch** (`<feature-name>`): merge latest `development` in before
-  starting work each session — `git checkout <feature> && git pull && git merge development`.
+  starting work each session — `git checkout development && git pull`, then
+  `git checkout <feature> && git pull && git merge development`, then `git push`. (Pulling the
+  feature branch picks up teammates' merged pieces; pulling `development` first is what makes the
+  merge bring in everyone else's finished work.)
 - **Sub-branch** (`feature/<function>`): merge the latest state of its parent top-level feature
-  branch in before resuming work on it — `git checkout feature/<function> && git merge <feature>`.
+  branch in before resuming work on it — `git checkout <feature> && git pull`, then
+  `git checkout feature/<function> && git merge <feature>`.
 - **`unitTests`**: its parent is `development`, but use the `--no-ff` merge from §2.7 specifically
   — a plain `git merge development` here risks a silent fast-forward that deletes
   unitTests-exclusive content. §2.7's guidance supersedes the plain merge described above for
@@ -237,50 +254,93 @@ feature's unfinished work), consider whether it needs to be applied to other act
 branches directly (as a cherry-pick or equivalent) rather than assuming a `development` sync
 will eventually deliver it.
 
+### 2.9 What lives on `origin`, and how work is claimed
+
+**Policy (adopted 2026-10-06):** branches are split by who owns them. A **team** owns a feature;
+an **individual** owns one piece of it.
+
+| Branch | Owner | On `origin`? |
+|---|---|---|
+| `main`, `development`, `unitTests` | everyone | yes, always |
+| `LandingPage` | deployment | yes, always (see below) |
+| `<feature>` | the team building it | yes, while in progress; deleted from `origin` once merged into `development` |
+| `feature/<function>` | one person | no, never pushed |
+| `test/<feature>` | whoever runs the test cycle | no, never pushed (rebuilt every cycle; passing tests are shared through `unitTests`) |
+
+- **Pushing.** A new `<feature>` is pushed as soon as it's created (`git push -u origin
+  <feature>`). After merging your `feature/<function>` piece into it, `git push`. After a feature
+  lands, `git push origin development` and then `git push origin --delete <feature>` (keep the
+  local copy if you like). `git push origin unitTests` after a sync or test merge-back.
+  `git push origin main --tags` only as part of an explicitly requested release.
+- **Claiming work through GitHub Issues.** A team claims a feature by being assigned the feature's
+  issue. Each person claims their piece through a smaller issue for that piece (a sub-issue of
+  the feature's issue), assigned to them, before creating the matching `feature/<function>`
+  branch. Individual branches are local, so the issue is the only way teammates can see who's
+  doing what. Unassign yourself if you drop a piece; close the feature's issue when it merges into
+  `development`.
+- **`LandingPage` is a deployment branch.** The static marketing site lives on `LandingPage`, and
+  GitHub Pages deploys directly from `origin/LandingPage` (Settings → Pages → Deploy from branch).
+  It must stay on `origin` — deleting it takes the site offline and breaks the QR code printed on
+  the flyer. It's developed in its own worktree, pushed directly, and never merged into the app
+  branches.
+- **Backup risk.** A `feature/<function>` branch has no copy anywhere else until it's merged into
+  its team branch and pushed. Merge your pieces up often.
+- **Stray remote branches.** If `git fetch --prune && git branch -r` shows a `feature/*` or
+  `test/*` branch, or a `<feature>` that has already merged into `development`, it was pushed or
+  left by mistake. Check whether its commits exist anywhere else before deleting it from
+  `origin`; ask the person who pushed it first.
+- **One-time cleanup (2026-10-06):** when this policy was adopted, finished features and every
+  `feature/*` and `test/*` branch were removed from `origin`. Every one of them had a matching
+  local branch on the machine that did the cleanup, and none had commits that weren't also local.
+
 ---
 
 ## 3. Commit rules
 
 - Every discrete piece of work gets its own commit — don't batch unrelated changes.
 - Commit messages are descriptive: what changed and why, not just "fix" or "update."
-- Branches are never deleted as a matter of routine. (The one exception: a one-time
+- Local branches are never deleted as a matter of routine. (The one exception: a one-time
   cleanup pass when a branch's entire history is already fully absorbed into
   `development` and it serves no further purpose as a named reference — done rarely,
-  and only with the developer's explicit go-ahead.)
+  and only with the developer's explicit go-ahead.) Remote branches follow §2.9 instead:
+  a feature branch leaves `origin` once it merges into `development`, and individual branches
+  are never on `origin` at all.
 
 ## 4. Starting new work — quick reference
 
 | I want to... | Branch from | Branch name |
 |---|---|---|
-| Start a brand-new top-level feature | `development` | `<feature-name>` (no prefix) |
-| Work on one piece of an existing feature | that feature's branch | `feature/<specific-function>` |
+| Claim work before starting | — | team: assign the feature's GitHub issue; you: assign yourself the issue for your piece (§2.9) |
+| Start a brand-new top-level feature | freshly pulled `development` | `<feature-name>` (no prefix), then `git push -u origin <feature-name>` |
+| Work on one piece of an existing feature | that feature's branch (freshly pulled) | `feature/<specific-function>`, local-only |
 | Test a feature that's ready | merge of `unitTests` + `<feature>` | `test/<feature>` |
 | Fix something found during testing | the feature branch (or its `feature/*` sub-branch) | continue there, don't branch from `test/<feature>` |
 | Resume work on any existing branch | that branch | first merge its parent in (§2.8) before committing anything new |
-| Merge a tested feature into `development` | — | not automatic on green tests; requires explicit developer (or other-developer) confirmation the feature is ready — then merge, with no test files carried in (§2.6) |
+| Merge a tested feature into `development` | — | not automatic on green tests; requires explicit developer (or other-developer) confirmation the feature is ready — then merge, with no test files carried in (§2.6), `git push origin development`, and `git push origin --delete <feature>` |
+| Hand my piece to a teammate | — | merge what you have into the team's `<feature>` branch, push it, and reassign your piece's issue (§2.9) |
 | Cut a release | — | not a branch action; ask the developer, then merge `development` → `main` and tag it |
 
 ## 5. Current top-level feature branches
 
-As of this document's creation, the active top-level feature branches are:
+This list records which features exist and roughly what state they're in; who is working on
+each one is tracked by GitHub issue assignment, not here. As of 2026-10-06, the top-level
+branches not yet merged into `development` — all of them shared on `origin` (§2.9) — are:
 
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
-  `development`/`main` until finished; see [CLAUDE.md](../CLAUDE.md) for the specific
-  flag (`GAME_SESSIONS_ENABLED`) gating its entry points on `development`/`main`.
-- **`rival-system`** — the entire rival-matching feature (`src/data/seed-profiles.ts` and
-  everything downstream of it), in-progress and excluded from `development`/`main`/`shop`/
-  `life-counter` until finished; see [CLAUDE.md](../CLAUDE.md) for the `RIVAL_POOL`
-  placeholder pattern gating it. `src/utils/rival-utils.ts` is the one exception — a
-  generic, already-shipped domain utility that stays on every branch regardless.
-- **`shop`** — build-out of the shop tab, currently a placeholder screen on
-  `development`/`main`.
+  `development`/`main` until finished; it has no entry points or feature flag there — see
+  [CLAUDE.md](../CLAUDE.md).
+- **`shop`** — build-out of the shop tab, currently a placeholder screen on `development`.
 - **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
   Excluded from every other branch except `unitTests`/`test/<feature>`; see
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
+- **`security-hardening`** — server-authoritative scoring and RLS hardening. The migration is
+  written but not yet applied to Supabase; see `docs/security-backlog.md` (on that branch).
+- **`calendar-system`**, **`location-autocomplete`**, **`store-events`**, **`ui-polish`**,
+  **`onboarding-fixes`** — in-progress features with unmerged work.
+- **`LandingPage`** — the marketing site; not an app feature and never merged into the app
+  branches. Lives on `origin` because GitHub Pages deploys from it (§2.9).
 
-Mock group data (`HARDCODED_GROUPS` in `src/data/groups.ts`) has no dedicated top-level
-branch — it's seed/test data standing in for a real backend, not an in-progress feature, so
-it lives only on `unitTests`/`test/<feature>`; see [CLAUDE.md](../CLAUDE.md).
+`rival-system` has fully merged into `development` and is no longer an open feature.
 
-This list will grow as new top-level features start and shrink only when a feature ships
+This list will grow as new top-level features start and shrink when a feature ships
 (merges into `development`) or is explicitly abandoned by the developer.
