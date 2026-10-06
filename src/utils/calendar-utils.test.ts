@@ -21,6 +21,7 @@ const makeEvent = (overrides: Partial<LocalEvent>): LocalEvent => ({
   gameType: "mtg",
   format: "Commander",
   startTime: "18:00:00",
+  title: "",
   notes: "",
   ...overrides,
 });

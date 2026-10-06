@@ -47,6 +47,7 @@ const weeklyRow = {
   event_date: null,
   start_time: "18:00:00",
   end_time: "22:00:00",
+  title: "Commander Night",
   notes: "Casual pods",
 };
 
@@ -86,6 +87,7 @@ describe("local-event-api", () => {
         eventDate: undefined,
         startTime: "18:00:00",
         endTime: "22:00:00",
+        title: "Commander Night",
         notes: "Casual pods",
       },
     ]);
