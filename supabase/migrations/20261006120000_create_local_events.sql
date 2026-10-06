@@ -2,9 +2,10 @@
 -- night). This is a read-only directory of *where and when* organized play happens in an area -
 -- deliberately separate from `groups`, which are player-created pods people join and score.
 --
--- Rows are developer-curated for now (inserted via Studio / the service role); there is no in-app
--- submission flow. `source` and `external_uid` exist so a feed sync (see the store-events branch)
--- can later write rows into this same table without a schema change or a second calendar.
+-- Rows come from two places, told apart by `source`: 'feed' rows are written automatically by the
+-- sync-local-events Edge Function from the Wizards store/event locator, keyed by `external_uid`;
+-- 'curated' rows are added by hand (Studio / the service role) for venues the locator doesn't
+-- cover. The sync only ever touches 'feed' rows. There is no in-app submission flow.
 create table public.local_events (
   id uuid primary key default gen_random_uuid(),
   -- Area slug the event belongs to, e.g. 'reno-sparks'. Matches an id in src/data/local-events.ts's
@@ -24,6 +25,9 @@ create table public.local_events (
   -- read as 6:00 PM no matter what zone the viewer's phone is in.
   start_time time not null,
   end_time time,
+  -- The event's own name where it has one (e.g. "Commander Free Play Wednesday"); may be empty
+  -- for a curated row, in which case the app shows just the venue.
+  title text not null default '',
   notes text not null default '',
   source text not null default 'curated' check (source in ('curated', 'feed')),
   -- The feed's own id for this event; only meaningful when source = 'feed'.
@@ -44,10 +48,12 @@ create table public.local_events (
 
 create index local_events_area_idx on public.local_events (area) where active;
 
--- Dedup key for a future feed sync: re-running it must update an existing row, not insert a copy.
+-- Dedup key for the feed sync (supabase/functions/sync-local-events): re-running it must update
+-- an existing row, not insert a copy. Deliberately NOT a partial index - an upsert's ON CONFLICT
+-- can only target a plain unique index - and it doesn't need to be one: Postgres treats NULLs as
+-- distinct, so any number of curated rows (external_uid null) coexist in the same area.
 create unique index local_events_feed_uid_idx
-  on public.local_events (area, external_uid)
-  where external_uid is not null;
+  on public.local_events (area, external_uid);
 
 -- Default-deny. RLS is on with a single SELECT policy, and the table-level grants are narrowed to
 -- match, so a signed-in client can read active rows and nothing else. No INSERT/UPDATE/DELETE
