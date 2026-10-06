@@ -236,7 +236,23 @@ export const insertProfile = async (
   userId: string,
   draft: Omit<UserProfile, 'id'>
 ): Promise<UserProfile> => {
-  const row = { id: userId, ...mapProfileToRow(draft) };
+  // Send only the identity columns the client is allowed to set at creation. Score and privilege
+  // columns (wins/losses/draws/points/monthly_points/is_developer) are intentionally omitted:
+  // they default to their zero/false values server-side and the harden_rls migration revokes the
+  // client's grant to insert them at all, so including them here would make the insert fail. This
+  // is what stops a crafted onboarding request from creating a profile that already has points.
+  const row = {
+    id: userId,
+    ...mapProfileToRow({
+      username: draft.username,
+      displayName: draft.displayName,
+      location: draft.location,
+      games: draft.games,
+      preferredFormats: draft.preferredFormats,
+      brackets: draft.brackets,
+      noGo: draft.noGo,
+    }),
+  };
   const { data, error } = await supabase.from('profiles').insert(row).select().single();
 
   if (error) {
