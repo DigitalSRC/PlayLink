@@ -2,15 +2,18 @@ import { describe, expect, it } from "@jest/globals";
 import { EventArea, LocalEvent } from "../data/local-events";
 import {
   buildMonthGrid,
-  countEventsByDay,
   dateKeyFromMs,
   eventsOnDate,
   formatDayHeading,
   formatEventTime,
   formatMonthTitle,
+  listFormats,
   resolveEventArea,
   shiftMonth,
+  shortVenueName,
   toDateKey,
+  upcomingAgenda,
+  venueLabelsByDay,
 } from "./calendar-utils";
 
 const makeEvent = (overrides: Partial<LocalEvent>): LocalEvent => ({
@@ -183,24 +186,121 @@ describe("calendar-utils", () => {
     });
   });
 
-  describe("countEventsByDay", () => {
-    it("counts events per day and omits days with none", () => {
+  describe("shortVenueName", () => {
+    it("shortens the real Reno-Sparks store names to fit a day cell", () => {
+      expect(shortVenueName("Kobold's Keep")).toBe("Kobold's");
+      expect(shortVenueName("The Glass Die")).toBe("Glass Die");
+      expect(shortVenueName("Monsters & Mayhem Games")).toBe("Monsters");
+      expect(shortVenueName("Comic Kingdom")).toBe("Comic");
+      expect(shortVenueName("Coffee N' Comics - Moana")).toBe("Coffee");
+      expect(shortVenueName("Game Kastle - Reno")).toBe("Game");
+      expect(shortVenueName("GameStop - 2603 - Ridgeview Plaza")).toBe("GameStop");
+      expect(shortVenueName("Ironwood Games")).toBe("Ironwood");
+      expect(shortVenueName("The Coffer")).toBe("Coffer");
+    });
+
+    it("never returns more than 9 characters", () => {
+      const cut = shortVenueName("Supercalifragilistic Games");
+      expect(cut).toHaveLength(9);
+      expect(cut.endsWith("…")).toBe(true);
+    });
+
+    it("returns an empty string for a blank name", () => {
+      expect(shortVenueName("")).toBe("");
+      expect(shortVenueName("   ")).toBe("");
+    });
+  });
+
+  describe("venueLabelsByDay", () => {
+    it("lists each day's venues in start order and omits days with none", () => {
       const events = [
-        makeEvent({ id: "a", dayOfWeek: 3 }),
-        makeEvent({ id: "b", dayOfWeek: 3 }),
-        makeEvent({ id: "c", eventDate: "2026-10-10" }),
+        makeEvent({ id: "a", venueName: "The Coffer", dayOfWeek: 3, startTime: "18:00:00" }),
+        makeEvent({ id: "b", venueName: "Kobold's Keep", dayOfWeek: 3, startTime: "15:00:00" }),
+        makeEvent({ id: "c", venueName: "Comic Kingdom", eventDate: "2026-10-10" }),
       ];
-      const counts = countEventsByDay(events, 2026, 9);
-      expect([...counts.keys()]).toEqual([7, 10, 14, 21, 28]);
-      expect(counts.get(7)).toBe(2);
-      expect(counts.get(10)).toBe(1);
-      expect(counts.has(8)).toBe(false);
+      const labels = venueLabelsByDay(events, 2026, 9);
+      expect([...labels.keys()]).toEqual([7, 10, 14, 21, 28]);
+      expect(labels.get(7)).toEqual(["Kobold's", "Coffer"]);
+      expect(labels.get(10)).toEqual(["Comic"]);
+      expect(labels.has(8)).toBe(false);
+    });
+
+    it("writes a venue once even with two events that day or two branches of one chain", () => {
+      const events = [
+        makeEvent({ id: "a", venueName: "Coffee N' Comics - Moana", eventDate: "2026-10-09" }),
+        makeEvent({ id: "b", venueName: "Coffee N' Comics - Sparks", eventDate: "2026-10-09" }),
+        makeEvent({
+          id: "c",
+          venueName: "Coffee N' Comics - Moana",
+          eventDate: "2026-10-09",
+          startTime: "20:00:00",
+        }),
+      ];
+      expect(venueLabelsByDay(events, 2026, 9).get(9)).toEqual(["Coffee"]);
     });
 
     it("returns an empty map when the month has no events", () => {
-      expect(countEventsByDay([], 2026, 9).size).toBe(0);
-      const otherMonth = [makeEvent({ eventDate: "2026-11-10" })];
-      expect(countEventsByDay(otherMonth, 2026, 9).size).toBe(0);
+      expect(venueLabelsByDay([], 2026, 9).size).toBe(0);
+      expect(venueLabelsByDay([makeEvent({ eventDate: "2026-11-10" })], 2026, 9).size).toBe(0);
+    });
+  });
+
+  describe("upcomingAgenda", () => {
+    const events = [
+      makeEvent({ id: "wed-late", dayOfWeek: 3, startTime: "18:00:00" }),
+      makeEvent({ id: "wed-early", dayOfWeek: 3, startTime: "15:00:00" }),
+      makeEvent({ id: "one-off", eventDate: "2026-10-10" }),
+      makeEvent({ id: "next-month", eventDate: "2026-11-03" }),
+    ];
+
+    it("lists the remaining days with events, in order, starting from the given day", () => {
+      const agenda = upcomingAgenda(events, 2026, 9, 8);
+      expect(agenda.map((d) => d.dateKey)).toEqual([
+        "2026-10-10",
+        "2026-10-14",
+        "2026-10-21",
+        "2026-10-28",
+      ]);
+      expect(agenda[1].day).toBe(14);
+      expect(agenda[1].events.map((e) => e.id)).toEqual(["wed-early", "wed-late"]);
+    });
+
+    it("includes the starting day itself", () => {
+      expect(upcomingAgenda(events, 2026, 9, 7)[0].dateKey).toBe("2026-10-07");
+    });
+
+    it("never runs past the end of the month", () => {
+      const keys = upcomingAgenda(events, 2026, 9, 1).map((d) => d.dateKey);
+      expect(keys.every((k) => k.startsWith("2026-10-"))).toBe(true);
+    });
+
+    it("returns an empty array when nothing is left, and tolerates out-of-range start days", () => {
+      expect(upcomingAgenda(events, 2026, 9, 29)).toEqual([]);
+      expect(upcomingAgenda(events, 2026, 9, 40)).toEqual([]);
+      expect(upcomingAgenda([], 2026, 9, 1)).toEqual([]);
+      expect(upcomingAgenda(events, 2026, 9, -5)[0].dateKey).toBe("2026-10-07");
+    });
+  });
+
+  describe("listFormats", () => {
+    it("puts Commander first and the rest in alphabetical order, without duplicates", () => {
+      const events = [
+        makeEvent({ format: "Standard" }),
+        makeEvent({ format: "Booster Draft" }),
+        makeEvent({ format: "Commander" }),
+        makeEvent({ format: "Standard" }),
+      ];
+      expect(listFormats(events)).toEqual(["Commander", "Booster Draft", "Standard"]);
+    });
+
+    it("is just alphabetical when the preferred format is absent", () => {
+      const events = [makeEvent({ format: "Standard" }), makeEvent({ format: "Modern" })];
+      expect(listFormats(events)).toEqual(["Modern", "Standard"]);
+    });
+
+    it("ignores blank formats and returns an empty array for no events", () => {
+      expect(listFormats([makeEvent({ format: "  " })])).toEqual([]);
+      expect(listFormats([])).toEqual([]);
     });
   });
 
