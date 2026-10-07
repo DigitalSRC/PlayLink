@@ -529,7 +529,7 @@ export default function BrowseScreen() {
               {storeOptions.length > 0 && (
                 <>
                   <Text style={styles.fieldLabel}>Or play at a store event (+{VENUE_EVENT_BONUS} bonus points each)</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storeEventRow}>
                     {storeOptions.map((option) => {
                       const active = newStoreEventId === option.event.id;
                       const d = new Date(getNow()); d.setDate(d.getDate() + option.dateOffset);
@@ -678,6 +678,10 @@ export default function BrowseScreen() {
 }
 
 const styles = StyleSheet.create({
+  storeEventRow: {
+    gap: 8,
+    paddingBottom: 4,
+  },
   storeEventChip: {
     borderWidth: 1.5,
     borderRadius: 12,
