@@ -495,7 +495,7 @@ export default function BrowseScreen() {
               </View>
               <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
                 Nothing here is saved until you tap "Post Group" below — closing this
-                without posting won't create anything.
+                without posting won't create anything. You can be in one group at a time.
               </Text>
 
               {storeEvent ? (

@@ -30,6 +30,24 @@ const OAUTH_ENABLED = false;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * Turns a failed sign-in or sign-up into a message a first-time player can act on. Supabase
+ * answers a wrong password and an email with no account with the same "Invalid login
+ * credentials" text, which reads like a typo to someone who simply hasn't made an account yet,
+ * so that case is reworded to point at the Create an account button.
+ * Parameters: err (whatever the auth call threw), mode (which form was submitted).
+ * Returns: the text to show above the form.
+ * Edge cases: any other Error keeps its own message; a non-Error value gets a generic retry
+ * message; the rewording applies only to sign-in, never to sign-up.
+ */
+const describeAuthError = (err: unknown, mode: "signIn" | "signUp"): string => {
+  if (!(err instanceof Error)) return "Something went wrong. Please try again.";
+  if (mode === "signIn" && /invalid login credentials/i.test(err.message)) {
+    return "That email and password don't match an account. New to PlayLink? Tap “Create an account” below.";
+  }
+  return err.message;
+};
+
+/**
  * The unauthenticated landing screen: PlayLink branding plus an email/password form that can
  * either create a new account or sign in to an existing one. Reached from index.tsx whenever
  * there is no Supabase session. Does not navigate on success itself — the routing gate in
@@ -120,7 +138,7 @@ export default function SignIn() {
       }
       router.replace("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setError(describeAuthError(err, mode));
     } finally {
       setIsSubmitting(false);
     }
@@ -166,8 +184,11 @@ export default function SignIn() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>{mode === "signIn" ? "Welcome Back to PlayLink" : "Welcome to PlayLink!"}</Text>
+          <Text style={styles.brand}>{mode === "signIn" ? "Sign In to PlayLink" : "Welcome to PlayLink!"}</Text>
           <Text style={styles.tagline}>Linking Players. Filling Tables.</Text>
+          <Text style={styles.pitch}>
+            Find game nights at stores near you, fill a table, and earn points for playing.
+          </Text>
         </View>
 
         <Animated.View
@@ -230,6 +251,7 @@ export default function SignIn() {
 
           <Pressable
             testID="sign-in-mode-toggle"
+            style={[styles.button, styles.toggleButton, isBusy && styles.buttonDisabled]}
             onPress={() => {
               setError("");
               setEmailError("");
@@ -358,12 +380,25 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: -6,
   },
+  pitch: {
+    fontSize: 14,
+    color: "#AAA",
+    marginTop: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  // The way to the other form is a full-width outlined button, not a text link: a first-time
+  // player lands on Sign In and has to be able to find Create an account at a glance.
+  toggleButton: {
+    borderWidth: 1.5,
+    borderColor: "#007AFF",
+    paddingVertical: 14,
+  },
   toggleText: {
-    fontSize: 13,
+    fontSize: 15,
     color: "#007AFF",
     textAlign: "center",
-    fontWeight: "600",
-    marginTop: 2,
+    fontWeight: "700",
   },
   button: {
     paddingVertical: 16,

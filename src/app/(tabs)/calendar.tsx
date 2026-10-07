@@ -36,6 +36,7 @@ import { storeEventLinkParams } from '../../utils/venue-bonus-utils';
 // The format shown when the tab opens. Commander is what PlayLink is built around; the others
 // are a tap away in the switcher.
 const DEFAULT_FORMAT = 'Commander';
+const LEGACY_BLANK_LOCATION = 'nearby';
 const MIN_LOCATION_LENGTH = 2;
 const MAX_LOCATION_LENGTH = 100;
 
@@ -83,7 +84,10 @@ export default function CalendarScreen() {
   const [editing, setEditing] = useState(false);
   const [draftLocation, setDraftLocation] = useState('');
 
-  const location = currentUser?.location?.trim() ?? '';
+  // "Nearby" is what onboarding used to save when the city was left blank. It isn't a place, so
+  // treat those older profiles as having no location and ask for one.
+  const savedLocation = currentUser?.location?.trim() ?? '';
+  const location = savedLocation.toLowerCase() === LEGACY_BLANK_LOCATION ? '' : savedLocation;
   const areaQuery = useEventAreaQuery(location);
   const area = areaQuery.data?.area;
   const {
@@ -138,7 +142,7 @@ export default function CalendarScreen() {
   };
 
   const openEditor = () => {
-    setDraftLocation(currentUser.location);
+    setDraftLocation(location);
     setEditing(true);
   };
 

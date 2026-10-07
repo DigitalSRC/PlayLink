@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
@@ -43,6 +44,9 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+// Where the player's picked Rival is remembered on this device, one entry per account.
+const chosenRivalStorageKey = (userId: string) => `chosen-rival:${userId}`;
+
 /**
  * Provides global app state to all child screens.
  * Holds the Supabase auth session, the signed-in user's profile (fetched and cached via React
@@ -65,7 +69,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const { data: groups, isLoading: groupsLoading } = useGroupsQuery();
 
   const [rivals, setRivals] = useState<UserProfile[]>([]);
-  const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
+  const [chosenRivalId, setChosenRivalIdState] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [devDateOffset, setDevDateOffset] = useState(0);
@@ -82,15 +86,37 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!rivalIdsKey) return;
     let cancelled = false;
-    fetchProfilesByIds(rivalIdsKey.split(',')).then((profiles) => {
+    Promise.all([
+      fetchProfilesByIds(rivalIdsKey.split(',')),
+      userId ? AsyncStorage.getItem(chosenRivalStorageKey(userId)).catch(() => null) : null,
+    ]).then(([profiles, savedId]) => {
       if (cancelled) return;
       setRivals(profiles);
-      setChosenRivalId((prev) => prev ?? profiles[0]?.id ?? null);
+      // Keep the rival the player picked, as long as they're still one of their rivals; the daily
+      // refresh can drop them, and then the first of the new list stands in.
+      const saved = profiles.some((p) => p.id === savedId) ? savedId : null;
+      setChosenRivalIdState((prev) =>
+        prev !== null && profiles.some((p) => p.id === prev) ? prev : saved ?? profiles[0]?.id ?? null
+      );
     });
     return () => {
       cancelled = true;
     };
-  }, [rivalIdsKey]);
+  }, [rivalIdsKey, userId]);
+
+  /**
+   * Records which of their rivals the player has picked as their main Rival, and remembers it
+   * on this device so it is still their Rival the next time the app opens. Before this was
+   * saved, the pick only lived in memory and quietly reset to the first rival on every restart.
+   * Parameters: id (the chosen rival's profile id).
+   * Returns: void.
+   * Edge cases: with no signed-in user the pick is kept in memory only; a failed save is
+   * ignored, since the pick still holds for this session; the pick is per device, not synced.
+   */
+  const setChosenRivalId = (id: string) => {
+    setChosenRivalIdState(id);
+    if (userId) AsyncStorage.setItem(chosenRivalStorageKey(userId), id).catch(() => {});
+  };
 
   const clearCurrentUser = () => {
     if (userId) {
@@ -100,7 +126,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // immediately after calling this rather than awaiting sign-out completion.
     supabase.auth.signOut();
     setRivals([]);
-    setChosenRivalId(null);
+    setChosenRivalIdState(null);
     setMostPlayedAgainst(null);
   };
 
