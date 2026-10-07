@@ -3,6 +3,11 @@ import { updateProfile } from './profile-api';
 import { Group, PlayerProfile } from '../data/groups';
 import { GameType, NoGoRule, UserProfile } from '../data/types';
 import { computePlacementScores, GameOutcome, PlacementInput } from '../utils/scoring-utils';
+import {
+  applyVenueBonus,
+  isWithinVenueEventWindow,
+  playersAlreadyAwarded,
+} from '../utils/venue-bonus-utils';
 
 /** How long other group members have to dispute a submitted round before it auto-finalizes. */
 export const DISPUTE_WINDOW_MS = 15 * 60 * 1000;
@@ -30,6 +35,7 @@ interface GroupRow {
   format: string;
   no_go: string[];
   confirmed: boolean;
+  local_event_id?: string | null;
   group_players: GroupPlayerRow[];
 }
 
@@ -61,6 +67,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   format: row.format,
   noGo: row.no_go as NoGoRule[],
   confirmed: row.confirmed,
+  localEventId: row.local_event_id ?? undefined,
 });
 
 /**
@@ -107,6 +114,8 @@ export interface CreateGroupDraft {
   format: string;
   noGo: NoGoRule[];
   hostBracket: number;
+  /** The store event the group is playing at, chosen from the calendar; omit for none. */
+  localEventId?: string;
 }
 
 /**
@@ -133,6 +142,7 @@ export const createGroup = async (hostId: string, draft: CreateGroupDraft): Prom
       game_type: draft.gameType,
       format: draft.format,
       no_go: draft.noGo,
+      local_event_id: draft.localEventId ?? null,
     })
     .select()
     .single();
@@ -271,7 +281,11 @@ export interface GroupResultPlacement {
   playerId: string;
   placement: number;
   outcome: GameOutcome;
+  /** Total points for the round, including venueBonus. */
   pointsAwarded: number;
+  /** How much of pointsAwarded is the store-event bonus (0 or VENUE_EVENT_BONUS). Absent on
+   * rounds recorded before the bonus existed. */
+  venueBonus?: number;
 }
 
 export interface GroupResult {
@@ -336,21 +350,92 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
   return (data as GroupResultRow[]).map(mapResultRow);
 };
 
+interface VenueBonusLookupRow {
+  local_events: {
+    event_date: string | null;
+    day_of_week: number | null;
+    start_time: string;
+    event_areas: { time_zone: string } | null;
+  } | null;
+}
+
 /**
- * Submits a round's results: scores every player's placement via computePlacementScores and
- * inserts a pending result with a fresh dispute window.
+ * Works out whether a round being reported now earns the store-event bonus, and which players
+ * have already had it. A group earns it only if it is linked to a store event and the round is
+ * reported inside that event's window (see isWithinVenueEventWindow); each player gets it once.
+ * Parameters: groupId, nowMs (when the round is being reported).
+ * Returns: { eligible, alreadyAwarded } for applyVenueBonus.
+ * Edge cases: fails closed - if the group isn't linked, the event has been removed, or either
+ * lookup errors, it reports not eligible, so a round is never blocked and a bonus is never paid
+ * on incomplete information.
+ */
+const lookupVenueBonus = async (
+  groupId: string,
+  nowMs: number
+): Promise<{ eligible: boolean; alreadyAwarded: Set<string> }> => {
+  const none = { eligible: false, alreadyAwarded: new Set<string>() };
+  try {
+    const { data: groupRow, error: groupError } = await supabase
+      .from('groups')
+      .select('local_events(event_date, day_of_week, start_time, event_areas(time_zone))')
+      .eq('id', groupId)
+      .maybeSingle();
+    if (groupError) return none;
+    const event = (groupRow as unknown as VenueBonusLookupRow | null)?.local_events;
+    const timeZone = event?.event_areas?.time_zone;
+    if (!event || !timeZone) return none;
+
+    const eligible = isWithinVenueEventWindow(
+      nowMs,
+      {
+        eventDate: event.event_date ?? undefined,
+        dayOfWeek: event.day_of_week ?? undefined,
+        startTime: event.start_time,
+      },
+      timeZone
+    );
+    if (!eligible) return none;
+
+    const { data: prior, error: priorError } = await supabase
+      .from('group_results')
+      .select('placements')
+      .eq('group_id', groupId);
+    if (priorError) return none;
+    const priorRounds = ((prior ?? []) as { placements: GroupResultPlacement[] | null }[]).map(
+      (row) => row.placements ?? []
+    );
+    return { eligible: true, alreadyAwarded: playersAlreadyAwarded(priorRounds) };
+  } catch {
+    return none;
+  }
+};
+
+/**
+ * Submits a round's results: scores every player's placement via computePlacementScores, adds
+ * the one-time store-event bonus for players who qualify (see lookupVenueBonus), and inserts a
+ * pending result with a fresh dispute window.
  * Parameters: groupId, roundNumber (1-indexed — the caller is responsible for passing
- * group.roundsPlayed + 1), submittedBy (the host's id), placements (each participant's rank).
+ * group.roundsPlayed + 1), submittedBy (the host's id), placements (each participant's rank),
+ * nowMs (when the round is being reported; callers pass getNow() so the dev date offset applies).
  * Returns: the newly created GroupResult.
- * Edge cases: throws if RLS rejects the insert (submitter isn't a group member).
+ * Edge cases: throws if RLS rejects the insert (submitter isn't a group member); if the bonus
+ * can't be determined the round is still submitted, without it. Like the rest of scoring on
+ * this branch, the bonus is computed by the host's app and is not yet enforced by the server -
+ * it must be ported into submit_group_result when the security-hardening migrations land.
  */
 export const submitGroupResult = async (
   groupId: string,
   roundNumber: number,
   submittedBy: string,
-  placements: PlacementInput[]
+  placements: PlacementInput[],
+  nowMs: number = Date.now()
 ): Promise<GroupResult> => {
-  const scored = computePlacementScores(placements);
+  const bonus = await lookupVenueBonus(groupId, nowMs);
+  const scored = applyVenueBonus(
+    computePlacementScores(placements),
+    bonus.eligible,
+    bonus.alreadyAwarded
+  );
   const { data, error } = await supabase
     .from('group_results')
     .insert({

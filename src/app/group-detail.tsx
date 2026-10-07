@@ -24,6 +24,7 @@ import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
+import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { applyGroupResultPoints, finalizeGroupResultIfReady, GroupResult } from '../lib/group-api';
 import { profileKeys } from '../hooks/useProfileQueries';
 import {
@@ -62,7 +63,7 @@ const ROW_HEIGHT = 64;                  // draggable placement row height, inclu
 export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentUser } = useApp();
+  const { currentUser, getNow } = useApp();
   const queryClient = useQueryClient();
 
   const { data: group } = useGroupQuery(id);
@@ -323,6 +324,7 @@ export default function GroupDetail() {
         roundNumber: group.roundsPlayed + 1,
         submittedBy: currentUser.id,
         placements,
+        nowMs: getNow(),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowReportModal(false);
@@ -548,6 +550,11 @@ export default function GroupDetail() {
           ) : (
             <>
               <Text style={styles.metaRow}>📍 {group.location}</Text>
+              {group.localEventId && (
+                <Text style={styles.storeEventRow}>
+                  🏪 Store event · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
+                </Text>
+              )}
               <Text style={styles.metaRow}>🕐 {group.time}</Text>
               <Text style={styles.metaRow}>👥 {group.players.length} / {group.targetPlayers} players</Text>
               {group.format === 'Commander' && (
@@ -865,6 +872,12 @@ function DraggablePlacementRow({
 }
 
 const styles = StyleSheet.create({
+  storeEventRow: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#34C759',
+    marginBottom: 6,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0F0F14',
