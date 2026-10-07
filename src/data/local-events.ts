@@ -24,22 +24,25 @@ export interface LocalEvent {
 }
 
 /**
- * A region the calendar can show events for. `id` is the slug stored in `local_events.area`;
- * `keywords` are lowercase place names matched against a player's free-text profile location to
- * decide which area they belong to (see resolveEventArea in src/utils/calendar-utils.ts).
+ * The event area a player's location belongs to, as worked out by the server (the resolve-area
+ * Edge Function). `id` is the slug stored in `local_events.area` and `label` is its display
+ * name, e.g. "Reno-Sparks, NV". Areas are rows in the `event_areas` table, created on demand
+ * the first time anyone sets their location to a city no existing area covers, so nothing about
+ * a particular city is hardcoded in the app.
  */
 export interface EventArea {
   id: string;
   label: string;
-  keywords: string[];
 }
 
-// Every area the calendar knows about. PlayLink is starting in Reno-Sparks only; expanding to a
-// new city means adding one entry here and inserting that city's rows into `local_events` with a
-// matching `area` slug - no screen or query changes.
-export const EVENT_AREAS: EventArea[] = [
-  { id: 'reno-sparks', label: 'Reno-Sparks, NV', keywords: ['reno', 'sparks'] },
-];
-
-// Shown to anyone whose profile location doesn't match a known area.
-export const DEFAULT_EVENT_AREA_ID = 'reno-sparks';
+/**
+ * What resolving a location returns: the area, whether that call refreshed its events from the
+ * store locator, when they were last refreshed (ISO timestamp, or null if never), and the
+ * reason if a refresh was attempted and failed (the area is still usable in that case).
+ */
+export interface EventAreaResolution {
+  area: EventArea;
+  synced: boolean;
+  lastSyncedAt: string | null;
+  syncError: string | null;
+}

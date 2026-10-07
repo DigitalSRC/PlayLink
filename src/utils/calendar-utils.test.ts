@@ -1,14 +1,14 @@
 import { describe, expect, it } from "@jest/globals";
-import { EventArea, LocalEvent } from "../data/local-events";
+import { LocalEvent } from "../data/local-events";
 import {
   buildMonthGrid,
   dateKeyFromMs,
   eventsOnDate,
+  formatAgo,
   formatDayHeading,
   formatEventTime,
   formatMonthTitle,
   listFormats,
-  resolveEventArea,
   shiftMonth,
   shortVenueName,
   toDateKey,
@@ -304,37 +304,34 @@ describe("calendar-utils", () => {
     });
   });
 
-  describe("resolveEventArea", () => {
-    const areas: EventArea[] = [
-      { id: "seattle", label: "Seattle, WA", keywords: ["seattle", "tacoma"] },
-      { id: "reno-sparks", label: "Reno-Sparks, NV", keywords: ["reno", "sparks"] },
-    ];
+  describe("formatAgo", () => {
+    const now = new Date("2026-10-07T12:00:00.000Z").getTime();
+    const ago = (ms: number) => new Date(now - ms).toISOString();
+    const MIN = 60 * 1000;
+    const HOUR = 60 * MIN;
 
-    it("matches a keyword anywhere in the location, case-insensitively", () => {
-      expect(resolveEventArea("Downtown Seattle", areas).id).toBe("seattle");
-      expect(resolveEventArea("TACOMA, wa", areas).id).toBe("seattle");
-      expect(resolveEventArea("Sparks, NV", areas).id).toBe("reno-sparks");
+    it("describes recent moments in minutes, hours, and days", () => {
+      expect(formatAgo(ago(20 * 1000), now)).toBe("just now");
+      expect(formatAgo(ago(1 * MIN), now)).toBe("1 min ago");
+      expect(formatAgo(ago(59 * MIN), now)).toBe("59 min ago");
+      expect(formatAgo(ago(1 * HOUR), now)).toBe("1 hr ago");
+      expect(formatAgo(ago(23 * HOUR), now)).toBe("23 hr ago");
+      expect(formatAgo(ago(24 * HOUR), now)).toBe("1 day ago");
+      expect(formatAgo(ago(72 * HOUR), now)).toBe("3 days ago");
     });
 
-    it("only matches whole words, so 'Moreno Valley' is not Reno", () => {
-      const noDefault: EventArea[] = [
-        { id: "seattle", label: "Seattle, WA", keywords: ["seattle"] },
-        { id: "other", label: "Other", keywords: ["reno"] },
-      ];
-      // With no default area in the list, a non-match returns the first area - proving the
-      // "reno" keyword did not match inside "Moreno".
-      expect(resolveEventArea("Moreno Valley, CA", noDefault).id).toBe("seattle");
+    it("says 'never' for a missing or unparseable timestamp", () => {
+      expect(formatAgo(null, now)).toBe("never");
+      expect(formatAgo(undefined, now)).toBe("never");
+      expect(formatAgo("not a date", now)).toBe("never");
     });
 
-    it("falls back to the default area for an empty, missing, or unknown location", () => {
-      expect(resolveEventArea("", areas).id).toBe("reno-sparks");
-      expect(resolveEventArea(undefined, areas).id).toBe("reno-sparks");
-      expect(resolveEventArea("Portland, OR", areas).id).toBe("reno-sparks");
+    it("treats a timestamp slightly in the future as 'just now'", () => {
+      expect(formatAgo(new Date(now + 5 * MIN).toISOString(), now)).toBe("just now");
     });
 
-    it("resolves against the real area list by default", () => {
-      expect(resolveEventArea("Reno").id).toBe("reno-sparks");
-      expect(resolveEventArea(undefined).id).toBe("reno-sparks");
+    it("accepts the +00:00 form the database returns", () => {
+      expect(formatAgo("2026-10-07T11:30:00.000+00:00", now)).toBe("30 min ago");
     });
   });
 });
