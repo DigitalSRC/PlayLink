@@ -4,8 +4,9 @@ import { computePlacementScores } from "./scoring-utils";
 import {
   applyVenueBonus,
   isWithinVenueEventWindow,
+  parseStoreEventLink,
   playersAlreadyAwarded,
-  storeEventOptions,
+  storeEventLinkParams,
   VENUE_EVENT_BONUS,
   venueLocalNow,
 } from "./venue-bonus-utils";
@@ -172,9 +173,9 @@ describe("venue-bonus-utils", () => {
     });
   });
 
-  describe("storeEventOptions", () => {
+  describe("store-event links", () => {
     const makeEvent = (overrides: Partial<LocalEvent>): LocalEvent => ({
-      id: "e",
+      id: "e1",
       area: "reno-sparks",
       venueName: "Test Venue",
       address: "",
@@ -186,76 +187,91 @@ describe("venue-bonus-utils", () => {
       ...overrides,
     });
     const TODAY = "2026-10-07";
+    const link = (overrides: Partial<LocalEvent> = {}, dateKey = "2026-10-09") =>
+      storeEventLinkParams(makeEvent(overrides), dateKey);
 
-    it("offers dated events for the chosen game and format, soonest first", () => {
-      const events = [
-        makeEvent({ id: "later", eventDate: "2026-10-09" }),
-        makeEvent({ id: "today-late", eventDate: "2026-10-07", startTime: "18:00:00" }),
-        makeEvent({ id: "today-early", eventDate: "2026-10-07", startTime: "15:00:00" }),
-      ];
-      expect(storeEventOptions(events, "mtg", "Commander", TODAY).map((o) => o.event.id)).toEqual([
-        "today-early",
-        "today-late",
-        "later",
-      ]);
+    it("carries the event to the create form and opens it", () => {
+      expect(link()).toEqual({
+        openCreate: "1",
+        storeEventId: "e1",
+        storeEventVenue: "Test Venue",
+        storeEventDate: "2026-10-09",
+        storeEventStart: "18:00:00",
+        storeEventGame: "mtg",
+        storeEventFormat: "Commander",
+      });
     });
 
-    it("gives each option the form's date offset and 12-hour time", () => {
-      const [afternoon] = storeEventOptions(
-        [makeEvent({ eventDate: "2026-10-09", startTime: "17:30:00" })],
-        "mtg",
-        "Commander",
+    it("round-trips into a link with the date offset and 12-hour start time", () => {
+      expect(parseStoreEventLink(link({ startTime: "17:30:00" }), TODAY)).toEqual({
+        eventId: "e1",
+        venueName: "Test Venue",
+        gameType: "mtg",
+        format: "Commander",
+        dateKey: "2026-10-09",
+        dateOffset: 2,
+        hour: 5,
+        minute: 30,
+        period: "PM",
+      });
+    });
+
+    it("converts noon, midnight, and morning start times", () => {
+      const at = (startTime: string) => parseStoreEventLink(link({ startTime }, TODAY), TODAY);
+      expect(at("12:00:00")).toMatchObject({ hour: 12, minute: 0, period: "PM" });
+      expect(at("00:15:00")).toMatchObject({ hour: 12, minute: 15, period: "AM" });
+      expect(at("09:05")).toMatchObject({ hour: 9, minute: 5, period: "AM" });
+    });
+
+    it("pins a weekly event to the night it was listed under", () => {
+      const weekly = link({ dayOfWeek: 3 }, "2026-10-14");
+      expect(parseStoreEventLink(weekly, TODAY)).toMatchObject({ dateKey: "2026-10-14", dateOffset: 7 });
+    });
+
+    it("counts the offset across a month boundary and allows today", () => {
+      expect(parseStoreEventLink(link({}, "2026-11-02"), TODAY)?.dateOffset).toBe(26);
+      expect(parseStoreEventLink(link({}, TODAY), TODAY)?.dateOffset).toBe(0);
+    });
+
+    it("rejects a night that has passed or is more than 31 days out", () => {
+      expect(parseStoreEventLink(link({}, "2026-10-06"), TODAY)).toBeNull();
+      expect(parseStoreEventLink(link({}, "2026-11-07"), TODAY)).not.toBeNull();
+      expect(parseStoreEventLink(link({}, "2026-11-08"), TODAY)).toBeNull();
+    });
+
+    it("rejects dates that aren't real calendar days", () => {
+      expect(parseStoreEventLink(link({}, "2026-10-32"), TODAY)).toBeNull();
+      expect(parseStoreEventLink(link({}, "2026-02-31"), "2026-02-20")).toBeNull();
+      expect(parseStoreEventLink(link({}, "10/09/2026"), TODAY)).toBeNull();
+      expect(parseStoreEventLink(link(), "not-a-date")).toBeNull();
+    });
+
+    it("rejects a link with a missing, blank, or repeated field", () => {
+      const fields = ["storeEventId", "storeEventVenue", "storeEventDate", "storeEventStart", "storeEventGame", "storeEventFormat"];
+      for (const field of fields) {
+        const { [field]: _dropped, ...missing } = link();
+        expect(parseStoreEventLink(missing, TODAY)).toBeNull();
+        expect(parseStoreEventLink({ ...link(), [field]: "   " }, TODAY)).toBeNull();
+        expect(parseStoreEventLink({ ...link(), [field]: [link()[field], "x"] }, TODAY)).toBeNull();
+      }
+      expect(parseStoreEventLink({}, TODAY)).toBeNull();
+      expect(parseStoreEventLink({ openCreate: "1" }, TODAY)).toBeNull();
+    });
+
+    it("rejects an unknown game and an unparseable start time", () => {
+      expect(parseStoreEventLink({ ...link(), storeEventGame: "chess" }, TODAY)).toBeNull();
+      expect(parseStoreEventLink({ ...link(), storeEventGame: "toString" }, TODAY)).toBeNull();
+      expect(parseStoreEventLink(link({ startTime: "soon" }), TODAY)).toBeNull();
+      expect(parseStoreEventLink(link({ startTime: "24:00:00" }), TODAY)).toBeNull();
+      expect(parseStoreEventLink(link({ startTime: "18:60:00" }), TODAY)).toBeNull();
+    });
+
+    it("trims stray whitespace and keeps a non-Commander format as written", () => {
+      const parsed = parseStoreEventLink(
+        { ...link({ format: "Booster Draft" }), storeEventVenue: "  Test Venue  " },
         TODAY
       );
-      expect(afternoon).toMatchObject({ dateOffset: 2, hour: 5, minute: 30, period: "PM" });
-
-      const pick = (startTime: string) =>
-        storeEventOptions([makeEvent({ eventDate: TODAY, startTime })], "mtg", "Commander", TODAY)[0];
-      expect(pick("00:00:00")).toMatchObject({ hour: 12, minute: 0, period: "AM" });
-      expect(pick("12:00:00")).toMatchObject({ hour: 12, minute: 0, period: "PM" });
-      expect(pick("09:05:00")).toMatchObject({ hour: 9, minute: 5, period: "AM" });
-    });
-
-    it("counts offsets across a month boundary", () => {
-      const [option] = storeEventOptions(
-        [makeEvent({ eventDate: "2026-11-02" })],
-        "mtg",
-        "Commander",
-        "2026-10-28"
-      );
-      expect(option.dateOffset).toBe(5);
-    });
-
-    it("leaves out other formats and games, comparing format case-insensitively", () => {
-      const events = [
-        makeEvent({ id: "draft", eventDate: TODAY, format: "Booster Draft" }),
-        makeEvent({ id: "pokemon", eventDate: TODAY, gameType: "pokemon" }),
-        makeEvent({ id: "match", eventDate: TODAY, format: "commander" }),
-      ];
-      expect(storeEventOptions(events, "mtg", "Commander", TODAY).map((o) => o.event.id)).toEqual(["match"]);
-    });
-
-    it("leaves out past events, events beyond the 15-day range, and weekly events", () => {
-      const events = [
-        makeEvent({ id: "yesterday", eventDate: "2026-10-06" }),
-        makeEvent({ id: "last-day", eventDate: "2026-10-21" }),
-        makeEvent({ id: "too-far", eventDate: "2026-10-22" }),
-        makeEvent({ id: "weekly", dayOfWeek: 3 }),
-      ];
-      expect(storeEventOptions(events, "mtg", "Commander", TODAY).map((o) => o.event.id)).toEqual([
-        "last-day",
-      ]);
-    });
-
-    it("skips an unparseable start time and respects the limit", () => {
-      const bad = makeEvent({ id: "bad", eventDate: TODAY, startTime: "soon" });
-      const many = Array.from({ length: 20 }, (_, i) =>
-        makeEvent({ id: `e${i}`, venueName: `Venue ${String(i).padStart(2, "0")}`, eventDate: TODAY })
-      );
-      expect(storeEventOptions([bad], "mtg", "Commander", TODAY)).toEqual([]);
-      expect(storeEventOptions(many, "mtg", "Commander", TODAY)).toHaveLength(12);
-      expect(storeEventOptions(many, "mtg", "Commander", TODAY, 3)).toHaveLength(3);
-      expect(storeEventOptions([], "mtg", "Commander", TODAY)).toEqual([]);
+      expect(parsed).toMatchObject({ venueName: "Test Venue", format: "Booster Draft" });
     });
   });
 });

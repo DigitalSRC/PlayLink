@@ -34,12 +34,23 @@ import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGro
 import DateOffsetPicker from '../../components/DateOffsetPicker';
 import TimeOfDayPicker from '../../components/TimeOfDayPicker';
 import WeekCalendar from '../../components/WeekCalendar';
-import { useEventAreaQuery, useLocalEventsQuery } from '../../hooks/useLocalEventQueries';
-import { dateKeyFromMs, formatEventTime } from '../../utils/calendar-utils';
-import { storeEventOptions, StoreEventOption, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
+import { dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
+import { parseStoreEventLink, StoreEventLink, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
 type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
+
+// Passed to router.setParams once the create form closes, so the params that opened it (and any
+// store-event link they carried) can't reopen or re-link a later form.
+const CLEARED_CREATE_PARAMS = {
+  openCreate: undefined,
+  storeEventId: undefined,
+  storeEventVenue: undefined,
+  storeEventDate: undefined,
+  storeEventStart: undefined,
+  storeEventGame: undefined,
+  storeEventFormat: undefined,
+};
 
 /**
  * Browse tab showing open groups filterable by game type, defaulting to the user's preferred games.
@@ -49,9 +60,12 @@ const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lor
  * since nothing is actually created — and therefore nothing is visible to other players — until "Post Group"
  * is tapped. The create form auto-fills game, format, bracket, no-go rules, and location from the current
  * user's preferences.
- * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load.
+ * A group can also be made for a store event, but only by tapping "Create game" on that event in the
+ * Calendar tab: the form then opens with the game, format, place, and night already fixed to the event,
+ * and the group it posts is linked to it for the store-event bonus. The form has no way to add that link itself.
+ * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load, plus the storeEvent* params written by storeEventLinkParams.
  * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
- * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty.
+ * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
  */
 export default function BrowseScreen() {
   const router = useRouter();
@@ -71,8 +85,9 @@ export default function BrowseScreen() {
   const [newGame, setNewGame] = useState<GameType>('mtg');
   const [newFormat, setNewFormat] = useState('');
   const [newLocation, setNewLocation] = useState('');
-  // The store event (from the Calendar tab's data) this group will be played at, if one is picked.
-  const [newStoreEventId, setNewStoreEventId] = useState<string | null>(null);
+  // The store event this group is being made for. Only ever set by arriving from the Calendar
+  // tab's "Create game" button; null for an ordinary group.
+  const [storeEvent, setStoreEvent] = useState<StoreEventLink | null>(null);
   const [newDateOffset, setNewDateOffset] = useState(0);
   const [newHour, setNewHour] = useState(7);
   const [newMinute, setNewMinute] = useState(0);
@@ -86,20 +101,42 @@ export default function BrowseScreen() {
   const feedbackScale = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    if (params.openCreate === '1') setShowCreate(true);
-  }, [params.openCreate]);
+    if (params.openCreate !== '1') return;
+    if (params.storeEventId === undefined) {
+      setShowCreate(true);
+      return;
+    }
+    const link = parseStoreEventLink(params, dateKeyFromMs(getNow()));
+    if (!link) {
+      Alert.alert('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
+      router.setParams(CLEARED_CREATE_PARAMS);
+      return;
+    }
+    setStoreEvent(link);
+    setShowCreate(true);
+  }, [params.openCreate, params.storeEventId, params.storeEventDate]);
 
   useEffect(() => {
     if (showCreate && currentUser) {
-      const primaryGame = currentUser.games[0] ?? 'mtg';
-      const primaryFormat = (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
-      setNewGame(primaryGame);
-      setNewFormat(primaryFormat);
+      if (storeEvent) {
+        setNewGame(storeEvent.gameType);
+        setNewFormat(storeEvent.format);
+        setNewLocation(storeEvent.venueName);
+        setNewDateOffset(storeEvent.dateOffset);
+        setNewHour(storeEvent.hour);
+        setNewMinute(storeEvent.minute);
+        setNewPeriod(storeEvent.period);
+      } else {
+        const primaryGame = currentUser.games[0] ?? 'mtg';
+        const primaryFormat = (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
+        setNewGame(primaryGame);
+        setNewFormat(primaryFormat);
+        setNewLocation(currentUser.location);
+      }
       setNewBrackets(currentUser.brackets.length > 0 ? [...currentUser.brackets] : [2]);
       setNewNoGo([...currentUser.noGo]);
-      setNewLocation(currentUser.location);
     }
-  }, [showCreate]);
+  }, [showCreate, storeEvent]);
 
   const showFeedback = (msg: string) => {
     setFeedbackMsg(msg);
@@ -185,12 +222,15 @@ export default function BrowseScreen() {
    * path so a reopened form never shows stale draft text from a discarded attempt.
    * Parameters: none.
    * Returns: void.
-   * Edge cases: none — safe to call whether or not the form had any input.
+   * Edge cases: none — safe to call whether or not the form had any input. Also drops any
+   * store-event link and clears the route params that opened the form, so the next "+ Create"
+   * starts as an ordinary group and tapping the same calendar event again reopens it.
    */
   const closeCreateForm = () => {
     setShowCreate(false);
     setNewName('');
-    setNewStoreEventId(null);
+    setStoreEvent(null);
+    router.setParams(CLEARED_CREATE_PARAMS);
     setNewDateOffset(0);
     setNewHour(7);
     setNewMinute(0);
@@ -223,39 +263,6 @@ export default function BrowseScreen() {
     }
   };
 
-  // Store events the new group can be attached to: the player's area, the game and format
-  // currently chosen in the form, within the form's date range.
-  const eventArea = useEventAreaQuery(currentUser?.location?.trim() ?? '').data?.area;
-  const { data: areaEvents = [] } = useLocalEventsQuery(eventArea?.id ?? '');
-  const storeOptions = storeEventOptions(
-    areaEvents,
-    newGame,
-    newFormat || FORMAT_OPTIONS[newGame][0],
-    dateKeyFromMs(getNow())
-  );
-
-  /**
-   * Attaches the new group to a store event picked from the calendar's data, or detaches it if
-   * the same event is tapped again. Picking one fills in the location, date, and time from the
-   * event so the group matches the night it's tied to.
-   * Parameters: option (the store event and where it lands on the form's date/time pickers).
-   * Returns: void.
-   * Edge cases: tapping the already-selected event clears the link but leaves the filled-in
-   * location and time, which the player can then edit freely.
-   */
-  const pickStoreEvent = (option: StoreEventOption) => {
-    Haptics.selectionAsync();
-    if (newStoreEventId === option.event.id) {
-      setNewStoreEventId(null);
-      return;
-    }
-    setNewStoreEventId(option.event.id);
-    setNewLocation(option.event.venueName);
-    setNewDateOffset(option.dateOffset);
-    setNewHour(option.hour);
-    setNewMinute(option.minute);
-    setNewPeriod(option.period);
-  };
 
   const handleCreate = async () => {
     if (!currentUser) return;
@@ -285,7 +292,7 @@ export default function BrowseScreen() {
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
-      localEventId: newStoreEventId ?? undefined,
+      localEventId: storeEvent?.eventId,
       scheduledAt,
       time: formatScheduledAt(scheduledAt),
       targetPlayers: Math.max(2, Number(newTarget) || 4),
@@ -514,6 +521,12 @@ export default function BrowseScreen() {
                 without posting won't create anything.
               </Text>
 
+              {storeEvent ? (
+                <Text style={styles.storeEventNote}>
+                  🏪 {storeEvent.format} at {storeEvent.venueName} · {formatDayHeading(storeEvent.dateKey)} · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
+                </Text>
+              ) : (
+              <>
               <Text style={styles.fieldLabel}>Game</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gamePickerRow}>
                 {(['mtg', 'pokemon', 'lorcana', 'onepiece'] as GameType[]).map((g) => (
@@ -542,47 +555,21 @@ export default function BrowseScreen() {
                   </Pressable>
                 ))}
               </View>
+              </>
+              )}
 
               <Text style={styles.fieldLabel}>Group Name</Text>
               <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
 
+              {!storeEvent && (
+              <>
               <Text style={styles.fieldLabel}>Location</Text>
-              <LocationAutocomplete value={newLocation} onChangeText={(text) => { setNewLocation(text); setNewStoreEventId(null); }} placeholder="e.g. Seattle, WA" />
-
-              {storeOptions.length > 0 && (
-                <>
-                  <Text style={styles.fieldLabel}>Or play at a store event (+{VENUE_EVENT_BONUS} bonus points each)</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storeEventRow}>
-                    {storeOptions.map((option) => {
-                      const active = newStoreEventId === option.event.id;
-                      const d = new Date(getNow()); d.setDate(d.getDate() + option.dateOffset);
-                      const dayLabel = option.dateOffset === 0 ? 'Today' : option.dateOffset === 1 ? 'Tomorrow'
-                        : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                      return (
-                        <Pressable
-                          key={option.event.id}
-                          style={[styles.storeEventChip, { backgroundColor: colors.bg, borderColor: colors.border }, active && styles.storeEventChipActive]}
-                          onPress={() => pickStoreEvent(option)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Play at ${option.event.venueName}, ${dayLabel}`}
-                          accessibilityState={{ selected: active }}
-                        >
-                          <Text style={[styles.storeEventVenue, { color: colors.textPrimary }]} numberOfLines={1}>{option.event.venueName}</Text>
-                          <Text style={[styles.storeEventWhen, { color: colors.textSecondary }]}>{dayLabel} · {formatEventTime(option.event.startTime)}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                  {newStoreEventId !== null && (
-                    <Text style={styles.storeEventNote}>
-                      🏪 Everyone gets +{VENUE_EVENT_BONUS} points, once, for a round reported at this event after it starts.
-                    </Text>
-                  )}
-                </>
-              )}
+              <LocationAutocomplete value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Seattle, WA" />
 
               <Text style={styles.fieldLabel}>Date</Text>
-              <DateOffsetPicker value={newDateOffset} onChange={(offset) => { setNewDateOffset(offset); setNewStoreEventId(null); }} />
+              <DateOffsetPicker value={newDateOffset} onChange={setNewDateOffset} />
+              </>
+              )}
 
               <Text style={styles.fieldLabel}>Time</Text>
               <TimeOfDayPicker
@@ -665,33 +652,11 @@ export default function BrowseScreen() {
 }
 
 const styles = StyleSheet.create({
-  storeEventRow: {
-    gap: 8,
-    paddingBottom: 4,
-  },
-  storeEventChip: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    maxWidth: 190,
-  },
-  storeEventChipActive: {
-    borderColor: '#34C759',
-  },
-  storeEventVenue: {
+  storeEventNote: {
     fontSize: 13,
     fontWeight: '700',
-  },
-  storeEventWhen: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  storeEventNote: {
-    fontSize: 12,
-    fontWeight: '600',
+    lineHeight: 19,
     color: '#34C759',
-    marginTop: 8,
   },
   container: {
     flex: 1,

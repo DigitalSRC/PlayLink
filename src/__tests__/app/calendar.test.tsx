@@ -1,19 +1,27 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { Alert } from "react-native";
 import CalendarScreen from "../../app/(tabs)/calendar";
 import { LocalEvent } from "../../data/local-events";
 
 // Tuesday, October 6, 2026 at noon local time.
 const mockNow = new Date(2026, 9, 6, 12, 0).getTime();
 
-let mockCurrentUser: { location: string } | null = { location: "Reno, NV" };
+let mockCurrentUser: { id?: string; location: string } | null = { id: "user-1", location: "Reno, NV" };
+let mockGroups: { players: { id: string }[] }[] = [];
 jest.mock("../../context/AppContext", () => ({
   useApp: () => ({
     currentUser: mockCurrentUser,
     session: { user: { id: "user-1" } },
     getNow: () => mockNow,
+    groups: mockGroups,
     theme: "dark",
   }),
+}));
+
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 
 const mockUpdateProfile = jest.fn();
@@ -132,7 +140,8 @@ const loaded = (data: LocalEvent[]): MockQueryState => ({
 describe("CalendarScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCurrentUser = { location: "Reno, NV" };
+    mockCurrentUser = { id: "user-1", location: "Reno, NV" };
+    mockGroups = [];
     mockUseLocalEventsQuery.mockReturnValue(loaded(allEvents));
     mockUseEventAreaQuery.mockReturnValue(resolvedArea());
     mockUseRefresh.mockReturnValue(idleRefresh);
@@ -295,6 +304,57 @@ describe("CalendarScreen", () => {
 
     expect(getByText("Friday, October 2")).toBeTruthy();
     expect(getByText("Past Place")).toBeTruthy();
+  });
+
+  it("opens the create-group form tied to the store and night when Create game is tapped", async () => {
+    const { getByLabelText } = await render(<CalendarScreen />);
+
+    await fireEvent.press(getByLabelText("Create a game at Wednesday Card Shop on Wednesday, October 7"));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(tabs)/browse",
+      params: {
+        openCreate: "1",
+        storeEventId: "wed",
+        storeEventVenue: "Wednesday Card Shop",
+        storeEventDate: "2026-10-07",
+        storeEventStart: wednesdayNight.startTime,
+        storeEventGame: "mtg",
+        storeEventFormat: "Commander",
+      },
+    });
+  });
+
+  it("offers Create game on today's event but not on a day that has passed", async () => {
+    const { getByLabelText, queryByLabelText, getByText } = await render(<CalendarScreen />);
+
+    expect(getByLabelText("Create a game at Tuesday Game Store on Tuesday, October 6")).toBeTruthy();
+
+    await fireEvent.press(getByLabelText("2026-10-02, Past"));
+    expect(getByText("Past Place")).toBeTruthy();
+    expect(queryByLabelText(/^Create a game at Past Place/)).toBeNull();
+  });
+
+  it("explains instead of opening the form when the player is already in a group", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    mockGroups = [{ players: [{ id: "someone-else" }, { id: "user-1" }] }];
+    const { getByLabelText } = await render(<CalendarScreen />);
+
+    await fireEvent.press(getByLabelText("Create a game at Wednesday Card Shop on Wednesday, October 7"));
+
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith("Already in a group", expect.any(String));
+    alertSpy.mockRestore();
+  });
+
+  it("still opens the form when the player is only in nobody's group but others exist", async () => {
+    mockGroups = [{ players: [{ id: "someone-else" }] }];
+    const { getByLabelText } = await render(<CalendarScreen />);
+
+    await fireEvent.press(getByLabelText("Create a game at Wednesday Card Shop on Wednesday, October 7"));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
   });
 
   it("says so when the tapped day has no event", async () => {
