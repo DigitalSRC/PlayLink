@@ -135,6 +135,8 @@ The same Edge Function also resets every profile's `monthlyPoints` to 0 when the
 - `GameType` (`'mtg' | 'pokemon' | 'lorcana' | 'onepiece'`) and associated display constants (`GAME_LABELS`, `GAME_EMOJI`, `GAME_COLOR`).
 - `NoGoRule`, `NO_GO_OPTIONS`, `FORMAT_OPTIONS`, `BRACKET_INFO`, `TIME_SLOTS`, `DAYS_OF_WEEK`.
 
+**Commander-only mode.** `COMMANDER_ONLY = true` in `types.ts` narrows the whole app to Magic Commander without deleting anything: onboarding skips its game step and saves `games: ['mtg']` / `preferredFormats: { mtg: ['Commander'] }`, the create-group form has no game or format pickers, the Find tab lists only Commander groups (and join-by-code only finds those), the Calendar pins its format and hides the switcher, and Home, Stats, Profile, and `player-profile` hide their game and format lists. Screens must go through the helpers next to the flag (`SELECTABLE_GAMES`, `selectableFormats`, `visibleGames`, `isGroupInScope`) instead of reading `FORMAT_OPTIONS` or a profile's `games` directly, so flipping the flag back to `false` restores every option. It is a display rule only: older rows with other games or formats stay in the database, and nothing server-side rejects one.
+
 **[src/data/groups.ts](src/data/groups.ts)** exports the `PlayerProfile` and `Group` types and nothing else. `PlayerProfile.id` is a Supabase auth UUID (`profiles.id` / `group_players.player_id`), not a locally-generated number.
 
 [src/data/random-data.ts](src/data/random-data.ts) holds string pools (names, locations, times) for possible future seeding; nothing imports it today.

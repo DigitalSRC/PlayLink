@@ -15,7 +15,10 @@ import LocationAutocomplete from '../../components/LocationAutocomplete';
 import { useApp } from '../../context/AppContext';
 import {
   BRACKET_INFO,
-  FORMAT_OPTIONS,
+  COMMANDER_ONLY,
+  SELECTABLE_GAMES,
+  selectableFormats,
+  visibleGames,
   GAME_COLOR,
   GAME_EMOJI,
   GAME_LABELS,
@@ -27,7 +30,7 @@ import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { updatePassword } from '../../lib/auth-api';
 import { useThemeColors } from '../../utils/theme-utils';
 
-const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
+const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
 
 /**
  * Profile tab — personal info, stats, game preferences, rivals, settings, and dev tools.
@@ -82,7 +85,8 @@ export default function ProfileScreen() {
     .toUpperCase()
     .slice(0, 2) || currentUser.username.charAt(0).toUpperCase();
 
-  const commanderSelected = editGames.includes('mtg') && (editFormats?.mtg ?? []).includes('Commander');
+  const commanderSelected =
+    COMMANDER_ONLY || (editGames.includes('mtg') && (editFormats?.mtg ?? []).includes('Commander'));
 
   const saveEdit = () => {
     if (!session) return;
@@ -250,7 +254,9 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      {/* ── Games ── */}
+      {/* ── Games and formats: hidden while the app is Commander-only (see COMMANDER_ONLY) ── */}
+      {!COMMANDER_ONLY && (
+      <>
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: textSec }]}>Games I Play</Text>
         <View style={styles.chipRow}>
@@ -277,7 +283,7 @@ export default function ProfileScreen() {
               {GAME_EMOJI[game]} {GAME_LABELS[game]}
             </Text>
             <View style={styles.chipRow}>
-              {FORMAT_OPTIONS[game].map((fmt) => {
+              {selectableFormats(game).map((fmt) => {
                 const active = (editFormats[game] ?? []).includes(fmt);
                 return (
                   <Pressable
@@ -294,6 +300,8 @@ export default function ProfileScreen() {
           </View>
         ))}
       </View>
+      </>
+      )}
 
       {/* ── Brackets (Commander only) ── */}
       {commanderSelected && (
@@ -362,7 +370,7 @@ export default function ProfileScreen() {
                 <View style={styles.rivalInfo}>
                   <Text style={[styles.rivalName, { color: textPrimary }]}>{rival.displayName ?? rival.username}</Text>
                   <Text style={[styles.rivalMeta, { color: textSec }]}>
-                    {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                    {rival.wins}W – {rival.losses}L · {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(' ')}
                   </Text>
                   <Text style={[styles.rivalLocation, { color: textSec }]}>{rival.location}</Text>
                 </View>

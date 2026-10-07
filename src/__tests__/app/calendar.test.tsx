@@ -237,22 +237,17 @@ describe("CalendarScreen", () => {
     ]);
   });
 
-  it("switches format from the chips, changing both the grid and the list", async () => {
-    const { getByText, getByLabelText, queryByText } = await render(<CalendarScreen />);
+  // The app is Commander-only for now (COMMANDER_ONLY in data/types.ts): other formats exist in
+  // the data but there is no way to see or switch to them.
+  it("offers no way to switch format, even when other formats have events", async () => {
+    const { getByText, getAllByText, queryByLabelText, queryByText } = await render(<CalendarScreen />);
 
-    await fireEvent.press(getByLabelText("Show Booster Draft events"));
-
-    expect(getByText("Showing Booster Draft events")).toBeTruthy();
-    expect(getByLabelText("2026-10-09, Draft")).toBeTruthy();
-    expect(getByLabelText("2026-10-07")).toBeTruthy();
-    expect(getByText("Friday, October 9")).toBeTruthy();
-    expect(getByText("Draft House")).toBeTruthy();
-    expect(getByText("Friday Draft")).toBeTruthy();
-    expect(queryByText("Tuesday Game Store")).toBeNull();
-
-    await fireEvent.press(getByLabelText("Show Commander events"));
     expect(getByText("Showing Commander events")).toBeTruthy();
+    expect(queryByLabelText("Show Booster Draft events")).toBeNull();
+    expect(queryByLabelText("Show Commander events")).toBeNull();
+    expect(queryByText("Booster Draft")).toBeNull();
     expect(queryByText("Draft House")).toBeNull();
+    expect(getAllByText("Tuesday Game Store").length).toBeGreaterThan(0);
   });
 
   it("hides the switcher when there is only one format", async () => {
@@ -263,12 +258,13 @@ describe("CalendarScreen", () => {
     expect(queryByLabelText("Show Commander events")).toBeNull();
   });
 
-  it("shows the first available format when there are no Commander events", async () => {
+  it("stays on Commander, and says there is nothing on, when only other formats have events", async () => {
     mockUseLocalEventsQuery.mockReturnValue(loaded([fridayDraft]));
-    const { getByText } = await render(<CalendarScreen />);
+    const { getByText, queryByText } = await render(<CalendarScreen />);
 
-    expect(getByText("Showing Booster Draft events")).toBeTruthy();
-    expect(getByText("Draft House")).toBeTruthy();
+    expect(getByText("Showing Commander events")).toBeTruthy();
+    expect(getByText("No more Commander events this month.")).toBeTruthy();
+    expect(queryByText("Draft House")).toBeNull();
   });
 
   it("narrows the list to a tapped day, and Show all upcoming restores it", async () => {
