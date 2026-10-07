@@ -420,7 +420,7 @@ export default function GroupDetail() {
               <>
                 <Text style={styles.resultStatusTitle}>Round {activeResult.roundNumber} results submitted</Text>
                 <Text style={styles.resultStatusSub}>
-                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it.
+                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it. Points are added once it&apos;s final.
                 </Text>
                 <Pressable style={styles.disputeBtn} onPress={() => handleDispute(activeResult)}>
                   <Text style={styles.disputeBtnText}>⚠️ Something's wrong with this</Text>
@@ -540,6 +540,11 @@ export default function GroupDetail() {
                   <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
                 </View>
               )}
+              {isHost && (
+                <Text style={styles.hostHelpNote}>
+                  Share this code with friends — they enter it under Find → Join a Group.
+                </Text>
+              )}
             </>
           )}
         </View>
@@ -591,6 +596,11 @@ export default function GroupDetail() {
                       timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
                       headcountLocked ? `👥 Need ${minPlayers - group.players.length} more player${minPlayers - group.players.length > 1 ? 's' : ''}` : null,
                     ].filter(Boolean).join('  ·  ')}
+                  </Text>
+                )}
+                {!group.confirmed && (
+                  <Text style={styles.hostHelpNote}>
+                    Confirm Game locks in who&apos;s playing so you can report results. It opens {CONFIRM_LOCK_MS / 60000} minutes after you post — time for players to join — once at least {minPlayers} are in.
                   </Text>
                 )}
               </>
@@ -841,6 +851,12 @@ function DraggablePlacementRow({
 }
 
 const styles = StyleSheet.create({
+  hostHelpNote: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#888',
+    marginTop: 8,
+  },
   storeEventRow: {
     fontSize: 13,
     fontWeight: '700',

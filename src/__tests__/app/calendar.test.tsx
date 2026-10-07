@@ -428,6 +428,19 @@ describe("CalendarScreen", () => {
       expect(mockUseLocalEventsQuery).toHaveBeenCalledWith("", undefined);
     });
 
+    // Onboarding used to save a blank city as "Nearby"; it isn't a place, so those profiles are
+    // asked for a location instead of being told "Nearby" couldn't be found.
+    it("treats an old profile's placeholder 'Nearby' as no location", async () => {
+      mockCurrentUser = { location: " Nearby " };
+      mockUseEventAreaQuery.mockReturnValue({ isPending: true, isError: false, isRefetching: false });
+      const { getByText, queryByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Set your location")).toBeTruthy();
+      expect(queryByText(/Nearby/)).toBeNull();
+      expect(mockUseEventAreaQuery).toHaveBeenCalledWith("");
+      expect(mockUseEventAreaQuery).not.toHaveBeenCalledWith("Nearby");
+    });
+
     it("shows a finding message while the area is being worked out", async () => {
       mockUseEventAreaQuery.mockReturnValue({ isPending: true, isError: false, isRefetching: false });
       const { getByText, queryByText } = await render(<CalendarScreen />);

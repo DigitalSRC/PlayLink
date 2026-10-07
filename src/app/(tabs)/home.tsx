@@ -3,7 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import WeekCalendar from '../../components/WeekCalendar';
 import { useApp } from '../../context/AppContext';
 import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
+import { PARTICIPATION_POINTS } from '../../utils/scoring-utils';
 import { useThemeColors } from '../../utils/theme-utils';
+import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
 /**
  * Home tab — the player's personal dashboard after logging in.
@@ -14,7 +16,9 @@ import { useThemeColors } from '../../utils/theme-utils';
  * A Pickup Game button launches an ad-hoc life counter session without creating a formal group.
  * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
  * Returns: a scrollable dashboard screen with a weekly group calendar and quick-action buttons for Find and Create Group.
- * Edge cases: shows the "No Active Group" empty state when the user has joined no groups at all; hides the rivals section entirely when the rivals array is empty.
+ * Edge cases: shows the "No Active Group" empty state when the user has joined no groups at all; hides the rivals section entirely when the rivals array is empty;
+ * a player with no recorded games yet is greeted with "Welcome," and a short "How PlayLink works" card (where to find a game, the one-group
+ * rule, and how points are earned), which disappears for good once their first round is on record.
  */
 export default function HomeScreen() {
   const router = useRouter();
@@ -29,12 +33,14 @@ export default function HomeScreen() {
 
   const totalGames = currentUser.wins + currentUser.losses;
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
+  // Nothing on record yet: this is someone still finding their way around.
+  const isNewPlayer = totalGames + currentUser.draws === 0 && currentUser.points === 0;
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.greeting, { color: colors.textSecondary }]}>Welcome back,</Text>
+          <Text style={[styles.greeting, { color: colors.textSecondary }]}>{isNewPlayer ? 'Welcome,' : 'Welcome back,'}</Text>
           <Text style={[styles.username, { color: colors.textPrimary }]}>{currentUser.displayName ?? currentUser.username}</Text>
           <Text style={[styles.location, { color: colors.textSecondary }]}>{currentUser.location}</Text>
         </View>
@@ -43,6 +49,28 @@ export default function HomeScreen() {
           <Text style={[styles.xpValue, { color: colors.textPrimary }]}>{currentUser.points}</Text>
         </View>
       </View>
+
+      {isNewPlayer && (
+        <View style={[styles.howItWorksCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.howItWorksTitle, { color: colors.textPrimary }]}>How PlayLink works</Text>
+          <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
+            1. Find a game. The Calendar tab lists game nights at stores near you — tap “+ Create game” on one to start a group there. Or use Find to join a group someone else posted.
+          </Text>
+          <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
+            2. Play. You can be in one group at a time. The host reports how each round finished.
+          </Text>
+          <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
+            3. Earn points. Everyone gets {PARTICIPATION_POINTS} points a round just for playing, more the higher you finish, and +{VENUE_EVENT_BONUS} once for a group made from a store&apos;s calendar event. Points decide the monthly leaderboard on the Stats tab.
+          </Text>
+          <Pressable
+            style={styles.howItWorksButton}
+            onPress={() => router.push('/(tabs)/calendar')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.howItWorksButtonText}>See what&apos;s on near you →</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Record card */}
       <View style={[styles.recordCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -193,6 +221,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 20,
+  },
+  howItWorksCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  howItWorksTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  howItWorksStep: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  howItWorksButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  howItWorksButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   greeting: {
     fontSize: 14,

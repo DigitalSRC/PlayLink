@@ -72,8 +72,14 @@ jest.mock("../../lib/profile-api", () => ({
   UsernameTakenError: class UsernameTakenError extends Error {},
 }));
 
-const fillIdentityAndGames = async (getByTestId: (id: string) => any) => {
+const CITY_PLACEHOLDER = "City, State — e.g. Reno, NV";
+
+const fillIdentityAndGames = async (
+  getByTestId: (id: string) => any,
+  getByPlaceholderText: (text: string) => any
+) => {
   await fireEvent.changeText(getByTestId("profile-creation-username-input"), "TestPlayer");
+  await fireEvent.changeText(getByPlaceholderText(CITY_PLACEHOLDER), "Reno, NV");
   await fireEvent.press(getByTestId("profile-creation-next-button")); // step 0 -> step 1
   await fireEvent.press(getByTestId("profile-creation-game-mtg")); // select a game
   await fireEvent.press(getByTestId("profile-creation-next-button")); // step 1 -> step 2
@@ -94,13 +100,16 @@ describe("ProfileCreation", () => {
   // propagated through AppContext).
   it("skips the rival-reveal step and enters the tabs once currentUser catches up, when there are no rivals", async () => {
     mockFindRivals.mockReturnValue([]);
-    const { getByTestId, queryByText, rerender } = await render(<ProfileCreation />);
+    const { getByTestId, getByPlaceholderText, queryByText, rerender } = await render(<ProfileCreation />);
 
-    await fillIdentityAndGames(getByTestId);
+    await fillIdentityAndGames(getByTestId, getByPlaceholderText);
     await fireEvent.press(getByTestId("profile-creation-next-button")); // submit profile
 
     await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledWith({ userId: "user-1", draft: expect.anything() });
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        userId: "user-1",
+        draft: expect.objectContaining({ location: "Reno, NV" }),
+      });
     });
 
     // Must never show the dead-end reveal step.
@@ -122,15 +131,69 @@ describe("ProfileCreation", () => {
 
   it("shows the rival-reveal step when rivals are found, instead of skipping it", async () => {
     mockFindRivals.mockReturnValue([{ ...mockCreatedProfile, id: "rival-1", username: "Rival" }]);
-    const { getByTestId, getByText } = await render(<ProfileCreation />);
+    const { getByTestId, getByPlaceholderText, getByText } = await render(<ProfileCreation />);
 
-    await fillIdentityAndGames(getByTestId);
+    await fillIdentityAndGames(getByTestId, getByPlaceholderText);
     await fireEvent.press(getByTestId("profile-creation-next-button"));
 
     await waitFor(() => {
       expect(getByText("Choose Your Rival")).toBeTruthy();
     });
+    expect(getByText(/Rivals are players who play the same games as you/)).toBeTruthy();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("lets a player skip picking a rival and still enter the app", async () => {
+    mockFindRivals.mockReturnValue([{ ...mockCreatedProfile, id: "rival-1", username: "Rival" }]);
+    const { getByTestId, getByPlaceholderText, rerender } = await render(<ProfileCreation />);
+
+    await fillIdentityAndGames(getByTestId, getByPlaceholderText);
+    await fireEvent.press(getByTestId("profile-creation-next-button"));
+    await waitFor(() => {
+      expect(getByTestId("profile-creation-skip-rival")).toBeTruthy();
+    });
+
+    await fireEvent.press(getByTestId("profile-creation-skip-rival"));
+    mockCurrentUser = mockCreatedProfile;
+    await rerender(<ProfileCreation />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(tabs)/home");
+    });
+    expect(mockSetChosenRivalId).not.toHaveBeenCalled();
+  });
+
+  // A blank city used to be saved as "Nearby", which the Calendar tab could never look up.
+  it("will not leave the first step without a city", async () => {
+    const { getByTestId, getByPlaceholderText, getByText, queryByText } = await render(<ProfileCreation />);
+
+    await fireEvent.changeText(getByTestId("profile-creation-username-input"), "TestPlayer");
+    await fireEvent.press(getByTestId("profile-creation-next-button"));
+    expect(getByText("Create Your Profile")).toBeTruthy();
+    expect(queryByText("What Do You Play?")).toBeNull();
+
+    await fireEvent.changeText(getByPlaceholderText(CITY_PLACEHOLDER), " R ");
+    await fireEvent.press(getByTestId("profile-creation-next-button"));
+    expect(queryByText("What Do You Play?")).toBeNull();
+
+    await fireEvent.changeText(getByPlaceholderText(CITY_PLACEHOLDER), "Reno, NV");
+    await fireEvent.press(getByTestId("profile-creation-next-button"));
+    expect(getByText("What Do You Play?")).toBeTruthy();
+  });
+
+  it("goes back a step without losing what was entered", async () => {
+    const { getByTestId, getByPlaceholderText, getByText, queryByTestId } = await render(<ProfileCreation />);
+
+    expect(queryByTestId("profile-creation-back-button")).toBeNull();
+    await fillIdentityAndGames(getByTestId, getByPlaceholderText);
+    expect(getByText("Your Preferences")).toBeTruthy();
+
+    await fireEvent.press(getByTestId("profile-creation-back-button"));
+    expect(getByText("What Do You Play?")).toBeTruthy();
+    await fireEvent.press(getByTestId("profile-creation-back-button"));
+    expect(getByText("Create Your Profile")).toBeTruthy();
+    expect(getByTestId("profile-creation-username-input").props.value).toBe("TestPlayer");
+    expect(queryByTestId("profile-creation-back-button")).toBeNull();
   });
 
   // Regression test for the profile-creation dead end where a session with no reachable profile

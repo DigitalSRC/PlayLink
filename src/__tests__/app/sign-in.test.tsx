@@ -104,8 +104,25 @@ describe("SignIn", () => {
     expect(mockSignInWithEmail).not.toHaveBeenCalled();
   });
 
-  it("shows a generic error message and does not navigate when Supabase rejects", async () => {
-    mockSignInWithEmail.mockRejectedValueOnce(new Error("Invalid login credentials."));
+  // A first-time player lands on Sign In; "Invalid login credentials" reads like a typo to someone
+  // who simply has no account yet, so the screen points them at Create an account instead.
+  it("points a player with no account at Create an account when sign-in is rejected", async () => {
+    mockSignInWithEmail.mockRejectedValueOnce(new Error("Invalid login credentials"));
+    const { getByTestId, getByText, queryByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => {
+      expect(getByText(/don't match an account.*Create an account/)).toBeTruthy();
+    });
+    expect(queryByText("Invalid login credentials")).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("shows any other sign-in failure as it was reported, and does not navigate", async () => {
+    mockSignInWithEmail.mockRejectedValueOnce(new Error("Network request failed"));
     const { getByTestId, getByText } = await render(<SignIn />);
 
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
@@ -113,18 +130,36 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => {
-      expect(getByText("Invalid login credentials.")).toBeTruthy();
+      expect(getByText("Network request failed")).toBeTruthy();
     });
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it("shows 'Welcome Back to PlayLink' in sign-in mode and switches copy in sign-up mode", async () => {
-    const { getByText, getByTestId } = await render(<SignIn />);
+  it("does not reword a sign-up failure", async () => {
+    mockSignUpWithEmail.mockRejectedValueOnce(new Error("Invalid login credentials"));
+    const { getByTestId, getByText } = await render(<SignIn />);
 
-    expect(getByText("Welcome Back to PlayLink")).toBeTruthy();
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => {
+      expect(getByText("Invalid login credentials")).toBeTruthy();
+    });
+  });
+
+  it("says what the app is for, and never greets a sign-in as a return visit", async () => {
+    const { getByText, getByTestId, queryByText } = await render(<SignIn />);
+
+    expect(getByText("Sign In to PlayLink")).toBeTruthy();
+    expect(queryByText(/Welcome Back/)).toBeNull();
+    expect(getByText(/Find game nights at stores near you/)).toBeTruthy();
+    expect(getByText("New here? Create an account")).toBeTruthy();
 
     await fireEvent.press(getByTestId("sign-in-mode-toggle"));
     expect(getByText("Welcome to PlayLink!")).toBeTruthy();
+    expect(getByText("Already have an account? Sign in")).toBeTruthy();
   });
 
   it("toggles password visibility when the eye icon is pressed", async () => {
