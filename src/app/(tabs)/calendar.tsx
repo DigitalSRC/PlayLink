@@ -1,6 +1,8 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +12,7 @@ import {
 } from 'react-native';
 import MonthCalendar from '../../components/MonthCalendar';
 import { useApp } from '../../context/AppContext';
+import { LocalEvent } from '../../data/local-events';
 import {
   useEventAreaQuery,
   useLocalEventsQuery,
@@ -28,6 +31,7 @@ import {
   venueLabelsByDay,
 } from '../../utils/calendar-utils';
 import { useThemeColors } from '../../utils/theme-utils';
+import { storeEventLinkParams } from '../../utils/venue-bonus-utils';
 
 // The format shown when the tab opens. Commander is what PlayLink is built around; the others
 // are a tap away in the switcher.
@@ -43,6 +47,9 @@ const MAX_LOCATION_LENGTH = 100;
  * Below that: which format is showing (Commander by default) with chips to switch, the month
  * grid with the stores that have an event written on each day, and a "coming up" list of every
  * remaining day this month with an event. Tapping a day narrows the list to it.
+ * Every listed event from today onward has a "Create game" button, which opens the normal
+ * create-group form (on the Find tab) already tied to that store and night. It is the only way
+ * a group gets linked to a store event, and so the only way to earn the store-event bonus.
  * Only the current month is shown; there is no month navigation yet.
  * Events come from the Wizards store locator via supabase/functions/sync-local-events; which
  * area a location belongs to is decided by supabase/functions/resolve-area. This screen only
@@ -54,10 +61,13 @@ const MAX_LOCATION_LENGTH = 100;
  * gets a "couldn't find" message with the editor, while an outage gets a retry; a refresh that
  * the server declines (too soon) or that fails still leaves the last saved events on screen with
  * a note; the editor rejects text shorter than 2 or longer than 100 characters; the format
- * switcher is hidden when only one format exists.
+ * switcher is hidden when only one format exists; an event on a day that has already passed has
+ * no "Create game" button; tapping it while already in a group explains why instead of opening
+ * the form.
  */
 export default function CalendarScreen() {
-  const { currentUser, session, getNow } = useApp();
+  const router = useRouter();
+  const { currentUser, session, getNow, groups } = useApp();
   const colors = useThemeColors();
   const updateProfileMutation = useUpdateProfileMutation();
   const refreshMutation = useRefreshEventAreaMutation();
@@ -106,6 +116,25 @@ export default function CalendarScreen() {
   const chooseFormat = (next: string) => {
     setChosenFormat(next);
     setSelectedKey(null);
+  };
+
+  /**
+   * Starts a new group for a store event: opens the create-group form on the Find tab with the
+   * store, night, start time, game, and format carried over, so the group that gets posted is
+   * linked to this event. Nothing is created here - the player still fills in and posts the form.
+   * Parameters: event (the listing that was tapped), dateKey (the "YYYY-MM-DD" day it is listed
+   * under, which pins a weekly event to one night).
+   * Returns: void.
+   * Edge cases: a player who is already in a group gets an alert instead, since they can only
+   * be in one; if the groups list hasn't loaded yet the form opens and its own check (and the
+   * database's one-group rule) still applies.
+   */
+  const createGameAt = (event: LocalEvent, dateKey: string) => {
+    if (groups.some((g) => g.players.some((p) => p.id === currentUser.id))) {
+      Alert.alert('Already in a group', 'Leave your current group before creating another.');
+      return;
+    }
+    router.push({ pathname: '/(tabs)/browse', params: storeEventLinkParams(event, dateKey) });
   };
 
   const openEditor = () => {
@@ -370,7 +399,19 @@ export default function CalendarScreen() {
                             key={event.id}
                             style={[styles.eventCard, { backgroundColor: colors.cardRaised, borderColor: colors.border }]}
                           >
-                            <Text style={[styles.eventVenue, { color: colors.textPrimary }]}>{event.venueName}</Text>
+                            <View style={styles.eventHeader}>
+                              <Text style={[styles.eventVenue, { color: colors.textPrimary }]}>{event.venueName}</Text>
+                              {day.dateKey >= todayKey && start !== '' && (
+                                <Pressable
+                                  style={styles.createGameButton}
+                                  onPress={() => createGameAt(event, day.dateKey)}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Create a game at ${event.venueName}`}
+                                >
+                                  <Text style={styles.createGameText}>+ Create game</Text>
+                                </Pressable>
+                              )}
+                            </View>
                             {event.title !== '' && (
                               <Text style={[styles.eventTitle, { color: colors.textBody }]}>{event.title}</Text>
                             )}
@@ -597,10 +638,29 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
   },
+  eventHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 3,
+  },
   eventVenue: {
     fontSize: 17,
     fontWeight: '700',
-    marginBottom: 3,
+    flexShrink: 1,
+  },
+  createGameButton: {
+    borderWidth: 1.5,
+    borderColor: '#007AFF',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  createGameText: {
+    color: '#007AFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   eventTitle: {
     fontSize: 14,

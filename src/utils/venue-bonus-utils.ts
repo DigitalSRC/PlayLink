@@ -1,5 +1,5 @@
 import { LocalEvent } from '../data/local-events';
-import { GameType } from '../data/types';
+import { GAME_LABELS, GameType } from '../data/types';
 import { PlacementResult } from './scoring-utils';
 
 /** Points each player earns, once per store event, for playing a round at that event. */
@@ -9,8 +9,9 @@ export const VENUE_EVENT_BONUS = 10;
 // Commander night that runs past midnight isn't cut off at 12:00 AM.
 const LATE_NIGHT_GRACE_HOUR = 4;
 
-// How far ahead the create-group form's date picker reaches (today plus 14 days).
-const PICKER_DAYS = 15;
+// How far ahead a store event can be and still have a group made for it. The Calendar tab only
+// shows the current month, so anything further out is a malformed link, not a real choice.
+const MAX_LINK_DAYS_AHEAD = 31;
 
 /** A scored placement that also records how much of its points came from the store-event bonus. */
 export interface BonusPlacementResult extends PlacementResult {
@@ -159,10 +160,15 @@ export const applyVenueBonus = (
     return { ...placement, pointsAwarded: placement.pointsAwarded + venueBonus, venueBonus };
   });
 
-/** A store event offered in the create-group form, with where it lands on the form's pickers. */
-export interface StoreEventOption {
-  event: LocalEvent;
-  /** 0 = today, 1 = tomorrow, ... matching the create form's date chips. */
+/** A store event a new group is being made for, with where it lands on the create form. */
+export interface StoreEventLink {
+  eventId: string;
+  venueName: string;
+  gameType: GameType;
+  format: string;
+  /** The night the group is for, "YYYY-MM-DD". */
+  dateKey: string;
+  /** 0 = today, 1 = tomorrow, ... counted from the phone's own date. */
   dateOffset: number;
   hour: number;
   minute: number;
@@ -170,53 +176,86 @@ export interface StoreEventOption {
 }
 
 /**
- * Lists the store events a player can attach a new group to: dated events for the chosen game
- * and format that fall within the create form's 15-day date range, soonest first. Each comes
- * with the date-chip offset and 12-hour time to pre-fill the form with.
- * Parameters: events (every event for the player's area), gameType and format (what the group
- * will play), todayKey (today as "YYYY-MM-DD" on the phone), limit (most options to return).
- * Returns: up to `limit` options, ordered by date then start time then venue.
- * Edge cases: weekly events with no specific date are left out, since a group must be tied to
- * one particular night; events earlier than today or beyond the date range are left out; format
- * is compared case-insensitively; an unparseable start time is skipped; returns an empty array
- * when nothing matches.
+ * Builds the route params the Calendar tab hands to the create-group form when a player taps
+ * "Create game" on a store event. Everything the form needs is carried in the link itself, so
+ * the form never has to look the event up again and can't open half-filled.
+ * Parameters: event (the store event), dateKey (the "YYYY-MM-DD" night it was listed under,
+ * which is what pins a weekly event to one particular night).
+ * Returns: a flat object of strings, including openCreate: '1' to open the form.
+ * Edge cases: does no validation of its own - parseStoreEventLink on the receiving side decides
+ * whether the link is usable.
  */
-export const storeEventOptions = (
-  events: LocalEvent[],
-  gameType: GameType,
-  format: string,
-  todayKey: string,
-  limit: number = 12
-): StoreEventOption[] => {
-  const [ty, tm, td] = todayKey.split('-').map(Number);
-  const todayUtc = Date.UTC(ty, tm - 1, td);
-  const wanted = format.trim().toLowerCase();
-  const options: StoreEventOption[] = [];
+export const storeEventLinkParams = (
+  event: LocalEvent,
+  dateKey: string
+): Record<string, string> => ({
+  openCreate: '1',
+  storeEventId: event.id,
+  storeEventVenue: event.venueName,
+  storeEventDate: dateKey,
+  storeEventStart: event.startTime,
+  storeEventGame: event.gameType,
+  storeEventFormat: event.format,
+});
 
-  for (const event of events) {
-    if (event.eventDate === undefined || event.gameType !== gameType) continue;
-    if (event.format.trim().toLowerCase() !== wanted) continue;
-    const [y, m, d] = event.eventDate.split('-').map(Number);
-    const dateOffset = Math.round((Date.UTC(y, m - 1, d) - todayUtc) / 86400000);
-    if (!Number.isFinite(dateOffset) || dateOffset < 0 || dateOffset >= PICKER_DAYS) continue;
-    const time = /^(\d{1,2}):(\d{2})/.exec(event.startTime);
-    if (!time || Number(time[1]) > 23 || Number(time[2]) > 59) continue;
-    const hour24 = Number(time[1]);
-    options.push({
-      event,
-      dateOffset,
-      hour: hour24 % 12 === 0 ? 12 : hour24 % 12,
-      minute: Number(time[2]),
-      period: hour24 < 12 ? 'AM' : 'PM',
-    });
-  }
+/**
+ * Reads the route params written by storeEventLinkParams back into a store-event link, checking
+ * every piece. This is the only way a new group gets tied to a store event, so anything missing
+ * or malformed yields no link at all rather than a group quietly created without its bonus.
+ * Parameters: params (the create screen's route params), todayKey (today as "YYYY-MM-DD" on
+ * the phone).
+ * Returns: the link with its date offset and 12-hour start time, or null if it can't be used.
+ * Edge cases: returns null when any field is missing, empty, or not a string (a repeated param
+ * arrives as an array), the game isn't one PlayLink knows, the date isn't a real calendar day,
+ * is before today, or is more than 31 days out, or the start time isn't a valid 24-hour time;
+ * an event earlier today is still allowed, since its bonus window is open.
+ */
+export const parseStoreEventLink = (
+  params: Record<string, unknown>,
+  todayKey: string
+): StoreEventLink | null => {
+  const text = (key: string): string => {
+    const value = params[key];
+    return typeof value === 'string' ? value.trim() : '';
+  };
+  const eventId = text('storeEventId');
+  const venueName = text('storeEventVenue');
+  const format = text('storeEventFormat');
+  const gameType = text('storeEventGame');
+  const dateKey = text('storeEventDate');
+  if (eventId === '' || venueName === '' || format === '') return null;
+  if (!Object.prototype.hasOwnProperty.call(GAME_LABELS, gameType)) return null;
 
-  return options
-    .sort(
-      (a, b) =>
-        a.dateOffset - b.dateOffset ||
-        a.event.startTime.localeCompare(b.event.startTime) ||
-        a.event.venueName.localeCompare(b.event.venueName)
-    )
-    .slice(0, limit);
+  const dayMs = (key: string): number | null => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+    if (!match) return null;
+    const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const date = new Date(Date.UTC(y, m - 1, d));
+    // Rejects dates that only parse by rolling over, like February 31st.
+    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+      return null;
+    }
+    return date.getTime();
+  };
+  const eventMs = dayMs(dateKey);
+  const todayMs = dayMs(todayKey);
+  if (eventMs === null || todayMs === null) return null;
+  const dateOffset = Math.round((eventMs - todayMs) / 86400000);
+  if (dateOffset < 0 || dateOffset > MAX_LINK_DAYS_AHEAD) return null;
+
+  const time = /^(\d{1,2}):(\d{2})/.exec(text('storeEventStart'));
+  if (!time || Number(time[1]) > 23 || Number(time[2]) > 59) return null;
+  const hour24 = Number(time[1]);
+
+  return {
+    eventId,
+    venueName,
+    gameType: gameType as GameType,
+    format,
+    dateKey,
+    dateOffset,
+    hour: hour24 % 12 === 0 ? 12 : hour24 % 12,
+    minute: Number(time[2]),
+    period: hour24 < 12 ? 'AM' : 'PM',
+  };
 };
