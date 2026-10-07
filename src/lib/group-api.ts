@@ -37,6 +37,7 @@ interface GroupRow {
   source: 'player' | 'store';
   store_id: string | null;
   game_stores: { name: string; website_url: string } | null;
+  local_event_id?: string | null;
   group_players: GroupPlayerRow[];
 }
 
@@ -73,6 +74,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   storeId: row.store_id ?? undefined,
   storeName: row.game_stores?.name,
   storeWebsite: row.game_stores?.website_url,
+  localEventId: row.local_event_id ?? undefined,
 });
 
 /**
@@ -119,6 +121,8 @@ export interface CreateGroupDraft {
   format: string;
   noGo: NoGoRule[];
   hostBracket: number;
+  /** The store event the group is playing at, chosen from the calendar; omit for none. */
+  localEventId?: string;
 }
 
 /**
@@ -145,6 +149,7 @@ export const createGroup = async (hostId: string, draft: CreateGroupDraft): Prom
       game_type: draft.gameType,
       format: draft.format,
       no_go: draft.noGo,
+      local_event_id: draft.localEventId ?? null,
     })
     .select()
     .single();
@@ -286,7 +291,11 @@ export interface GroupResultPlacement {
   playerId: string;
   placement: number;
   outcome: GameOutcome;
+  /** Total points for the round, including venueBonus. */
   pointsAwarded: number;
+  /** How much of pointsAwarded is the store-event bonus (0 or VENUE_EVENT_BONUS). Absent on
+   * rounds recorded before the bonus existed. */
+  venueBonus?: number;
 }
 
 export interface GroupResult {
@@ -362,13 +371,17 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
  * Returns: a promise that resolves once the round is recorded; the caller refetches the results
  * query to pick up the new row rather than relying on a return value.
  * Edge cases: throws if the caller isn't the host, if a placement names a non-member, or on any
- * Postgres/network error.
+ * Postgres/network error. The store-event bonus (see venue-bonus-utils.ts) is NOT applied on
+ * this code path yet: with scoring done by the SQL function, the bonus has to be computed there
+ * too, and that port is still to do. _nowMs is accepted so call sites match the client-scored
+ * version of this function, and is unused until then.
  */
 export const submitGroupResult = async (
   groupId: string,
   roundNumber: number,
   submittedBy: string,
-  placements: PlacementInput[]
+  placements: PlacementInput[],
+  _nowMs?: number
 ): Promise<void> => {
   const { error } = await supabase.rpc('submit_group_result', {
     p_group_id: groupId,
