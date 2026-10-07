@@ -8,8 +8,36 @@ const mockNow = new Date(2026, 9, 6, 12, 0).getTime();
 
 let mockCurrentUser: { location: string } | null = { location: "Reno, NV" };
 jest.mock("../../context/AppContext", () => ({
-  useApp: () => ({ currentUser: mockCurrentUser, getNow: () => mockNow, theme: "dark" }),
+  useApp: () => ({
+    currentUser: mockCurrentUser,
+    session: { user: { id: "user-1" } },
+    getNow: () => mockNow,
+    theme: "dark",
+  }),
 }));
+
+const mockUpdateProfile = jest.fn();
+jest.mock("../../hooks/useProfileQueries", () => ({
+  useUpdateProfileMutation: () => ({ mutate: mockUpdateProfile }),
+}));
+
+interface MockAreaState {
+  data?: { area: { id: string; label: string }; synced: boolean; lastSyncedAt: string | null; syncError: string | null };
+  error?: { code: string } | null;
+  isPending: boolean;
+  isError: boolean;
+  isRefetching: boolean;
+}
+interface MockRefreshState {
+  data?: MockAreaState["data"];
+  isPending: boolean;
+  isError: boolean;
+}
+const mockAreaRefetch = jest.fn();
+const mockRefreshMutate = jest.fn();
+const mockRefreshReset = jest.fn();
+const mockUseEventAreaQuery = jest.fn<(location: string) => MockAreaState>();
+const mockUseRefresh = jest.fn<() => MockRefreshState>();
 
 interface MockQueryState {
   data?: LocalEvent[];
@@ -24,7 +52,32 @@ jest.mock("../../hooks/useLocalEventQueries", () => ({
     ...mockUseLocalEventsQuery(area, format),
     refetch: mockRefetch,
   }),
+  useEventAreaQuery: (location: string) => ({
+    ...mockUseEventAreaQuery(location),
+    refetch: mockAreaRefetch,
+  }),
+  useRefreshEventAreaMutation: () => ({
+    ...mockUseRefresh(),
+    mutate: mockRefreshMutate,
+    reset: mockRefreshReset,
+  }),
 }));
+
+// Events were last refreshed 30 minutes before "now".
+const resolvedArea = (overrides: Partial<NonNullable<MockAreaState["data"]>> = {}): MockAreaState => ({
+  data: {
+    area: { id: "reno-sparks", label: "Reno-Sparks, NV" },
+    synced: false,
+    lastSyncedAt: new Date(mockNow - 30 * 60 * 1000).toISOString(),
+    syncError: null,
+    ...overrides,
+  },
+  error: null,
+  isPending: false,
+  isError: false,
+  isRefetching: false,
+});
+const idleRefresh: MockRefreshState = { data: undefined, isPending: false, isError: false };
 
 const makeEvent = (overrides: Partial<LocalEvent>): LocalEvent => ({
   id: "event-1",
@@ -81,6 +134,8 @@ describe("CalendarScreen", () => {
     jest.clearAllMocks();
     mockCurrentUser = { location: "Reno, NV" };
     mockUseLocalEventsQuery.mockReturnValue(loaded(allEvents));
+    mockUseEventAreaQuery.mockReturnValue(resolvedArea());
+    mockUseRefresh.mockReturnValue(idleRefresh);
   });
 
   it("requests every format for the player's area, so switching needs no refetch", async () => {
@@ -89,12 +144,16 @@ describe("CalendarScreen", () => {
     expect(mockUseLocalEventsQuery).toHaveBeenCalledWith("reno-sparks", undefined);
   });
 
-  it("falls back to Reno-Sparks for a location with no matching area", async () => {
-    mockCurrentUser = { location: "Portland, OR" };
+  it("resolves the area from the profile location and shows its name", async () => {
+    mockCurrentUser = { location: "  Sacramento, CA " };
+    mockUseEventAreaQuery.mockReturnValue(
+      resolvedArea({ area: { id: "sacramento-california-us", label: "Sacramento, CA" } })
+    );
     const { getByText } = await render(<CalendarScreen />);
 
-    expect(mockUseLocalEventsQuery).toHaveBeenCalledWith("reno-sparks", undefined);
-    expect(getByText("Reno-Sparks, NV")).toBeTruthy();
+    expect(mockUseEventAreaQuery).toHaveBeenCalledWith("Sacramento, CA");
+    expect(mockUseLocalEventsQuery).toHaveBeenCalledWith("sacramento-california-us", undefined);
+    expect(getByText("Sacramento, CA")).toBeTruthy();
   });
 
   it("opens on the current month showing Commander, with no month navigation", async () => {
@@ -257,8 +316,8 @@ describe("CalendarScreen", () => {
     mockUseLocalEventsQuery.mockReturnValue(loaded([]));
     const { getByText } = await render(<CalendarScreen />);
 
-    expect(getByText("No events listed yet")).toBeTruthy();
-    expect(getByText(/Nothing has been added for Reno-Sparks, NV/)).toBeTruthy();
+    expect(getByText("No events found here yet")).toBeTruthy();
+    expect(getByText(/No store near Reno-Sparks, NV has posted events/)).toBeTruthy();
   });
 
   it("shows a retry card when the events can't be loaded, and retries on press", async () => {
@@ -287,7 +346,7 @@ describe("CalendarScreen", () => {
 
     expect(getByText("October 2026")).toBeTruthy();
     expect(getByLabelText("2026-10-06, today")).toBeTruthy();
-    expect(queryByText("No events listed yet")).toBeNull();
+    expect(queryByText("No events found here yet")).toBeNull();
   });
 
   it("renders nothing when there is no current user", async () => {
@@ -295,5 +354,181 @@ describe("CalendarScreen", () => {
     const { toJSON } = await render(<CalendarScreen />);
 
     expect(toJSON()).toBeNull();
+  });
+
+  describe("location", () => {
+    it("asks for a location when the profile has none, without looking anything up", async () => {
+      mockCurrentUser = { location: "   " };
+      mockUseEventAreaQuery.mockReturnValue({ isPending: true, isError: false, isRefetching: false });
+      const { getByText, queryByText } = await render(<CalendarScreen />);
+
+      expect(getByText("No location set")).toBeTruthy();
+      expect(getByText("Set your location")).toBeTruthy();
+      expect(queryByText(/Finding events near/)).toBeNull();
+      expect(mockUseLocalEventsQuery).toHaveBeenCalledWith("", undefined);
+    });
+
+    it("shows a finding message while the area is being worked out", async () => {
+      mockUseEventAreaQuery.mockReturnValue({ isPending: true, isError: false, isRefetching: false });
+      const { getByText, queryByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Finding events near Reno, NV…")).toBeTruthy();
+      expect(getByText("Reno, NV")).toBeTruthy();
+      expect(queryByText("October 2026")).toBeNull();
+    });
+
+    it("says it couldn't find an unrecognised place and offers to change it", async () => {
+      mockCurrentUser = { location: "Xqzvwpl" };
+      mockUseEventAreaQuery.mockReturnValue({
+        error: { code: "location_not_found" },
+        isPending: false,
+        isError: true,
+        isRefetching: false,
+      });
+      const { getByText, getByLabelText, queryByText } = await render(<CalendarScreen />);
+
+      expect(getByText("We couldn't find “Xqzvwpl”")).toBeTruthy();
+      expect(queryByText("Try again")).toBeNull();
+
+      await fireEvent.press(getByText("Change location"));
+      expect(getByLabelText("Location").props.value).toBe("Xqzvwpl");
+    });
+
+    it("offers a retry, not a retype, when the lookup itself failed", async () => {
+      mockUseEventAreaQuery.mockReturnValue({
+        error: { code: "unavailable" },
+        isPending: false,
+        isError: true,
+        isRefetching: false,
+      });
+      const { getByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Couldn't load your area")).toBeTruthy();
+      await fireEvent.press(getByText("Try again"));
+      expect(mockAreaRefetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("saves a new location to the profile, trimmed, and closes the editor", async () => {
+      const { getByLabelText, queryByLabelText } = await render(<CalendarScreen />);
+
+      await fireEvent.press(getByLabelText("Change location"));
+      expect(getByLabelText("Location").props.value).toBe("Reno, NV");
+
+      await fireEvent.changeText(getByLabelText("Location"), "  Sacramento, CA  ");
+      await fireEvent.press(getByLabelText("Save location"));
+
+      expect(mockUpdateProfile).toHaveBeenCalledWith({
+        userId: "user-1",
+        patch: { location: "Sacramento, CA" },
+      });
+      expect(queryByLabelText("Location")).toBeNull();
+    });
+
+    it("does not write to the profile when the location is unchanged", async () => {
+      const { getByLabelText, queryByLabelText } = await render(<CalendarScreen />);
+
+      await fireEvent.press(getByLabelText("Change location"));
+      await fireEvent.press(getByLabelText("Save location"));
+
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+      expect(queryByLabelText("Location")).toBeNull();
+    });
+
+    it("refuses to save a location that is too short", async () => {
+      const { getByLabelText } = await render(<CalendarScreen />);
+
+      await fireEvent.press(getByLabelText("Change location"));
+      await fireEvent.changeText(getByLabelText("Location"), " a ");
+      await fireEvent.press(getByLabelText("Save location"));
+
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+      expect(getByLabelText("Location")).toBeTruthy();
+    });
+
+    it("cancel closes the editor without saving", async () => {
+      const { getByText, getByLabelText, queryByLabelText } = await render(<CalendarScreen />);
+
+      await fireEvent.press(getByLabelText("Change location"));
+      await fireEvent.changeText(getByLabelText("Location"), "Sacramento, CA");
+      await fireEvent.press(getByText("Cancel"));
+
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+      expect(queryByLabelText("Location")).toBeNull();
+    });
+  });
+
+  describe("updating events", () => {
+    it("shows how long ago events were updated", async () => {
+      const { getByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Events updated 30 min ago")).toBeTruthy();
+    });
+
+    it("says never when the area has not been synced", async () => {
+      mockUseEventAreaQuery.mockReturnValue(resolvedArea({ lastSyncedAt: null }));
+      const { getByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Events updated never")).toBeTruthy();
+    });
+
+    it("asks the server to refresh the current location", async () => {
+      const { getByLabelText } = await render(<CalendarScreen />);
+
+      await fireEvent.press(getByLabelText("Update events"));
+
+      expect(mockRefreshMutate).toHaveBeenCalledWith({ location: "Reno, NV" });
+    });
+
+    it("shows progress and blocks a second tap while updating", async () => {
+      mockUseRefresh.mockReturnValue({ data: undefined, isPending: true, isError: false });
+      const { getByText, getByLabelText } = await render(<CalendarScreen />);
+
+      expect(getByText("Updating…")).toBeTruthy();
+      await fireEvent.press(getByLabelText("Update events"));
+      expect(mockRefreshMutate).not.toHaveBeenCalled();
+    });
+
+    it("uses the refreshed time once an update succeeds", async () => {
+      mockUseRefresh.mockReturnValue({
+        data: resolvedArea({ synced: true, lastSyncedAt: new Date(mockNow).toISOString() }).data,
+        isPending: false,
+        isError: false,
+      });
+      const { getByText, queryByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Events updated just now")).toBeTruthy();
+      expect(queryByText("Already up to date.")).toBeNull();
+    });
+
+    it("says already up to date when the server declines to refresh so soon", async () => {
+      mockUseRefresh.mockReturnValue({
+        data: resolvedArea({ synced: false }).data,
+        isPending: false,
+        isError: false,
+      });
+      const { getByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Already up to date.")).toBeTruthy();
+    });
+
+    it("keeps showing saved events with a note when the refresh fails", async () => {
+      mockUseRefresh.mockReturnValue({
+        data: resolvedArea({ synced: false, syncError: "locator responded 503" }).data,
+        isPending: false,
+        isError: false,
+      });
+      const { getByText, getAllByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Couldn't update just now. Showing the last saved events.")).toBeTruthy();
+      expect(getAllByText("Tuesday Game Store")).toHaveLength(4);
+    });
+
+    it("shows the same note when the refresh request itself errors", async () => {
+      mockUseRefresh.mockReturnValue({ data: undefined, isPending: false, isError: true });
+      const { getByText, getAllByText } = await render(<CalendarScreen />);
+
+      expect(getByText("Couldn't update just now. Showing the last saved events.")).toBeTruthy();
+      expect(getAllByText("Tuesday Game Store")).toHaveLength(4);
+    });
   });
 });
