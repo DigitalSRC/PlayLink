@@ -406,7 +406,7 @@ export default function CalendarScreen() {
                                   style={styles.createGameButton}
                                   onPress={() => createGameAt(event, day.dateKey)}
                                   accessibilityRole="button"
-                                  accessibilityLabel={`Create a game at ${event.venueName}`}
+                                  accessibilityLabel={`Create a game at ${event.venueName} on ${formatDayHeading(day.dateKey)}`}
                                 >
                                   <Text style={styles.createGameText}>+ Create game</Text>
                                 </Pressable>
