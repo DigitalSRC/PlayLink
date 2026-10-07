@@ -335,7 +335,9 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
 - **`security-hardening`** — server-authoritative scoring and RLS hardening. The migration is
   written but not yet applied to Supabase; see `docs/security-backlog.md` (on that branch).
-- **`event-calendar`** — the Calendar tab: a month view of local Commander nights from the
+- **`event-calendar`** — **PENDING DEV MERGE (marked 2026-10-07, GitHub issue #12).** The
+  developer considers it finished and will review it before it lands; do not merge it into
+  `development` until they say so. The Calendar tab: a month view of local Commander nights from the
   `local_events` table, starting with Reno-Sparks, filled by the `sync-local-events` Edge Function.
   Its two migrations and the function are live on Supabase (applied/deployed 2026-10-07).
 - **`calendar-system`** — shelved (2026-10-06) in favor of `event-calendar`: a weekly calendar of
