@@ -8,6 +8,11 @@ const MAX_VENUE_LENGTH = 120;
 const MAX_TITLE_LENGTH = 120;
 const MAX_ADDRESS_LENGTH = 200;
 const MAX_NOTES_LENGTH = 500;
+const MAX_FORMAT_LENGTH = 40;
+
+// The locator also lists non-Magic events (D&D nights and the like) under this catch-all format.
+// The calendar is for Magic formats, so those are left out.
+const SKIPPED_FORMAT = 'OTHER';
 
 /** Shape of a `local_events` row written by the sync (see the create_local_events migration). */
 export interface LocalEventUpsertRow {
@@ -15,7 +20,7 @@ export interface LocalEventUpsertRow {
   venue_name: string;
   address: string;
   game_type: 'mtg';
-  format: 'Commander';
+  format: string;
   event_date: string;
   start_time: string;
   title: string;
@@ -88,17 +93,42 @@ export const formatAddress = (postalAddress: string | null | undefined): string 
   cleanText(postalAddress, MAX_ADDRESS_LENGTH).replace(/,\s*(United States|USA|US)$/i, '');
 
 /**
- * Turns the locator's events for one area into `local_events` rows. Only scheduled Commander
- * events are kept. Each row is a one-off dated event keyed by the locator's own event id, so
+ * Works out the display name of an event's format, e.g. "Commander" or "Booster Draft". The
+ * locator supplies a readable name alongside its internal code; when that name is missing the
+ * code itself is tidied up ("BOOSTER_DRAFT" becomes "Booster Draft") so every event of a format
+ * still ends up under one consistent label for the app's format switcher.
+ * Parameters: event (the locator event).
+ * Returns: the format label, or null if the event has no usable format.
+ * Edge cases: returns null for the catch-all OTHER format (non-Magic events) and for a missing
+ * or blank format code; the label is whitespace-cleaned and length-capped like other feed text.
+ */
+export const formatLabel = (event: WizardsEvent): string | null => {
+  const code = (event.format ?? '').trim();
+  if (code === '' || code === SKIPPED_FORMAT) return null;
+  const named = cleanText(event.eventFormat?.name, MAX_FORMAT_LENGTH);
+  if (named !== '') return named;
+  return cleanText(
+    code
+      .toLowerCase()
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' '),
+    MAX_FORMAT_LENGTH
+  );
+};
+
+/**
+ * Turns the locator's events for one area into `local_events` rows. Every scheduled Magic event
+ * is kept, whatever its format, so the app can switch between Commander and the others. Each row is a one-off dated event keyed by the locator's own event id, so
  * re-running the sync updates rows in place instead of duplicating them.
  * Parameters: events (everything fetchEvents returned), stores (everything fetchStores returned,
  * used to look up each venue's address), area (the area being synced), syncedAt (the run's ISO
  * timestamp, stamped on every row so rows the feed no longer lists can be found afterwards).
  * Returns: the rows to upsert, one per kept event.
- * Edge cases: skips events that are cancelled or otherwise not SCHEDULED, are not Commander,
- * have no venue, no id, or an unparseable start time; an event whose store isn't in the store
+ * Edge cases: skips events that are cancelled or otherwise not SCHEDULED, have no usable
+ * format (including the non-Magic OTHER catch-all), have no venue, no id, or an unparseable start time; an event whose store isn't in the store
  * list still maps, with an empty address; duplicate event ids keep the first occurrence; an
- * empty title falls back to "Commander".
+ * empty title falls back to the format name.
  */
 export const mapEventsToRows = (
   events: WizardsEvent[],
@@ -113,7 +143,9 @@ export const mapEventsToRows = (
   const rows: LocalEventUpsertRow[] = [];
 
   for (const event of events) {
-    if (event.status !== 'SCHEDULED' || event.format !== 'COMMANDER') continue;
+    if (event.status !== 'SCHEDULED') continue;
+    const format = formatLabel(event);
+    if (!format) continue;
     if (!event.id || !event.organization?.name) continue;
     const local = toVenueLocal(event.scheduledStartTime, area.timeZone);
     if (!local) continue;
@@ -127,10 +159,10 @@ export const mapEventsToRows = (
       venue_name: cleanText(event.organization.name, MAX_VENUE_LENGTH),
       address: addressByStoreId.get(String(event.organization.id)) ?? '',
       game_type: 'mtg',
-      format: 'Commander',
+      format,
       event_date: local.date,
       start_time: local.time,
-      title: cleanText(event.title, MAX_TITLE_LENGTH) || 'Commander',
+      title: cleanText(event.title, MAX_TITLE_LENGTH) || format,
       notes: cleanText(event.description, MAX_NOTES_LENGTH),
       source: 'feed',
       external_uid: externalUid,

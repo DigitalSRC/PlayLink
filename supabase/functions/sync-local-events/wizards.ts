@@ -29,6 +29,7 @@ export interface WizardsEvent {
   scheduledStartTime: string | null;
   status: string | null;
   organization: { id: string; name: string } | null;
+  eventFormat: { name: string | null } | null;
 }
 
 const STORES_QUERY = `query($i: StoreByLocationInput!) {
@@ -41,7 +42,7 @@ const STORES_QUERY = `query($i: StoreByLocationInput!) {
 const EVENTS_QUERY = `query($q: EventSearchQuery!) {
   searchEvents(query: $q) {
     pageInfo { totalResults }
-    events { id title description format scheduledStartTime status organization { id name } }
+    events { id title description format scheduledStartTime status organization { id name } eventFormat { name } }
   }
 }`;
 
@@ -119,8 +120,8 @@ export const fetchStores = (area: SyncArea): Promise<WizardsStore[]> =>
   });
 
 /**
- * Fetches every upcoming event, of any format, that the locator lists within an area. Filtering
- * down to Commander happens afterwards in mapping.ts, since the search input's filter fields
+ * Fetches every upcoming event, of any format, that the locator lists within an area. Deciding
+ * which ones to keep happens afterwards in mapping.ts, since the search input's filter fields
  * aren't documented.
  * Parameters: area (the center point and radius to search).
  * Returns: the upcoming events in range.
