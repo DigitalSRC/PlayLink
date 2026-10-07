@@ -8,8 +8,8 @@
 -- cover. The sync only ever touches 'feed' rows. There is no in-app submission flow.
 create table public.local_events (
   id uuid primary key default gen_random_uuid(),
-  -- Area slug the event belongs to, e.g. 'reno-sparks'. Matches an id in src/data/local-events.ts's
-  -- EVENT_AREAS. Adding a new city is a data change here plus one entry in that list.
+  -- Area slug the event belongs to, e.g. 'reno-sparks'. Since 20261007120000_event_areas.sql this
+  -- references a row in public.event_areas.
   area text not null check (area ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
   venue_name text not null check (length(btrim(venue_name)) > 0),
   address text not null default '',
