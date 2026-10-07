@@ -34,6 +34,9 @@ import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGro
 import DateOffsetPicker from '../../components/DateOffsetPicker';
 import TimeOfDayPicker from '../../components/TimeOfDayPicker';
 import WeekCalendar from '../../components/WeekCalendar';
+import { useEventAreaQuery, useLocalEventsQuery } from '../../hooks/useLocalEventQueries';
+import { dateKeyFromMs, formatEventTime } from '../../utils/calendar-utils';
+import { storeEventOptions, StoreEventOption, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
 type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
@@ -53,7 +56,7 @@ const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lor
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, groupsLoading, rivals } = useApp();
+  const { currentUser, groups, groupsLoading, rivals, getNow } = useApp();
   const colors = useThemeColors();
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
@@ -68,6 +71,8 @@ export default function BrowseScreen() {
   const [newGame, setNewGame] = useState<GameType>('mtg');
   const [newFormat, setNewFormat] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  // The store event (from the Calendar tab's data) this group will be played at, if one is picked.
+  const [newStoreEventId, setNewStoreEventId] = useState<string | null>(null);
   const [newDateOffset, setNewDateOffset] = useState(0);
   const [newHour, setNewHour] = useState(7);
   const [newMinute, setNewMinute] = useState(0);
@@ -185,6 +190,7 @@ export default function BrowseScreen() {
   const closeCreateForm = () => {
     setShowCreate(false);
     setNewName('');
+    setNewStoreEventId(null);
     setNewDateOffset(0);
     setNewHour(7);
     setNewMinute(0);
@@ -217,6 +223,40 @@ export default function BrowseScreen() {
     }
   };
 
+  // Store events the new group can be attached to: the player's area, the game and format
+  // currently chosen in the form, within the form's date range.
+  const eventArea = useEventAreaQuery(currentUser?.location?.trim() ?? '').data?.area;
+  const { data: areaEvents = [] } = useLocalEventsQuery(eventArea?.id ?? '');
+  const storeOptions = storeEventOptions(
+    areaEvents,
+    newGame,
+    newFormat || FORMAT_OPTIONS[newGame][0],
+    dateKeyFromMs(getNow())
+  );
+
+  /**
+   * Attaches the new group to a store event picked from the calendar's data, or detaches it if
+   * the same event is tapped again. Picking one fills in the location, date, and time from the
+   * event so the group matches the night it's tied to.
+   * Parameters: option (the store event and where it lands on the form's date/time pickers).
+   * Returns: void.
+   * Edge cases: tapping the already-selected event clears the link but leaves the filled-in
+   * location and time, which the player can then edit freely.
+   */
+  const pickStoreEvent = (option: StoreEventOption) => {
+    Haptics.selectionAsync();
+    if (newStoreEventId === option.event.id) {
+      setNewStoreEventId(null);
+      return;
+    }
+    setNewStoreEventId(option.event.id);
+    setNewLocation(option.event.venueName);
+    setNewDateOffset(option.dateOffset);
+    setNewHour(option.hour);
+    setNewMinute(option.minute);
+    setNewPeriod(option.period);
+  };
+
   const handleCreate = async () => {
     if (!currentUser) return;
     if (groupsLoading || createGroupMutation.isPending) return;
@@ -245,6 +285,7 @@ export default function BrowseScreen() {
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
+      localEventId: newStoreEventId ?? undefined,
       scheduledAt,
       time: formatScheduledAt(scheduledAt),
       targetPlayers: Math.max(2, Number(newTarget) || 4),
@@ -506,10 +547,42 @@ export default function BrowseScreen() {
               <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
 
               <Text style={styles.fieldLabel}>Location</Text>
-              <LocationAutocomplete value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Seattle, WA" />
+              <LocationAutocomplete value={newLocation} onChangeText={(text) => { setNewLocation(text); setNewStoreEventId(null); }} placeholder="e.g. Seattle, WA" />
+
+              {storeOptions.length > 0 && (
+                <>
+                  <Text style={styles.fieldLabel}>Or play at a store event (+{VENUE_EVENT_BONUS} bonus points each)</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storeEventRow}>
+                    {storeOptions.map((option) => {
+                      const active = newStoreEventId === option.event.id;
+                      const d = new Date(getNow()); d.setDate(d.getDate() + option.dateOffset);
+                      const dayLabel = option.dateOffset === 0 ? 'Today' : option.dateOffset === 1 ? 'Tomorrow'
+                        : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                      return (
+                        <Pressable
+                          key={option.event.id}
+                          style={[styles.storeEventChip, { backgroundColor: colors.bg, borderColor: colors.border }, active && styles.storeEventChipActive]}
+                          onPress={() => pickStoreEvent(option)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Play at ${option.event.venueName}, ${dayLabel}`}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text style={[styles.storeEventVenue, { color: colors.textPrimary }]} numberOfLines={1}>{option.event.venueName}</Text>
+                          <Text style={[styles.storeEventWhen, { color: colors.textSecondary }]}>{dayLabel} · {formatEventTime(option.event.startTime)}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  {newStoreEventId !== null && (
+                    <Text style={styles.storeEventNote}>
+                      🏪 Everyone gets +{VENUE_EVENT_BONUS} points, once, for a round reported at this event after it starts.
+                    </Text>
+                  )}
+                </>
+              )}
 
               <Text style={styles.fieldLabel}>Date</Text>
-              <DateOffsetPicker value={newDateOffset} onChange={setNewDateOffset} />
+              <DateOffsetPicker value={newDateOffset} onChange={(offset) => { setNewDateOffset(offset); setNewStoreEventId(null); }} />
 
               <Text style={styles.fieldLabel}>Time</Text>
               <TimeOfDayPicker
@@ -592,6 +665,34 @@ export default function BrowseScreen() {
 }
 
 const styles = StyleSheet.create({
+  storeEventRow: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  storeEventChip: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    maxWidth: 190,
+  },
+  storeEventChipActive: {
+    borderColor: '#34C759',
+  },
+  storeEventVenue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  storeEventWhen: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  storeEventNote: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#34C759',
+    marginTop: 8,
+  },
   container: {
     flex: 1,
   },

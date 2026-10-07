@@ -37,6 +37,9 @@ export interface Group {
   storeId?: string;
   storeName?: string;
   storeWebsite?: string;
+  /** The store event (a local_events row) this group is playing at, if any. Links the group to
+   * the Calendar tab's data and makes its rounds eligible for the store-event bonus. */
+  localEventId?: string;
 }
 
 // HARDCODED_GROUPS (the static mock group list this file used to export on unitTests/
