@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import WeekCalendar from '../../components/WeekCalendar';
 import { useApp } from '../../context/AppContext';
-import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
+import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, visibleGames } from '../../data/types';
 import { PARTICIPATION_POINTS } from '../../utils/scoring-utils';
 import { useThemeColors } from '../../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
@@ -95,8 +95,8 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Games played */}
-      <View style={styles.gamesRow}>
+      {/* Games played: hidden while the app is Commander-only, since there is only the one */}
+      {!COMMANDER_ONLY && <View style={styles.gamesRow}>
         {currentUser.games.map((g) => (
           <View key={g} style={[styles.gamePill, { backgroundColor: colors.card, borderColor: GAME_COLOR[g] }]}>
             <Text style={[styles.gamePillText, { color: colors.textSecondary }]}>
@@ -104,7 +104,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         ))}
-      </View>
+      </View>}
 
       {/* This week's groups */}
       {myGroups.length > 0 ? (
@@ -148,7 +148,7 @@ export default function HomeScreen() {
               <View style={styles.rivalInfo}>
                 <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{rival.displayName ?? rival.username}</Text>
                 <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
-                  {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                  {rival.wins}W – {rival.losses}L · {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(' ')}
                 </Text>
               </View>
               <View style={styles.rivalBadge}>
@@ -169,7 +169,7 @@ export default function HomeScreen() {
                   <View style={styles.rivalInfo}>
                     <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{rival.displayName ?? rival.username}</Text>
                     <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
-                      {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                      {rival.wins}W – {rival.losses}L · {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(' ')}
                     </Text>
                   </View>
                   <View style={[styles.rivalBadge, styles.contenderBadge]}>
@@ -191,7 +191,7 @@ export default function HomeScreen() {
                 <View style={styles.rivalInfo}>
                   <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{mostPlayedAgainst.displayName ?? mostPlayedAgainst.username}</Text>
                   <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
-                    {mostPlayedAgainst.wins}W – {mostPlayedAgainst.losses}L · {mostPlayedAgainst.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                    {mostPlayedAgainst.wins}W – {mostPlayedAgainst.losses}L · {visibleGames(mostPlayedAgainst.games).map((g) => GAME_EMOJI[g]).join(' ')}
                   </Text>
                 </View>
                 <View style={[styles.rivalBadge, styles.familiarFoeBadge]}>

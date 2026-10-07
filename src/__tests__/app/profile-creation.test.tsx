@@ -80,9 +80,9 @@ const fillIdentityAndGames = async (
 ) => {
   await fireEvent.changeText(getByTestId("profile-creation-username-input"), "TestPlayer");
   await fireEvent.changeText(getByPlaceholderText(CITY_PLACEHOLDER), "Reno, NV");
-  await fireEvent.press(getByTestId("profile-creation-next-button")); // step 0 -> step 1
-  await fireEvent.press(getByTestId("profile-creation-game-mtg")); // select a game
-  await fireEvent.press(getByTestId("profile-creation-next-button")); // step 1 -> step 2
+  // The app is Commander-only for now, so the game step is skipped: identity leads straight to
+  // preferences with Magic and Commander already set.
+  await fireEvent.press(getByTestId("profile-creation-next-button")); // identity -> preferences
 };
 
 describe("ProfileCreation", () => {
@@ -108,7 +108,11 @@ describe("ProfileCreation", () => {
     await waitFor(() => {
       expect(mockMutateAsync).toHaveBeenCalledWith({
         userId: "user-1",
-        draft: expect.objectContaining({ location: "Reno, NV" }),
+        draft: expect.objectContaining({
+          location: "Reno, NV",
+          games: ["mtg"],
+          preferredFormats: { mtg: ["Commander"] },
+        }),
       });
     });
 
@@ -170,15 +174,33 @@ describe("ProfileCreation", () => {
     await fireEvent.changeText(getByTestId("profile-creation-username-input"), "TestPlayer");
     await fireEvent.press(getByTestId("profile-creation-next-button"));
     expect(getByText("Create Your Profile")).toBeTruthy();
-    expect(queryByText("What Do You Play?")).toBeNull();
+    expect(queryByText("Your Preferences")).toBeNull();
 
     await fireEvent.changeText(getByPlaceholderText(CITY_PLACEHOLDER), " R ");
     await fireEvent.press(getByTestId("profile-creation-next-button"));
-    expect(queryByText("What Do You Play?")).toBeNull();
+    expect(queryByText("Your Preferences")).toBeNull();
 
     await fireEvent.changeText(getByPlaceholderText(CITY_PLACEHOLDER), "Reno, NV");
     await fireEvent.press(getByTestId("profile-creation-next-button"));
-    expect(getByText("What Do You Play?")).toBeTruthy();
+    expect(getByText("Your Preferences")).toBeTruthy();
+  });
+
+  it("never asks which game or format, and shows only Commander's own settings", async () => {
+    const { getByTestId, getByPlaceholderText, getByText, queryByText, queryByTestId } = await render(
+      <ProfileCreation />
+    );
+
+    await fillIdentityAndGames(getByTestId, getByPlaceholderText);
+
+    expect(getByText("Your Preferences")).toBeTruthy();
+    expect(queryByText("What Do You Play?")).toBeNull();
+    for (const game of ["mtg", "pokemon", "lorcana", "onepiece"]) {
+      expect(queryByTestId(`profile-creation-game-${game}`)).toBeNull();
+    }
+    for (const hidden of [/Formats$/, "Standard", "Draft", "Modern", "Pioneer", /Pokémon/, /Lorcana/, /One Piece/]) {
+      expect(queryByText(hidden)).toBeNull();
+    }
+    expect(getByText("⚔️ Commander Bracket")).toBeTruthy();
   });
 
   it("goes back a step without losing what was entered", async () => {
@@ -188,8 +210,6 @@ describe("ProfileCreation", () => {
     await fillIdentityAndGames(getByTestId, getByPlaceholderText);
     expect(getByText("Your Preferences")).toBeTruthy();
 
-    await fireEvent.press(getByTestId("profile-creation-back-button"));
-    expect(getByText("What Do You Play?")).toBeTruthy();
     await fireEvent.press(getByTestId("profile-creation-back-button"));
     expect(getByText("Create Your Profile")).toBeTruthy();
     expect(getByTestId("profile-creation-username-input").props.value).toBe("TestPlayer");
