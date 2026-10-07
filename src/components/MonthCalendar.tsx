@@ -23,7 +23,8 @@ interface MonthCalendarProps {
 /**
  * Renders one month as a Sunday-first grid of tappable days, with the venues that have an event
  * written on each day. The current day's number is a filled blue circle, the tapped day's cell
- * gets a blue outline, and days already past are dimmed. It is a display component only: the
+ * gets a blue outline, days with an event get a slightly lighter background so they stand out,
+ * and days already past are dimmed. It is a display component only: the
  * caller owns which month is showing, which day is selected, and what the labels are.
  * Parameters: year, month (0-11), todayKey, selectedKey, venueLabels (already shortened to fit a
  * cell), onSelectDay (called with the tapped day's "YYYY-MM-DD" key).
@@ -49,7 +50,7 @@ export default function MonthCalendar({
     <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.week}>
         {WEEKDAY_LABELS.map((label, index) => (
-          <Text key={index} style={[styles.weekdayLabel, { color: colors.textMuted }]}>
+          <Text key={index} style={[styles.weekdayLabel, { color: colors.textSecondary }]}>
             {label}
           </Text>
         ))}
@@ -74,6 +75,7 @@ export default function MonthCalendar({
                 style={[
                   styles.cell,
                   { borderColor: isSelected ? ACCENT : 'transparent' },
+                  labels.length > 0 && { backgroundColor: colors.cardRaised },
                   isPast && styles.cellPast,
                 ]}
                 onPress={() => onSelectDay(key)}
@@ -95,12 +97,12 @@ export default function MonthCalendar({
                   </Text>
                 </View>
                 {shown.map((label) => (
-                  <Text key={label} style={styles.venueLabel} numberOfLines={1}>
+                  <Text key={label} style={[styles.venueLabel, { color: colors.accentText }]} numberOfLines={1}>
                     {label}
                   </Text>
                 ))}
                 {hidden > 0 && (
-                  <Text style={[styles.moreLabel, { color: colors.textMuted }]}>+{hidden}</Text>
+                  <Text style={[styles.moreLabel, { color: colors.textBody }]}>+{hidden}</Text>
                 )}
               </Pressable>
             );
@@ -140,7 +142,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   cellPast: {
-    opacity: 0.4,
+    opacity: 0.55,
   },
   dayCircle: {
     width: 24,
@@ -160,10 +162,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   venueLabel: {
-    fontSize: 8.5,
+    fontSize: 9,
     lineHeight: 11,
     fontWeight: '700',
-    color: ACCENT,
     textAlign: 'center',
     alignSelf: 'stretch',
   },

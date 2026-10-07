@@ -1,7 +1,11 @@
 // Scheduled job: keeps the Calendar tab's `local_events` table filled with the Magic events
-// (Commander and the other formats) that local game stores have posted to Wizards of the Coast's store/event locator. Runs every
-// 6 hours via pg_cron (see the 20261006130000_sync_local_events_cron.sql migration), so the app
-// itself never talks to the locator - phones only ever read our own table.
+// (Commander and the other formats) that local game stores have posted to Wizards of the Coast's
+// store/event locator. Runs every 6 hours via pg_cron (see the
+// 20261006130000_sync_local_events_cron.sql migration), so the app itself never talks to the
+// locator - phones only ever read our own table.
+//
+// Which areas to sync comes from the `event_areas` table. Only areas a player has asked for in
+// the last 30 days are refreshed, most recently requested first, up to a fixed number per run.
 //
 // Like refresh-rivals, this is triggered by cron rather than a user, so it is deployed with
 // --no-verify-jwt and checks the shared x-cron-secret header instead of a Supabase JWT. It
@@ -10,93 +14,17 @@
 //
 // Deploy: npx supabase functions deploy sync-local-events --no-verify-jwt
 
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { SYNC_AREAS, type SyncArea } from './areas.ts';
-import { mapEventsToRows, toVenueLocal } from './mapping.ts';
-import { fetchEvents, fetchStores } from './wizards.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { EVENT_AREA_COLUMNS, type EventAreaRow } from './areas.ts';
+import { type AreaSyncResult, claimAndSyncArea } from './sync.ts';
 
-// How long a past feed event is kept before being pruned, so "last week" is still browsable.
-const KEEP_PAST_DAYS = 30;
-
-interface AreaResult {
-  area: string;
-  upserted: number;
-  removed: number;
-  note?: string;
-}
-
-/**
- * Subtracts whole days from a "YYYY-MM-DD" date string. Done in UTC on a date-only value, so
- * there is no time-of-day or daylight-saving component that could shift the result.
- * Parameters: date (a "YYYY-MM-DD" string), days (how many days to go back).
- * Returns: the earlier date as "YYYY-MM-DD".
- * Edge cases: crosses month and year boundaries correctly.
- */
-const daysBefore = (date: string, days: number): string => {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
-};
-
-/**
- * Syncs one area: fetch from the locator, upsert the events, then remove feed rows the
- * locator no longer lists. The order is what keeps a failure safe - nothing is written or
- * removed until both fetches have fully succeeded, and removal only runs after the upsert has.
- * Hand-curated rows (source = 'curated') are never touched.
- * Parameters: supabase (a service-role client), area (the area to sync), now (the run's instant).
- * Returns: counts of rows upserted and removed, plus a note when the run deliberately did nothing.
- * Edge cases: throws if either fetch fails or is partial, or if a database call errors, leaving
- * existing rows as they were; if the locator returns no usable events at all, that is treated
- * as suspect and existing rows are left untouched rather than wiped; running twice in a row is
- * harmless, since rows are keyed by the locator's event id.
- */
-const syncArea = async (supabase: SupabaseClient, area: SyncArea, now: Date): Promise<AreaResult> => {
-  const [stores, events] = await Promise.all([fetchStores(area), fetchEvents(area)]);
-
-  const syncedAt = now.toISOString();
-  const rows = mapEventsToRows(events, stores, area, syncedAt);
-  if (rows.length === 0) {
-    return {
-      area: area.id,
-      upserted: 0,
-      removed: 0,
-      note: 'locator returned no events; left existing rows untouched',
-    };
-  }
-
-  const { error: upsertError } = await supabase
-    .from('local_events')
-    .upsert(rows, { onConflict: 'area,external_uid' });
-  if (upsertError) throw new Error(`upsert failed: ${upsertError.message}`);
-
-  const today = toVenueLocal(syncedAt, area.timeZone)!.date;
-
-  // Upcoming feed rows this run did not just write are events the store cancelled or removed.
-  const { data: cancelled, error: cancelError } = await supabase
-    .from('local_events')
-    .delete()
-    .eq('area', area.id)
-    .eq('source', 'feed')
-    .gte('event_date', today)
-    .lt('updated_at', syncedAt)
-    .select('id');
-  if (cancelError) throw new Error(`removing cancelled events failed: ${cancelError.message}`);
-
-  const { data: expired, error: expireError } = await supabase
-    .from('local_events')
-    .delete()
-    .eq('area', area.id)
-    .eq('source', 'feed')
-    .lt('event_date', daysBefore(today, KEEP_PAST_DAYS))
-    .select('id');
-  if (expireError) throw new Error(`pruning old events failed: ${expireError.message}`);
-
-  return {
-    area: area.id,
-    upserted: rows.length,
-    removed: (cancelled?.length ?? 0) + (expired?.length ?? 0),
-  };
-};
+// An area nobody has opened in this long stops being refreshed (its rows stay until pruned).
+const ACTIVE_AREA_DAYS = 30;
+// Ceiling on areas per run, so the job's runtime and its load on the locator stay bounded no
+// matter how many cities have been requested.
+const MAX_AREAS_PER_RUN = 50;
+// Skip an area a player refreshed within the last hour - it's already current.
+const MIN_INTERVAL_MS = 60 * 60 * 1000;
 
 Deno.serve(async (req: Request) => {
   const cronSecret = Deno.env.get('CRON_SECRET');
@@ -109,14 +37,29 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  // Areas are independent: one city's locator hiccup must not block another city's update.
   const now = new Date();
-  const results = await Promise.allSettled(SYNC_AREAS.map((area) => syncArea(supabase, area, now)));
+  const activeSince = new Date(now.getTime() - ACTIVE_AREA_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data: areas, error: areasError } = await supabase
+    .from('event_areas')
+    .select(EVENT_AREA_COLUMNS)
+    .gte('last_requested_at', activeSince)
+    .order('last_requested_at', { ascending: false })
+    .limit(MAX_AREAS_PER_RUN);
+  if (areasError) {
+    return new Response(JSON.stringify({ error: areasError.message }), { status: 500 });
+  }
 
-  const synced = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
-  const failed = results.flatMap((r, i) =>
-    r.status === 'rejected' ? [`${SYNC_AREAS[i].id}: ${String(r.reason)}`] : []
-  );
+  // One area at a time, deliberately: this is a courtesy to a service we don't own, and areas
+  // are independent, so one city's failure is recorded and the loop moves on.
+  const synced: AreaSyncResult[] = [];
+  const failed: string[] = [];
+  for (const row of (areas ?? []) as EventAreaRow[]) {
+    try {
+      synced.push(await claimAndSyncArea(supabase, row, now, MIN_INTERVAL_MS));
+    } catch (error) {
+      failed.push(`${row.id}: ${String(error)}`);
+    }
+  }
 
   return new Response(JSON.stringify({ synced, failed }), {
     status: failed.length > 0 ? 207 : 200,

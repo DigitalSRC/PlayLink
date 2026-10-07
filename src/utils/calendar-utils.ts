@@ -1,4 +1,4 @@
-import { DEFAULT_EVENT_AREA_ID, EVENT_AREAS, EventArea, LocalEvent } from '../data/local-events';
+import { LocalEvent } from '../data/local-events';
 
 export interface YearMonth {
   year: number;
@@ -248,22 +248,24 @@ export const listFormats = (events: LocalEvent[], preferred: string = 'Commander
 };
 
 /**
- * Decides which event area a player belongs to from the free-text location on their profile.
- * Each area lists place-name keywords; the first area with a keyword appearing as a whole word
- * in the location wins. This is what lets the calendar grow beyond one city without the screen
- * changing - a new area only needs an entry in EVENT_AREAS.
- * Parameters: location (the profile's location text, or undefined), areas (the list to search,
- * defaulting to EVENT_AREAS).
- * Returns: the matched EventArea, or the default area when nothing matches.
- * Edge cases: matching is case-insensitive and whole-word, so "Moreno Valley" does not match
- * "reno"; an empty or missing location, or one in a city with no area yet, falls back to the
- * default area; if the default id is somehow absent from the list, the first area is returned.
+ * Describes how long ago something happened in a few words, e.g. "just now", "12 min ago",
+ * "3 hr ago", or "2 days ago". Used for the "events updated ..." line on the Calendar tab, where
+ * a rough age is more useful than a timestamp.
+ * Parameters: iso (the ISO timestamp of the moment, or null/undefined if it never happened), nowMs
+ * (the current time in epoch ms; callers pass getNow() so the dev date offset is respected).
+ * Returns: a short relative phrase, or "never" when iso is missing.
+ * Edge cases: an unparseable timestamp also returns "never"; a moment in the future (clock skew
+ * between phone and server) is reported as "just now" rather than a negative age.
  */
-export const resolveEventArea = (
-  location: string | undefined,
-  areas: EventArea[] = EVENT_AREAS
-): EventArea => {
-  const words = (location ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const matched = areas.find((area) => area.keywords.some((kw) => words.includes(kw)));
-  return matched ?? areas.find((area) => area.id === DEFAULT_EVENT_AREA_ID) ?? areas[0];
+export const formatAgo = (iso: string | null | undefined, nowMs: number): string => {
+  if (!iso) return 'never';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'never';
+  const minutes = Math.floor((nowMs - then) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 };
