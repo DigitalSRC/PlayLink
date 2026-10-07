@@ -1,5 +1,5 @@
-// Scheduled job: keeps the Calendar tab's `local_events` table filled with the Commander events
-// that local game stores have posted to Wizards of the Coast's store/event locator. Runs every
+// Scheduled job: keeps the Calendar tab's `local_events` table filled with the Magic events
+// (Commander and the other formats) that local game stores have posted to Wizards of the Coast's store/event locator. Runs every
 // 6 hours via pg_cron (see the 20261006130000_sync_local_events_cron.sql migration), so the app
 // itself never talks to the locator - phones only ever read our own table.
 //
@@ -39,14 +39,14 @@ const daysBefore = (date: string, days: number): string => {
 };
 
 /**
- * Syncs one area: fetch from the locator, upsert the Commander events, then remove feed rows the
+ * Syncs one area: fetch from the locator, upsert the events, then remove feed rows the
  * locator no longer lists. The order is what keeps a failure safe - nothing is written or
  * removed until both fetches have fully succeeded, and removal only runs after the upsert has.
  * Hand-curated rows (source = 'curated') are never touched.
  * Parameters: supabase (a service-role client), area (the area to sync), now (the run's instant).
  * Returns: counts of rows upserted and removed, plus a note when the run deliberately did nothing.
  * Edge cases: throws if either fetch fails or is partial, or if a database call errors, leaving
- * existing rows as they were; if the locator returns no Commander events at all, that is treated
+ * existing rows as they were; if the locator returns no usable events at all, that is treated
  * as suspect and existing rows are left untouched rather than wiped; running twice in a row is
  * harmless, since rows are keyed by the locator's event id.
  */
@@ -60,7 +60,7 @@ const syncArea = async (supabase: SupabaseClient, area: SyncArea, now: Date): Pr
       area: area.id,
       upserted: 0,
       removed: 0,
-      note: 'locator returned no Commander events; left existing rows untouched',
+      note: 'locator returned no events; left existing rows untouched',
     };
   }
 

@@ -143,25 +143,108 @@ export const eventsOnDate = (
     );
 };
 
+// Longest venue label that fits a day cell on a phone-width month grid at the cell's font size.
+const MAX_VENUE_LABEL_LENGTH = 9;
+
 /**
- * Counts how many events fall on each day of a month, for drawing the marker under each day in
- * the grid. Computed once per month so the grid doesn't re-filter the event list for every cell.
- * Parameters: events (every event for the area), year, month (0-11).
- * Returns: a Map from day-of-month to event count, containing only days that have events.
- * Edge cases: returns an empty Map when there are no events in the month.
+ * Shortens a venue name so it fits inside a single day cell of the month grid, where there is
+ * room for roughly nine characters. It drops a leading "The" and any " - branch" suffix, and if
+ * the name is still too long it keeps just the first word, which is how regulars refer to these
+ * stores anyway ("Kobold's", "Monsters", "Ironwood").
+ * Parameters: name (the full venue name, e.g. "Coffee N' Comics - Moana").
+ * Returns: a label of at most 9 characters.
+ * Edge cases: a single word longer than the limit is cut and ends in an ellipsis; an empty or
+ * whitespace-only name returns an empty string; two branches of one chain shorten to the same
+ * label, which is intended - the full names are shown in the list under the calendar.
  */
-export const countEventsByDay = (
+export const shortVenueName = (name: string): string => {
+  const base = name.trim().replace(/^the\s+/i, '').split(' - ')[0].trim();
+  if (base.length <= MAX_VENUE_LABEL_LENGTH) return base;
+  const firstWord = base.split(/\s+/)[0];
+  return firstWord.length <= MAX_VENUE_LABEL_LENGTH
+    ? firstWord
+    : `${firstWord.slice(0, MAX_VENUE_LABEL_LENGTH - 1)}…`;
+};
+
+/**
+ * Works out which venue labels to write on each day of a month. Computed once for the whole
+ * month so the grid doesn't re-filter the event list for every cell. Labels are the shortened
+ * venue names, in the order the day's events start.
+ * Parameters: events (the events to show, already narrowed to one format), year, month (0-11).
+ * Returns: a Map from day-of-month to that day's labels, containing only days that have events.
+ * Edge cases: returns an empty Map when the month has no events; a venue with two events on one
+ * day, or two venues that shorten to the same label, appear once.
+ */
+export const venueLabelsByDay = (
   events: LocalEvent[],
   year: number,
   month: number
-): Map<number, number> => {
-  const counts = new Map<number, number>();
+): Map<number, string[]> => {
+  const labels = new Map<number, string[]>();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   for (let day = 1; day <= daysInMonth; day++) {
-    const count = eventsOnDate(events, year, month, day).length;
-    if (count > 0) counts.set(day, count);
+    const dayLabels = [
+      ...new Set(eventsOnDate(events, year, month, day).map((e) => shortVenueName(e.venueName))),
+    ].filter((label) => label !== '');
+    if (dayLabels.length > 0) labels.set(day, dayLabels);
   }
-  return counts;
+  return labels;
+};
+
+/** One day in the upcoming list: its date key, day-of-month, and that day's events in order. */
+export interface AgendaDay {
+  dateKey: string;
+  day: number;
+  events: LocalEvent[];
+}
+
+/**
+ * Builds the "coming up" list shown under the calendar: every remaining day of the month that
+ * has at least one event, starting from a given day, each with its events in start-time order.
+ * Days with nothing on are left out so the list is only what a player could actually go to.
+ * Parameters: events (the events to show, already narrowed to one format), year, month (0-11),
+ * fromDay (the first day to include, normally today's day-of-month).
+ * Returns: the days with events from fromDay to the end of the month, earliest first.
+ * Edge cases: returns an empty array when nothing is left this month (e.g. on the last day
+ * after the final event); a fromDay below 1 is treated as 1; a fromDay past the end of the
+ * month returns an empty array. Events earlier today are still listed, since the list is by
+ * day, not by hour.
+ */
+export const upcomingAgenda = (
+  events: LocalEvent[],
+  year: number,
+  month: number,
+  fromDay: number
+): AgendaDay[] => {
+  const agenda: AgendaDay[] = [];
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let day = Math.max(1, fromDay); day <= daysInMonth; day++) {
+    const dayEvents = eventsOnDate(events, year, month, day);
+    if (dayEvents.length > 0) {
+      agenda.push({ dateKey: toDateKey(year, month, day), day, events: dayEvents });
+    }
+  }
+  return agenda;
+};
+
+/**
+ * Lists the distinct formats present in a set of events, for the format switcher. The preferred
+ * format is put first when present, so the app's main focus (Commander) is always the first
+ * choice, and the rest follow alphabetically.
+ * Parameters: events (every event for the area, all formats), preferred (the format to list
+ * first, default "Commander").
+ * Returns: the distinct format names.
+ * Edge cases: returns an empty array for no events; events with a blank format are ignored;
+ * formats differing only in letter case are treated as different, since the sync writes one
+ * consistent spelling per format.
+ */
+export const listFormats = (events: LocalEvent[], preferred: string = 'Commander'): string[] => {
+  const formats = [...new Set(events.map((e) => e.format).filter((f) => f.trim() !== ''))].sort(
+    (a, b) => a.localeCompare(b)
+  );
+  return formats.includes(preferred)
+    ? [preferred, ...formats.filter((f) => f !== preferred)]
+    : formats;
 };
 
 /**

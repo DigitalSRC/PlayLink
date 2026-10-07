@@ -4,6 +4,8 @@ import { useThemeColors } from '../utils/theme-utils';
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const ACCENT = '#007AFF';
+// How many venue names a day cell writes out before collapsing the rest into "+N".
+const MAX_LABELS_PER_DAY = 2;
 
 interface MonthCalendarProps {
   year: number;
@@ -13,33 +15,35 @@ interface MonthCalendarProps {
   todayKey: string;
   /** "YYYY-MM-DD" key of the day the user tapped, if any. */
   selectedKey: string | null;
-  /** Day-of-month -> number of events that day; days absent from the map show no marker. */
-  eventCounts: Map<number, number>;
+  /** Day-of-month -> short venue names to write on that day; days absent from the map are blank. */
+  venueLabels: Map<number, string[]>;
   onSelectDay: (dateKey: string) => void;
 }
 
 /**
- * Renders one month as a Sunday-first grid of tappable days. The current day is drawn as a
- * filled blue circle, the tapped day gets a blue ring, and any day with at least one event shows
- * a small dot beneath its number. It is a display component only: the caller owns which month is
- * showing, which day is selected, and what the events are.
- * Parameters: year, month (0-11), todayKey, selectedKey, eventCounts, onSelectDay (called with
- * the tapped day's "YYYY-MM-DD" key).
+ * Renders one month as a Sunday-first grid of tappable days, with the venues that have an event
+ * written on each day. The current day's number is a filled blue circle, the tapped day's cell
+ * gets a blue outline, and days already past are dimmed. It is a display component only: the
+ * caller owns which month is showing, which day is selected, and what the labels are.
+ * Parameters: year, month (0-11), todayKey, selectedKey, venueLabels (already shortened to fit a
+ * cell), onSelectDay (called with the tapped day's "YYYY-MM-DD" key).
  * Returns: a weekday header row followed by 4 to 6 week rows.
- * Edge cases: the blank cells padding the first and last weeks are not tappable; when today is
- * in a different month than the one shown, no day is highlighted; when today is also the
- * selected day it keeps the filled "today" style.
+ * Edge cases: a day with more than two venues shows the first two and a "+N" line, so every cell
+ * keeps the same height; the blank cells padding the first and last weeks are not tappable; when
+ * today is in a different month than the one shown, no day is highlighted or dimmed as past.
  */
 export default function MonthCalendar({
   year,
   month,
   todayKey,
   selectedKey,
-  eventCounts,
+  venueLabels,
   onSelectDay,
 }: MonthCalendarProps) {
   const colors = useThemeColors();
   const weeks = buildMonthGrid(year, month);
+  const monthPrefix = toDateKey(year, month, 1).slice(0, 8);
+  const todayInThisMonth = todayKey.startsWith(monthPrefix);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -59,35 +63,45 @@ export default function MonthCalendar({
             const key = toDateKey(year, month, day);
             const isToday = key === todayKey;
             const isSelected = key === selectedKey;
-            const hasEvents = eventCounts.has(day);
+            const isPast = todayInThisMonth && key < todayKey;
+            const labels = venueLabels.get(day) ?? [];
+            const shown = labels.slice(0, MAX_LABELS_PER_DAY);
+            const hidden = labels.length - shown.length;
 
             return (
               <Pressable
                 key={dayIndex}
-                style={styles.cell}
+                style={[
+                  styles.cell,
+                  { borderColor: isSelected ? ACCENT : 'transparent' },
+                  isPast && styles.cellPast,
+                ]}
                 onPress={() => onSelectDay(key)}
                 accessibilityRole="button"
-                accessibilityLabel={`${key}${isToday ? ', today' : ''}${hasEvents ? ', has events' : ''}`}
+                accessibilityLabel={`${key}${isToday ? ', today' : ''}${
+                  labels.length > 0 ? `, ${labels.join(', ')}` : ''
+                }`}
                 accessibilityState={{ selected: isSelected }}
               >
-                <View
-                  style={[
-                    styles.dayCircle,
-                    isSelected && styles.dayCircleSelected,
-                    isToday && styles.dayCircleToday,
-                  ]}
-                >
+                <View style={[styles.dayCircle, isToday && styles.dayCircleToday]}>
                   <Text
                     style={[
                       styles.dayNumber,
                       { color: isToday ? '#FFFFFF' : colors.textPrimary },
-                      (isToday || hasEvents) && styles.dayNumberBold,
+                      isToday && styles.dayNumberToday,
                     ]}
                   >
                     {day}
                   </Text>
                 </View>
-                <View style={[styles.dot, hasEvents && styles.dotVisible]} />
+                {shown.map((label) => (
+                  <Text key={label} style={styles.venueLabel} numberOfLines={1}>
+                    {label}
+                  </Text>
+                ))}
+                {hidden > 0 && (
+                  <Text style={[styles.moreLabel, { color: colors.textMuted }]}>+{hidden}</Text>
+                )}
               </Pressable>
             );
           })}
@@ -101,8 +115,8 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
     borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
   },
   week: {
     flexDirection: 'row',
@@ -112,43 +126,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   cell: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 4,
+    // Fixed height: day number plus room for two venue lines and a "+N" line, so rows line up
+    // whether or not a day has events.
+    minHeight: 66,
+    paddingVertical: 3,
+    paddingHorizontal: 1,
+    borderWidth: 1.5,
+    borderRadius: 8,
+  },
+  cellPast: {
+    opacity: 0.4,
   },
   dayCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  dayCircleSelected: {
-    borderColor: ACCENT,
+    marginBottom: 2,
   },
   dayCircleToday: {
     backgroundColor: ACCENT,
-    borderColor: ACCENT,
   },
   dayNumber: {
-    fontSize: 15,
+    fontSize: 13,
   },
-  dayNumberBold: {
+  dayNumberToday: {
     fontWeight: '800',
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: 3,
-    backgroundColor: 'transparent',
+  venueLabel: {
+    fontSize: 8.5,
+    lineHeight: 11,
+    fontWeight: '700',
+    color: ACCENT,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
-  dotVisible: {
-    backgroundColor: ACCENT,
+  moreLabel: {
+    fontSize: 8.5,
+    lineHeight: 11,
+    fontWeight: '700',
   },
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   cleanText,
   formatAddress,
+  formatLabel,
   mapEventsToRows,
   toVenueLocal,
 } from "../../../supabase/functions/sync-local-events/mapping";
@@ -28,6 +29,7 @@ const makeEvent = (overrides: Record<string, unknown> = {}) => ({
   scheduledStartTime: "2026-10-07T00:30:00.0000000Z",
   status: "SCHEDULED",
   organization: { id: "1", name: "Test Game Store" },
+  eventFormat: { name: "Commander" },
   ...overrides,
 });
 
@@ -113,6 +115,31 @@ describe("sync-local-events mapping", () => {
     });
   });
 
+  describe("formatLabel", () => {
+    it("uses the locator's readable format name", () => {
+      expect(
+        formatLabel(makeEvent({ format: "SEALED_DECK", eventFormat: { name: "Sealed Deck" } }))
+      ).toBe("Sealed Deck");
+    });
+
+    it("tidies the format code when the readable name is missing", () => {
+      expect(formatLabel(makeEvent({ format: "BOOSTER_DRAFT", eventFormat: null }))).toBe(
+        "Booster Draft"
+      );
+      expect(formatLabel(makeEvent({ format: "STANDARD", eventFormat: { name: "  " } }))).toBe(
+        "Standard"
+      );
+    });
+
+    it("returns null for OTHER and for a missing or blank format", () => {
+      expect(
+        formatLabel(makeEvent({ format: "OTHER", eventFormat: { name: "Board Games" } }))
+      ).toBeNull();
+      expect(formatLabel(makeEvent({ format: null }))).toBeNull();
+      expect(formatLabel(makeEvent({ format: "  " }))).toBeNull();
+    });
+  });
+
   describe("mapEventsToRows", () => {
     it("maps a scheduled Commander event into a feed row", () => {
       expect(mapEventsToRows([makeEvent()], stores, area, SYNCED_AT)).toEqual([
@@ -134,15 +161,29 @@ describe("sync-local-events mapping", () => {
       ]);
     });
 
-    it("skips events that are not Commander or not scheduled", () => {
+    it("keeps every Magic format, labelled by the locator's format name", () => {
       const events = [
-        makeEvent({ id: "1", format: "BOOSTER_DRAFT" }),
-        makeEvent({ id: "2", status: "CANCELED" }),
-        makeEvent({ id: "3", status: null }),
-        makeEvent({ id: "4" }),
+        makeEvent({ id: "1" }),
+        makeEvent({ id: "2", format: "BOOSTER_DRAFT", eventFormat: { name: "Booster Draft" } }),
+        makeEvent({ id: "3", format: "PAUPER", eventFormat: { name: "Pauper" } }),
+      ];
+      expect(mapEventsToRows(events, stores, area, SYNCED_AT).map((r) => r.format)).toEqual([
+        "Commander",
+        "Booster Draft",
+        "Pauper",
+      ]);
+    });
+
+    it("skips events that are not scheduled, are non-Magic (OTHER), or have no format", () => {
+      const events = [
+        makeEvent({ id: "1", status: "CANCELED" }),
+        makeEvent({ id: "2", status: null }),
+        makeEvent({ id: "3", format: "OTHER", eventFormat: { name: "Dungeons and Dragons Event" } }),
+        makeEvent({ id: "4", format: null, eventFormat: null }),
+        makeEvent({ id: "5" }),
       ];
       expect(mapEventsToRows(events, stores, area, SYNCED_AT).map((r) => r.external_uid)).toEqual([
-        "wizards:4",
+        "wizards:5",
       ]);
     });
 
@@ -176,7 +217,7 @@ describe("sync-local-events mapping", () => {
       expect(row.address).toBe("1 Main St");
     });
 
-    it("falls back to 'Commander' for a blank title and '' for a missing description", () => {
+    it("falls back to the format name for a blank title and '' for a missing description", () => {
       const [row] = mapEventsToRows(
         [makeEvent({ title: "   ", description: null })],
         stores,
