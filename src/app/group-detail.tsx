@@ -456,7 +456,12 @@ export default function GroupDetail() {
         <View style={styles.metaCard}>
           {editing ? (
             <>
-              <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+              {/* A store-event group stays at its store: the link (and its bonus) is to that venue. */}
+              {group.localEventId ? (
+                <Text style={styles.metaRow}>📍 {group.location}</Text>
+              ) : (
+                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+              )}
 
               <Text style={styles.editLabel}>Day</Text>
               <DateOffsetPicker
@@ -504,7 +509,7 @@ export default function GroupDetail() {
               <Text style={styles.metaRow}>📍 {group.location}</Text>
               {group.localEventId && (
                 <Text style={styles.storeEventRow}>
-                  🏪 Store event · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
+                  🏪 For {group.location}&apos;s store event · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
                 </Text>
               )}
               <Text style={styles.metaRow}>🕐 {group.time}</Text>
