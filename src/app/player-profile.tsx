@@ -14,6 +14,8 @@ import {
   GAME_COLOR,
   GAME_EMOJI,
   GAME_LABELS,
+  COMMANDER_ONLY,
+  visibleGames,
 } from '../data/types';
 import { fetchProfileByUsername, fetchProfilesByIds } from '../lib/profile-api';
 
@@ -121,7 +123,9 @@ export default function PlayerProfileScreen() {
               </View>
             </View>
 
-            {/* Games */}
+            {/* Games and formats: hidden while the app is Commander-only (see COMMANDER_ONLY) */}
+            {!COMMANDER_ONLY && (
+            <>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Games</Text>
               <View style={styles.chipRow}>
@@ -157,9 +161,11 @@ export default function PlayerProfileScreen() {
                 })}
               </View>
             )}
+            </>
+            )}
 
             {/* Commander Bracket */}
-            {(profile.preferredFormats?.mtg ?? []).includes('Commander') && profile.brackets.length > 0 && (
+            {(COMMANDER_ONLY || (profile.preferredFormats?.mtg ?? []).includes('Commander')) && profile.brackets.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Commander Bracket</Text>
                 <View style={styles.bracketRow}>
@@ -203,7 +209,7 @@ export default function PlayerProfileScreen() {
                     <View style={styles.rivalMiniInfo}>
                       <Text style={styles.rivalMiniName}>{rival.displayName ?? rival.username}</Text>
                       <Text style={styles.rivalMiniMeta}>
-                        {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
+                        {rival.wins}W – {rival.losses}L · {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(' ')}
                       </Text>
                     </View>
                     <View style={[styles.rivalMiniBadge, index > 0 && styles.rivalMiniContenderBadge]}>

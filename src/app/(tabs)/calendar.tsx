@@ -13,6 +13,7 @@ import {
 import MonthCalendar from '../../components/MonthCalendar';
 import { useApp } from '../../context/AppContext';
 import { LocalEvent } from '../../data/local-events';
+import { COMMANDER_ONLY } from '../../data/types';
 import {
   useEventAreaQuery,
   useLocalEventsQuery,
@@ -101,7 +102,10 @@ export default function CalendarScreen() {
   if (!currentUser) return null;
 
   const formats = listFormats(allEvents, DEFAULT_FORMAT);
-  const format = formats.includes(chosenFormat) ? chosenFormat : formats[0] ?? DEFAULT_FORMAT;
+  // While the app is Commander-only the switcher is hidden and the format is pinned.
+  const format = COMMANDER_ONLY
+    ? DEFAULT_FORMAT
+    : formats.includes(chosenFormat) ? chosenFormat : formats[0] ?? DEFAULT_FORMAT;
   const events = allEvents.filter((event) => event.format === format);
 
   const venueLabels = venueLabelsByDay(events, year, month);
@@ -299,7 +303,7 @@ export default function CalendarScreen() {
           )}
 
           <Text style={[styles.showing, { color: colors.textPrimary }]}>Showing {format} events</Text>
-          {formats.length > 1 && (
+          {!COMMANDER_ONLY && formats.length > 1 && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}

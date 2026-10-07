@@ -17,6 +17,10 @@ import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
   BRACKET_INFO,
+  COMMANDER_FORMAT,
+  COMMANDER_GAME,
+  COMMANDER_ONLY,
+  isGroupInScope,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -100,7 +104,7 @@ export default function BrowseScreen() {
       return;
     }
     const link = parseStoreEventLink(params, dateKeyFromMs(getNow()));
-    if (!link) {
+    if (!link || !isGroupInScope(link.gameType, link.format)) {
       Alert.alert('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
       router.setParams(CLEARED_CREATE_PARAMS);
       return;
@@ -120,8 +124,10 @@ export default function BrowseScreen() {
         setNewMinute(storeEvent.minute);
         setNewPeriod(storeEvent.period);
       } else {
-        const primaryGame = currentUser.games[0] ?? 'mtg';
-        const primaryFormat = (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
+        const primaryGame = COMMANDER_ONLY ? COMMANDER_GAME : currentUser.games[0] ?? 'mtg';
+        const primaryFormat = COMMANDER_ONLY
+          ? COMMANDER_FORMAT
+          : (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
         setNewGame(primaryGame);
         setNewFormat(primaryFormat);
         setNewLocation(currentUser.location);
@@ -146,16 +152,21 @@ export default function BrowseScreen() {
   };
 
   const displayUser = currentUser?.username ?? 'Player';
+  // Groups the app currently shows and lets a player join (see COMMANDER_ONLY).
+  const listedGroups = groups.filter((g) => isGroupInScope(g.gameType, g.format));
   const currentUserGroup = groups.find((g) =>
     g.players.some((p) => p.id === currentUser?.id)
   );
 
-  const filtered =
-    filter === 'all'
-      ? groups
+  // While the app is Commander-only the game filter is hidden and the list is simply every
+  // Commander group; otherwise the chosen filter narrows it.
+  const filtered = COMMANDER_ONLY
+    ? listedGroups
+    : filter === 'all'
+      ? listedGroups
       : filter === 'myGames'
-      ? groups.filter((g) => currentUser?.games.includes(g.gameType))
-      : groups.filter((g) => g.gameType === filter);
+      ? listedGroups.filter((g) => currentUser?.games.includes(g.gameType))
+      : listedGroups.filter((g) => g.gameType === filter);
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
@@ -165,7 +176,7 @@ export default function BrowseScreen() {
       Alert.alert('Invalid code', 'Join codes are 6 characters long.');
       return;
     }
-    const group = groups.find((g) => g.joinCode === code);
+    const group = listedGroups.find((g) => g.joinCode === code);
     if (!group) {
       Alert.alert('Code not found', 'No group matches that join code. Double-check with the host.');
       return;
@@ -347,8 +358,8 @@ export default function BrowseScreen() {
         </View>
       </View>
 
-      {/* Game filter chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
+      {/* Game filter chips: hidden while the app is Commander-only, since there is only the one */}
+      {!COMMANDER_ONLY && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
         {ALL_GAME_FILTERS.map((f) => {
           const active = filter === f;
           const chipColor = f === 'myGames' ? '#34C759' : f === 'all' ? '#007AFF' : GAME_COLOR[f as GameType];
@@ -368,12 +379,12 @@ export default function BrowseScreen() {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </ScrollView>}
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {/* Group cards */}
         {filtered.length === 0 && (
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No groups found for this game type.</Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>{COMMANDER_ONLY ? 'No Commander groups posted yet. Be the first — tap + Create.' : 'No groups found for this game type.'}</Text>
         )}
         {filtered.map((group) => {
           const inThisGroup = group.players.some((p) => p.username === displayUser);
@@ -502,7 +513,7 @@ export default function BrowseScreen() {
                 <Text style={styles.storeEventNote}>
                   🏪 {storeEvent.format} at {storeEvent.venueName} · {formatDayHeading(storeEvent.dateKey)} · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
                 </Text>
-              ) : (
+              ) : COMMANDER_ONLY ? null : (
               <>
               <Text style={styles.fieldLabel}>Game</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gamePickerRow}>
