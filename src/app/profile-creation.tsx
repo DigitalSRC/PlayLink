@@ -1,4 +1,4 @@
-﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -59,7 +59,10 @@ interface ProfileCreationDraft {
  * (fetchRivalCandidates) to run findRivals against, then advances to the reveal step.
  * Parameters: none; reads the Supabase session from useApp() to attribute the new profile row.
  * Returns: a React Native screen with animated step transitions and haptic feedback on progression.
- * Edge cases: blocks progression if required fields are missing; shows a field-level error and
+ * Edge cases: the first step needs both a username and a city (at least 2 characters), because
+ * the Calendar tab looks up stores from it; steps 1 and 2 have a Back link, and the rival step
+ * has "Skip for now", which enters the app with the first listed rival standing in as the pick;
+ * blocks progression if required fields are missing; shows a field-level error and
  * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
  * generic inline error for any other save failure; the submit button shows a spinner and can't
  * be pressed again while a save is in flight. If no rivals are found (e.g. this is the very
@@ -178,6 +181,11 @@ export default function ProfileCreation() {
 
   const USERNAME_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
+  // A real city is needed up front: the Calendar tab looks up stores and events from it, and a
+  // blank used to be saved as "Nearby", which no lookup can find.
+  const MIN_LOCATION_LENGTH = 2;
+  const locationValid = location.trim().length >= MIN_LOCATION_LENGTH;
+
   const validateUsername = (value: string) => {
     if (!value.trim()) { setUsernameError("Username is required."); return false; }
     if (!USERNAME_RE.test(value.trim())) {
@@ -190,7 +198,7 @@ export default function ProfileCreation() {
 
   const nextStep = async () => {
     if (step === 0) {
-      if (!validateUsername(username)) return;
+      if (!validateUsername(username) || !locationValid) return;
     }
     if (step === 1 && selectedGames.length === 0) return;
 
@@ -201,7 +209,7 @@ export default function ProfileCreation() {
         id: session.user.id,
         username: username.trim(),
         displayName: displayName.trim() || undefined,
-        location: location.trim() || "Nearby",
+        location: location.trim(),
         games: selectedGames,
         preferredFormats: selectedFormats,
         brackets: selectedBrackets.length > 0 ? selectedBrackets : [2],
@@ -370,11 +378,12 @@ export default function ProfileCreation() {
         maxLength={32}
       />
 
-      <Text style={styles.label}>Your Area</Text>
+      <Text style={styles.label}>Your City</Text>
+      <Text style={styles.labelHint}>Used to find game stores and events near you — you can change it later</Text>
       <LocationAutocomplete
         value={location}
         onChangeText={setLocation}
-        placeholder="e.g. Seattle, WA"
+        placeholder="City, State — e.g. Reno, NV"
       />
     </View>
   );
@@ -465,7 +474,9 @@ export default function ProfileCreation() {
       {selectedGames.includes("mtg") && (selectedFormats["mtg"] ?? []).includes("Commander") && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>⚔️ Commander Bracket</Text>
-          <Text style={styles.sectionHint}>Wizards 1–5 power scale — select all you play</Text>
+          <Text style={styles.sectionHint}>
+            How strong your decks are, on Wizards&apos; 1–5 scale. Select all you play. Not sure? Leave it on 2 (Casual) — that covers precons and lightly upgraded decks.
+          </Text>
           <View style={styles.bracketRow}>
             {[1, 2, 3, 4, 5].map((b) => {
               const active = selectedBrackets.includes(b);
@@ -488,6 +499,9 @@ export default function ProfileCreation() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🚫 Won't Play Against</Text>
+        <Text style={styles.sectionHint}>
+          Optional. Deck styles you&apos;d rather not sit across from. Skip this if you&apos;re not sure — you can set it later in Profile.
+        </Text>
         <View style={styles.chipRow}>
           {NO_GO_OPTIONS.map((rule) => {
             const active = selectedNoGo.includes(rule);
@@ -515,6 +529,9 @@ export default function ProfileCreation() {
       <Text style={styles.stepTitle}>Choose Your Rival</Text>
       <Text style={styles.stepSubtitle}>
         One rival to chase. The others lurk as Contenders.
+      </Text>
+      <Text style={styles.rivalExplainer}>
+        Rivals are players who play the same games as you and are closest to you in points this month. Your Rival sits on your Home tab so you can keep an eye on their record, and groups they&apos;re in get flagged when you look for a game. The list refreshes as points change, and nothing is at stake in who you pick.
       </Text>
 
       {computedRivals.map((rival, i) => {
@@ -585,7 +602,7 @@ export default function ProfileCreation() {
 
   const canProceed =
     !isSubmitting && (
-      (step === 0 && username.trim().length > 0) ||
+      (step === 0 && username.trim().length > 0 && locationValid) ||
       (step === 1 && selectedGames.length > 0) ||
       step === 2 ||
       (step === 3 && pickedRivalId !== null)
@@ -647,6 +664,31 @@ export default function ProfileCreation() {
             <Text style={styles.nextBtnText}>
               {pickedRivalId === null ? "Pick Your Rival First" : "Enter the Arena →"}
             </Text>
+          </Pressable>
+        )}
+        {step === 3 && pickedRivalId === null && (
+          <Pressable
+            testID="profile-creation-skip-rival"
+            style={styles.footerLink}
+            onPress={() => setAwaitingHomeEntry(true)}
+            hitSlop={8}
+          >
+            <Text style={styles.footerLinkText}>Skip for now</Text>
+          </Pressable>
+        )}
+        {(step === 1 || step === 2) && !isSubmitting && (
+          <Pressable
+            testID="profile-creation-back-button"
+            style={styles.footerLink}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setSubmitError("");
+              setStep((s) => s - 1);
+              animateIn();
+            }}
+            hitSlop={8}
+          >
+            <Text style={styles.footerLinkText}>← Back</Text>
           </Pressable>
         )}
       </View>
@@ -962,6 +1004,22 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: "center",
+  },
+  footerLink: {
+    alignSelf: "center",
+    marginTop: 14,
+  },
+  footerLinkText: {
+    color: "#888",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  rivalExplainer: {
+    fontSize: 13,
+    color: "#AAA",
+    lineHeight: 19,
+    marginTop: -14,
+    marginBottom: 18,
   },
   nextBtnDisabled: {
     backgroundColor: "#1C2940",
