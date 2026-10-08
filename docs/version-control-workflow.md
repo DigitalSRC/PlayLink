@@ -332,7 +332,7 @@ branches not yet merged into `development` — all of them shared on `origin` (�
 - **`shop`** — the working Shop: spendable Points (`point_balance`), the monthly total shown as
   Score, and three kinds of cosmetic (titles, name colors, card borders) bought and worn through
   server functions. **Stacked on `security-hardening`** - its migration refuses to apply unless
-  the hardening migration is in place. Its migration is not yet applied to Supabase.
+  the hardening migration is in place. Its migration is live on Supabase (applied 2026-10-07).
 - **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
   Excluded from every other branch except `unitTests`/`test/<feature>`; see
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
@@ -340,9 +340,16 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   store-event bonus (moved to the server on 2026-10-07) and working delete/cancel (GitHub issue
   #10). **Stacked on `commander-only`**, so the merge order into `development` is
   `event-calendar` -> `commander-only` -> `security-hardening` -> `shop`. Its three migrations
-  are written and checked in a local sandbox but **not yet applied to Supabase**; applying them
-  stops every build that still writes scores directly (anything before this branch) from
-  reporting rounds, so apply them and merge the stack together. See `docs/security-backlog.md`.
+  are **live on Supabase (applied 2026-10-07)** and were verified there with throwaway accounts.
+  Consequence: any build that still writes scores directly - `development`, `event-calendar`,
+  `commander-only`, and `main` - can no longer report rounds, collect points, or delete a group
+  against the live database. Only this branch, `shop`, and `combined-preview` work fully until
+  the stack is merged. See `docs/security-backlog.md`.
+- **`combined-preview`** — not a feature: `development` plus the whole stack merged in order
+  (`event-calendar`, `commander-only`, `security-hardening`, `shop`), made on 2026-10-07 so the
+  developer can test everything together. Its tree is identical to `shop`. Do not build on it;
+  fix things on the branch they belong to and re-merge. Delete it from `origin` once the stack
+  has landed in `development`.
 - **`event-calendar`** — **PENDING DEV MERGE (marked 2026-10-07, GitHub issue #12).** The
   developer considers it finished and will review it before it lands; do not merge it into
   `development` until they say so. The Calendar tab: a month view of local Commander nights from the
