@@ -2,6 +2,13 @@ import { LocalEvent } from '../data/local-events';
 import { GAME_LABELS, GameType } from '../data/types';
 import { PlacementResult } from './scoring-utils';
 
+// The bonus itself is decided and paid by the server (submit_group_result and
+// venue_bonus_eligible in supabase/migrations/20261007140000_server_venue_bonus.sql), not by
+// this file: clients can't write round results. isWithinVenueEventWindow, playersAlreadyAwarded,
+// and applyVenueBonus below are the reference version of that rule - the unit tests pin them, and
+// the SQL must match them. Change the rule in one and you must change it in the other, the same
+// arrangement as computePlacementScores and its SQL port.
+
 /** Points each player earns, once per store event, for playing a round at that event. */
 export const VENUE_EVENT_BONUS = 10;
 
