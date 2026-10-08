@@ -24,6 +24,10 @@ export interface Group {
   createdBy?: string;
   createdAt: number;
   scheduledAt?: number;
+  /** The calendar day the host picked, "YYYY-MM-DD" as it read on their phone. A player can be
+   * in one group per day, and this is the day that rule counts. Absent on groups posted before
+   * the column existed; use groupDayKey() rather than reading it directly. */
+  playDate?: string;
   roundsPlayed: number;
   players: PlayerProfile[];
   targetPlayers: number;

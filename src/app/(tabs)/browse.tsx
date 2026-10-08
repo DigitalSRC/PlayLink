@@ -1,9 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import LocationAutocomplete from '../../components/LocationAutocomplete';
+import { showDialog } from '../../components/AppDialog';
 import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
@@ -21,7 +19,6 @@ import {
   COMMANDER_FORMAT,
   COMMANDER_GAME,
   COMMANDER_ONLY,
-  DayOfWeek,
   isGroupInScope,
   FORMAT_OPTIONS,
   GAME_COLOR,
@@ -31,13 +28,10 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
-import { findGroupOnSameDay, formatBrackets, generateJoinCode } from '../../utils/group-utils';
-import { buildScheduledAt, formatScheduledAt, scheduleDayOfWeek } from '../../utils/schedule-utils';
-import { useThemeColors } from '../../utils/theme-utils';
+import { findGroupOnDay, formatBrackets, generateJoinCode, groupDayKey, groupErrorMessage } from '../../utils/group-utils';
+import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
-import DateOffsetPicker from '../../components/DateOffsetPicker';
-import TimeOfDayPicker from '../../components/TimeOfDayPicker';
-import WeekCalendar from '../../components/WeekCalendar';
+import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
 import { parseStoreEventLink, StoreEventLink, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
@@ -69,18 +63,20 @@ const CLEARED_CREATE_PARAMS = {
  * and the group it posts is linked to it for the store-event bonus. The form has no way to add that link itself.
  * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load, plus the storeEvent* params written by storeEventLinkParams.
  * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
- * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
+ * A player can be in one group per day. Creating or joining a second group on a day they already have one explains that and names the group in the way; a different day is always allowed. Every create and join ends with a pop-up saying it worked.
+ * Edge cases: join by code explains when the code is the wrong length, not found, for a group the player is already in (with a shortcut to open it), for a day they already have a group, or for a full group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
  */
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { currentUser, groups, groupsLoading, rivals, getNow } = useApp();
   const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
+  const claimReward = useClaimStarterReward(currentUser?.id);
 
   const [filter, setFilter] = useState<FilterType>('myGames');
-  const [selectedDay, setSelectedDay] = useState<DayOfWeek | undefined>(undefined);
   const [showCreate, setShowCreate] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [codeValue, setCodeValue] = useState('');
@@ -100,9 +96,6 @@ export default function BrowseScreen() {
   const [newBrackets, setNewBrackets] = useState<number[]>([2]);
   const [newNoGo, setNewNoGo] = useState<NoGoRule[]>([]);
 
-  const [feedbackMsg, setFeedbackMsg] = useState('');
-  const feedbackOpacity = useRef(new Animated.Value(0)).current;
-  const feedbackScale = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
     if (params.openCreate !== '1') return;
@@ -112,7 +105,7 @@ export default function BrowseScreen() {
     }
     const link = parseStoreEventLink(params, dateKeyFromMs(getNow()));
     if (!link || !isGroupInScope(link.gameType, link.format)) {
-      Alert.alert('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
+      showDialog('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
       router.setParams(CLEARED_CREATE_PARAMS);
       return;
     }
@@ -144,27 +137,46 @@ export default function BrowseScreen() {
     }
   }, [showCreate, storeEvent]);
 
-  const showFeedback = (msg: string) => {
-    setFeedbackMsg(msg);
-    feedbackOpacity.setValue(0);
-    feedbackScale.setValue(0.8);
-    Animated.parallel([
-      Animated.spring(feedbackScale, { toValue: 1, useNativeDriver: true, bounciness: 10 }),
-      Animated.timing(feedbackOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      setTimeout(() => {
-        Animated.timing(feedbackOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
-      }, 2000);
-    });
-  };
-
-  const displayUser = currentUser?.username ?? 'Player';
   // Groups the app currently shows and lets a player join (see COMMANDER_ONLY).
   const listedGroups = groups.filter((g) => isGroupInScope(g.gameType, g.format));
 
+  /**
+   * Explains why a player can't join a group, or returns false when nothing is in the way.
+   * Shared by the Join button on a card and by join-by-code, so both give the same answers.
+   * Parameters: group (the group being joined).
+   * Returns: true if a pop-up was shown and the join must stop; false if it may go ahead.
+   * Edge cases: a player already in this very group is offered a shortcut to open it; the day
+   * check finds nothing while the groups list is still loading, and the database's own
+   * one-per-day rule then refuses the join instead.
+   */
+  const explainJoinBlock = (group: Group): boolean => {
+    if (!currentUser) return true;
+    if (group.players.some((p) => p.id === currentUser.id)) {
+      showDialog('You’re already in this group', `You already have a seat in “${group.name}”.`, [
+        { text: 'OK', style: 'cancel' },
+        { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
+      ]);
+      return true;
+    }
+    const dayKey = groupDayKey(group);
+    const sameDay = findGroupOnDay(groups, currentUser.id, dayKey);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${dayKey ? formatDayHeading(dayKey) : 'that day'}. You can be in one group per day - leave that one first, or join a group on another day.`
+      );
+      return true;
+    }
+    if (group.players.length >= group.targetPlayers) {
+      showDialog('Group full', 'This group has no open spots.');
+      return true;
+    }
+    return false;
+  };
+
   // While the app is Commander-only the game filter is hidden and the list is simply every
   // Commander group; otherwise the chosen filter narrows it.
-  const filteredByGame = COMMANDER_ONLY
+  const filtered = COMMANDER_ONLY
     ? listedGroups
     : filter === 'all'
       ? listedGroups
@@ -172,31 +184,20 @@ export default function BrowseScreen() {
       ? listedGroups.filter((g) => currentUser?.games.includes(g.gameType))
       : listedGroups.filter((g) => g.gameType === filter);
 
-  const filtered = filteredByGame.filter(
-    (g) => !selectedDay || (g.scheduledAt !== undefined && scheduleDayOfWeek(g.scheduledAt) === selectedDay)
-  );
-
   const handleJoinByCode = () => {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
     const code = codeValue.toUpperCase().trim();
     if (code.length !== 6) {
-      Alert.alert('Invalid code', 'Join codes are 6 characters long.');
+      showDialog('Invalid code', 'Join codes are 6 characters long.');
       return;
     }
     const group = listedGroups.find((g) => g.joinCode === code);
     if (!group) {
-      Alert.alert('Code not found', 'No group matches that join code. Double-check with the host.');
+      showDialog('Code not found', 'No group matches that join code. Double-check with the host.');
       return;
     }
-    if (findGroupOnSameDay(groups, currentUser.id, group.scheduledAt)) {
-      Alert.alert('Already scheduled that day', 'You already have a group on this day — leave it first or pick a group on a different day.');
-      return;
-    }
-    if (group.players.length >= group.targetPlayers) {
-      Alert.alert('Group full', 'This group has no open spots.');
-      return;
-    }
+    if (explainJoinBlock(group)) return;
     setCodeValue('');
     setShowJoinModal(false);
     handleJoin(group);
@@ -205,14 +206,7 @@ export default function BrowseScreen() {
   const handleJoin = async (group: Group) => {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
-    if (findGroupOnSameDay(groups, currentUser.id, group.scheduledAt)) {
-      Alert.alert('Already scheduled that day', 'You already have a group on this day — leave it first or pick a group on a different day.');
-      return;
-    }
-    if (group.players.length >= group.targetPlayers) {
-      Alert.alert('Group full', 'This group has no open spots.');
-      return;
-    }
+    if (explainJoinBlock(group)) return;
 
     try {
       await joinGroupMutation.mutateAsync({
@@ -221,9 +215,13 @@ export default function BrowseScreen() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showFeedback(`Joined ${group.name}!`);
+      showDialog('You’re in!', `You joined “${group.name}” - ${group.location}, ${group.time}. It’s on your Home tab.`, [
+        { text: 'OK', style: 'cancel' },
+        { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
+      ]);
+      claimReward('join_group');
     } catch (err) {
-      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -261,7 +259,7 @@ export default function BrowseScreen() {
    */
   const requestCloseCreate = () => {
     if (newName.trim().length > 0) {
-      Alert.alert(
+      showDialog(
         'Discard this group?',
         "You haven't posted this group yet — closing now won't create it. You'll need to post it from this tab before anyone else can see or join it.",
         [
@@ -279,19 +277,23 @@ export default function BrowseScreen() {
     if (!currentUser) return;
     if (groupsLoading || createGroupMutation.isPending) return;
     if (!newName.trim() || !newLocation.trim()) {
-      Alert.alert('Missing info', 'Group name and location are required.');
+      showDialog('Missing info', 'Group name and location are required.');
       return;
     }
 
-    const scheduledAt = buildScheduledAt({
-      dateOffsetDays: newDateOffset,
-      hour: newHour,
-      minute: newMinute,
-      period: newPeriod,
-    });
-
-    if (findGroupOnSameDay(groups, currentUser.id, scheduledAt)) {
-      Alert.alert('Already scheduled that day', 'You already have a group on this day — pick a different day, or leave that group first.');
+    const scheduledAt = (() => {
+      const d = new Date(); d.setDate(d.getDate() + newDateOffset);
+      d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
+      return d.getTime();
+    })();
+    // The day as it reads on this phone: the one-group-per-day rule counts this, not the UTC date.
+    const playDate = dateKeyFromMs(scheduledAt);
+    const sameDay = findGroupOnDay(groups, currentUser.id, playDate);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${formatDayHeading(playDate)}. You can be in one group per day - pick another day for this one, or leave that group first.`
+      );
       return;
     }
 
@@ -305,19 +307,32 @@ export default function BrowseScreen() {
       location: newLocation.trim(),
       localEventId: storeEvent?.eventId,
       scheduledAt,
-      time: formatScheduledAt(scheduledAt),
+      playDate,
+      time: (() => {
+        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
+        const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        return `${dayLabel} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}`;
+      })(),
       targetPlayers: Math.max(2, Number(newTarget) || 4),
       noGo: newNoGo,
       hostBracket: currentUser.brackets[0] ?? 2,
     };
 
     try {
-      await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
+      const created = await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeCreateForm();
-      showFeedback('Group posted! Other players can now find and join it.');
+      showDialog(
+        'Group posted!',
+        `“${created.name}” is live for ${formatDayHeading(playDate)}. Other players can find it here, or join with the code ${created.joinCode}.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: created.id } }) },
+        ]
+      );
+      claimReward('create_group');
     } catch (err) {
-      Alert.alert('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t post group', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -340,14 +355,6 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Feedback banner */}
-      <Animated.View
-        style={[styles.feedbackBanner, { opacity: feedbackOpacity, transform: [{ scale: feedbackScale }] }]}
-        pointerEvents="none"
-      >
-        <Text style={styles.feedbackText}>{feedbackMsg}</Text>
-      </Animated.View>
-
       <View style={styles.topBar}>
         <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Find a Game</Text>
         <View style={styles.topBarActions}>
@@ -364,16 +371,6 @@ export default function BrowseScreen() {
             <Text style={styles.createToggleText}>+ Create</Text>
           </Pressable>
         </View>
-      </View>
-
-      {/* Day filter */}
-      <View style={styles.weekCalendarWrap}>
-        <WeekCalendar
-          groups={filteredByGame}
-          selectedDay={selectedDay}
-          onSelectDay={setSelectedDay}
-          onSelectGroup={(group) => router.push({ pathname: '/group-detail', params: { id: group.id } })}
-        />
       </View>
 
       {/* Game filter chips: hidden while the app is Commander-only, since there is only the one */}
@@ -405,7 +402,7 @@ export default function BrowseScreen() {
           <Text style={[styles.emptyText, { color: colors.textMuted }]}>{COMMANDER_ONLY ? 'No Commander groups posted yet. Be the first — tap + Create.' : 'No groups found for this game type.'}</Text>
         )}
         {filtered.map((group) => {
-          const inThisGroup = group.players.some((p) => p.username === displayUser);
+          const inThisGroup = group.players.some((p) => p.id === currentUser?.id);
           const isFull = group.players.length >= group.targetPlayers;
           const rivalInGroup = rivals.some((r) =>
             group.players.some((p) => p.username === r.username)
@@ -426,11 +423,6 @@ export default function BrowseScreen() {
                     {GAME_EMOJI[group.gameType]} {group.format}
                   </Text>
                 </View>
-                {group.source === 'store' && group.storeName && (
-                  <View style={styles.storeBadge}>
-                    <Text style={styles.storeBadgeText} numberOfLines={1}>🏬 {group.storeName}</Text>
-                  </View>
-                )}
                 {rivalInGroup && (
                   <View style={styles.rivalGroupBadge}>
                     <Text style={styles.rivalGroupBadgeText}>⚔️ RIVAL HERE</Text>
@@ -489,7 +481,7 @@ export default function BrowseScreen() {
                 value={codeValue}
                 onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
                 placeholder="XXXXXX"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.placeholder}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 maxLength={6}
@@ -529,7 +521,7 @@ export default function BrowseScreen() {
               </View>
               <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
                 Nothing here is saved until you tap "Post Group" below — closing this
-                without posting won't create anything. You can be in one group at a time.
+                without posting won't create anything. You can be in one group per day.
               </Text>
 
               {storeEvent ? (
@@ -570,31 +562,67 @@ export default function BrowseScreen() {
               )}
 
               <Text style={styles.fieldLabel}>Group Name</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor={colors.placeholder} />
 
               {!storeEvent && (
               <>
               <Text style={styles.fieldLabel}>Location</Text>
-              <LocationAutocomplete value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Seattle, WA" />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor={colors.placeholder} />
 
               <Text style={styles.fieldLabel}>Date</Text>
-              <DateOffsetPicker value={newDateOffset} onChange={setNewDateOffset} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
+                {Array.from({ length: 15 }, (_, i) => {
+                  const d = new Date(); d.setDate(d.getDate() + i);
+                  const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
+                    : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                  return (
+                    <Pressable
+                      key={i}
+                      style={[styles.chip, { backgroundColor: colors.bg }, newDateOffset === i && styles.chipTimeActive]}
+                      onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
+                    >
+                      <Text style={[styles.chipText, newDateOffset === i && { color: colors.accentOnBg }]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
               </>
               )}
 
               <Text style={styles.fieldLabel}>Time</Text>
-              <TimeOfDayPicker
-                value={{ hour: newHour, minute: newMinute, period: newPeriod }}
-                onChange={(next) => {
-                  setNewHour(next.hour);
-                  setNewMinute(next.minute);
-                  setNewPeriod(next.period);
-                }}
-              />
+              <View style={[styles.timePicker, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 12 ? 1 : h + 1); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={[styles.timeValue, { color: colors.textPrimary }]}>{String(newHour).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 1 ? 12 : h - 1); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.timeSeparator}>:</Text>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => (m + 15) % 60); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={[styles.timeValue, { color: colors.textPrimary }]}>{String(newMinute).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => m === 0 ? 45 : m - 15); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.timePeriod}>
+                  <Pressable style={[styles.periodBtn, { backgroundColor: colors.card, borderColor: colors.border }, newPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('AM'); }}>
+                    <Text style={[styles.periodText, newPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
+                  </Pressable>
+                  <Pressable style={[styles.periodBtn, { backgroundColor: colors.card, borderColor: colors.border }, newPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('PM'); }}>
+                    <Text style={[styles.periodText, newPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
+                  </Pressable>
+                </View>
+              </View>
 
               <View style={styles.halfField}>
                 <Text style={styles.fieldLabel}>Players Needed</Text>
-                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
+                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor={colors.placeholder} />
               </View>
 
               {newGame !== 'mtg' && (
@@ -620,7 +648,7 @@ export default function BrowseScreen() {
                           style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipBracketActive]}
                           onPress={() => toggleBracket(b)}
                         >
-                          <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                          <Text style={[styles.chipText, active && { color: colors.accentOnBg }]}>
                             {BRACKET_INFO[b].label}
                           </Text>
                         </Pressable>
@@ -640,7 +668,7 @@ export default function BrowseScreen() {
                       style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipNoGo]}
                       onPress={() => toggleNoGo(rule)}
                     >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{rule}</Text>
+                      <Text style={[styles.chipText, active && { color: colors.dangerOnBg }]}>{rule}</Text>
                     </Pressable>
                   );
                 })}
@@ -662,30 +690,17 @@ export default function BrowseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   storeEventNote: {
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 19,
-    color: '#34C759',
+    color: c.successText,
   },
   container: {
     flex: 1,
-  },
-  feedbackBanner: {
-    position: 'absolute',
-    top: 80,
-    alignSelf: 'center',
-    backgroundColor: '#34C759',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    zIndex: 99,
-  },
-  feedbackText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
   },
   topBar: {
     flexDirection: 'row',
@@ -708,7 +723,7 @@ const styles = StyleSheet.create({
     borderColor: '#34C759',
   },
   joinToggleText: {
-    color: '#34C759',
+    color: c.successText,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -727,10 +742,6 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontWeight: '700',
     fontSize: 13,
-  },
-  weekCalendarWrap: {
-    paddingLeft: 20,
-    marginBottom: 10,
   },
   filterRow: {
     paddingLeft: 20,
@@ -812,7 +823,7 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   codeInput: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.bg,
     borderWidth: 1.5,
     borderColor: '#34C759',
     borderRadius: 10,
@@ -820,7 +831,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 22,
     fontWeight: '800',
-    color: '#34C759',
+    color: c.successText,
     letterSpacing: 6,
     textAlign: 'center',
   },
@@ -870,7 +881,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 12,
@@ -895,7 +906,7 @@ const styles = StyleSheet.create({
   },
   gamePickerLabel: {
     fontSize: 10,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -909,27 +920,93 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#333',
+    borderColor: c.border,
   },
   chipText: {
     fontSize: 12,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
   },
   chipTextActive: {
     color: '#FFF',
   },
   chipNoGo: {
-    backgroundColor: '#3D1215',
+    backgroundColor: c.dangerBg,
     borderColor: '#C0392B',
   },
   chipBracketActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
+  },
+  chipTimeActive: {
+    backgroundColor: c.accentBg,
+    borderColor: '#007AFF',
+  },
+  timePickerContent: {
+    gap: 6,
+    paddingBottom: 4,
+  },
+  timePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 12,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  timeUnit: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  timeArrow: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timeArrowText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timeValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    minWidth: 42,
+    textAlign: 'center',
+  },
+  timeSeparator: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: c.textMuted,
+    marginBottom: 2,
+  },
+  timePeriod: {
+    gap: 6,
+    marginLeft: 4,
+  },
+  periodBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
+  },
+  periodBtnActive: {
+    backgroundColor: c.accentBg,
+    borderColor: '#007AFF',
+  },
+  periodText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: c.textMuted,
+  },
+  periodTextActive: {
+    color: '#007AFF',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     borderRadius: 10,
     paddingVertical: 11,
     paddingHorizontal: 14,
@@ -944,7 +1021,7 @@ const styles = StyleSheet.create({
   },
   comingSoonNote: {
     fontSize: 11,
-    color: '#555',
+    color: c.textMuted,
     fontStyle: 'italic',
     marginTop: 10,
     marginBottom: 4,
@@ -976,20 +1053,7 @@ const styles = StyleSheet.create({
   groupCardRival: {
     borderColor: '#FF3B30',
     borderWidth: 2,
-    backgroundColor: '#1E1214',
-  },
-  storeBadge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: '#34495E',
-    maxWidth: 140,
-  },
-  storeBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: 0.3,
+    backgroundColor: c.rivalMainBg,
   },
   rivalGroupBadge: {
     paddingVertical: 3,
@@ -1023,12 +1087,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: '#333',
+    backgroundColor: c.border,
   },
   fullBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#888',
+    color: c.textSecondary,
     letterSpacing: 0.5,
   },
   groupName: {
@@ -1056,7 +1120,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   joinBtnDisabled: {
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.disabledBg,
   },
   joinBtnText: {
     color: '#FFF',
@@ -1067,12 +1131,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderWidth: 1,
     borderColor: '#34C759',
   },
   inGroupText: {
-    color: '#34C759',
+    color: c.successText,
     fontSize: 12,
     fontWeight: '700',
   },

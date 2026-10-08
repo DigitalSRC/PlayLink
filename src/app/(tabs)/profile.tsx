@@ -1,9 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +10,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import LocationAutocomplete from '../../components/LocationAutocomplete';
+import { showDialog } from '../../components/AppDialog';
+import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import {
   BRACKET_INFO,
@@ -25,18 +25,38 @@ import {
   GameType,
   NO_GO_OPTIONS,
   NoGoRule,
+  UserProfile,
 } from '../../data/types';
+import { ShopItem } from '../../data/shop';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
+import { useClaimStarterReward } from '../../hooks/useRewardQueries';
+import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
 import { updatePassword } from '../../lib/auth-api';
-import { useThemeColors } from '../../utils/theme-utils';
+import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
+
+// Dev Tools (src/app/dev-tools.tsx) is a testing scaffold, not part of the shipped MVP
+// surface. Its working copy now lives on the dedicated `dev-tools` branch (and is still
+// present, unchanged, on `unitTests`/`test/<feature>`) but has been removed from
+// development/main — see CLAUDE.md git workflow. DEV_TOOLS_ENABLED documents that removal and
+// gates the "DEVELOPER" badge below; it can't also gate the Dev Tools button itself, because
+// that button's router.push('/dev-tools') call had to be deleted outright below (not just
+// wrapped in a runtime check) — Expo Router's typedRoutes (app.json ->
+// experiments.typedRoutes) type-checks route strings against files that exist in src/app/, so
+// a call to a deleted route can't compile even behind `if (false)`. Restoring Dev Tools means
+// re-adding dev-tools.tsx first (so the route re-appears in the generated types), then
+// flipping this flag and re-adding the button (see this commit's diff).
+const DEV_TOOLS_ENABLED = false;
 
 /**
  * Profile tab — personal info, stats, game preferences, rivals, settings, and dev tools.
  * Header row shows an avatar circle on the left and display name / username / location on the right.
  * Settings section includes a dark/light mode toggle, a change-password form, and a Dev Tools
  * shortcut for developer accounts.
+ * "Your Title" shows the player's name as others see it and lists the titles they own; tapping
+ * one wears it, and "No title" takes it off. Buying happens in the Shop, which the row above
+ * opens. Tapping a contender's badge makes them the player's Rival and confirms it.
  * Edits save via useUpdateProfileMutation directly (an optimistic Supabase update keyed to the
  * session id), not through AppContext's currentUser setter; logging out ends the Supabase
  * session and redirects to /sign-in rather than /profile-creation.
@@ -44,7 +64,9 @@ const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
  * Returns: a scrollable profile page; null when no user is logged in.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
  * non-developer profiles; the password form validates a 6-character minimum and that both
- * fields match before ever calling Supabase, and shows an inline error or success message.
+ * fields match before ever calling Supabase, and shows an inline error or success message; a
+ * player who owns no titles sees a pointer to the Shop instead of a picker; a title they own
+ * that has since been taken off sale is not listed, though they keep wearing it if it is on.
  */
 export default function ProfileScreen() {
   const router = useRouter();
@@ -53,10 +75,57 @@ export default function ProfileScreen() {
     clearCurrentUser, setChosenRivalId,
     theme, setTheme,
   } = useApp();
-  const { bg, card, border, textPrimary, textSecondary: textSec } = useThemeColors();
+  const colors = useThemeColors();
+  const { bg, card, border, textPrimary, textSecondary: textSec } = colors;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const updateProfileMutation = useUpdateProfileMutation();
+  const userId = session?.user.id;
+  const shopItemsQuery = useShopItemsQuery();
+  const ownedItemsQuery = useOwnedShopItemsQuery(userId);
+  const equipMutation = useEquipShopItemMutation();
+  const claimReward = useClaimStarterReward(userId);
 
   if (!currentUser) return null;
+
+  const ownedItemIds = new Set(ownedItemsQuery.data ?? []);
+  const ownedTitles = (shopItemsQuery.data ?? []).filter(
+    (item) => item.kind === 'title' && ownedItemIds.has(item.id)
+  );
+
+  /**
+   * Puts on one of the player's own titles, or takes the title off.
+   * Parameters: item (an owned title, or null for no title).
+   * Returns: a promise that resolves once the change is saved or refused.
+   * Edge cases: does nothing when signed out, while another change is in flight, or when the
+   * choice is what is already worn; a refusal from the server is shown and nothing changes.
+   */
+  const changeTitle = async (item: ShopItem | null) => {
+    if (!userId || equipMutation.isPending) return;
+    if ((item?.value ?? undefined) === (currentUser.title ?? undefined)) return;
+    try {
+      await equipMutation.mutateAsync({ userId, kind: 'title', itemId: item?.id ?? null });
+      Haptics.selectionAsync();
+      showDialog(
+        item ? 'Title changed' : 'Title removed',
+        item ? `You’re now “${item.value}”. It shows under your name everywhere.` : 'Your name now shows without a title.'
+      );
+    } catch (err) {
+      showDialog('Couldn’t change your title', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  /**
+   * Makes one of the player's rivals their main Rival and says so.
+   * Parameters: rival (the contender or familiar foe whose badge was tapped).
+   * Returns: void.
+   * Edge cases: the pick is remembered on this device only; the first pick also earns the
+   * one-time starter reward, which the server pays at most once.
+   */
+  const chooseRival = (rival: UserProfile) => {
+    setChosenRivalId(rival.id);
+    showDialog('Rival set', `${rival.displayName ?? rival.username} is now your Rival.`);
+    claimReward('choose_rival');
+  };
 
   const [editDisplayName, setEditDisplayNameState] = useState(currentUser.displayName ?? '');
   const [editLocation, setEditLocationState] = useState(currentUser.location);
@@ -103,6 +172,7 @@ export default function ProfileScreen() {
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDirty(false);
+    showDialog('Profile saved', 'Your changes are live.');
   };
 
   const discardChanges = () => {
@@ -165,7 +235,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: bg }]} contentContainerStyle={styles.content}>
       {dirty && (
-        <View style={[styles.unsavedBanner, { backgroundColor: isDark ? '#2A1F00' : '#FFF8E0' }]}>
+        <View style={[styles.unsavedBanner, { backgroundColor: colors.unsavedBanner }]}>
           <Text style={styles.unsavedBannerText}>⚠️ You have unsaved changes</Text>
         </View>
       )}
@@ -189,12 +259,14 @@ export default function ProfileScreen() {
             maxLength={32}
           />
           <Text style={[styles.fieldLabel, { color: textSec, marginTop: 10 }]}>My Location</Text>
-          <LocationAutocomplete
+          <TextInput
+            style={[styles.locationInput, { color: textPrimary, borderColor: border }]}
             value={editLocation}
             onChangeText={setEditLocation}
-            placeholder="e.g. Seattle, WA"
+            placeholder="Your area"
+            placeholderTextColor={textSec}
           />
-          {currentUser.isDeveloper && (
+          {DEV_TOOLS_ENABLED && currentUser.isDeveloper && (
             <View style={[styles.devBadge, { marginTop: 10 }]}>
               <Text style={styles.devBadgeText}>🔧 DEVELOPER</Text>
             </View>
@@ -218,10 +290,52 @@ export default function ProfileScreen() {
         <Text style={styles.shopRowPoints}>{currentUser.pointBalance} pts →</Text>
       </Pressable>
 
+      {/* ── Title: see what is worn and switch between owned titles ── */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: textSec }]}>Your Title</Text>
+        <View style={[styles.titlePreview, { backgroundColor: card, borderColor: border }]}>
+          <PlayerName
+            name={currentUser.displayName ?? currentUser.username}
+            cosmetics={{ title: currentUser.title, nameColor: currentUser.nameColor }}
+            style={[styles.titlePreviewName, { color: textPrimary }]}
+            titleStyle={styles.titlePreviewTitle}
+          />
+          {!currentUser.title && (
+            <Text style={[styles.titlePreviewEmpty, { color: textSec }]}>No title on</Text>
+          )}
+        </View>
+        {ownedTitles.length === 0 ? (
+          <Text style={[styles.titleHint, { color: textSec }]}>
+            You don’t own a title yet. Pick one up in the Shop and it will appear here to wear.
+          </Text>
+        ) : (
+          <View style={styles.chipRow}>
+            {[null, ...ownedTitles].map((item) => {
+              const active = (item?.value ?? undefined) === (currentUser.title ?? undefined);
+              return (
+                <Pressable
+                  key={item?.id ?? 'none'}
+                  style={[styles.chip, { borderColor: border, backgroundColor: card }, active && styles.titleChipActive]}
+                  onPress={() => changeTitle(item)}
+                  disabled={equipMutation.isPending}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={item ? `Wear the title ${item.value}` : 'Wear no title'}
+                >
+                  <Text style={[styles.chipText, { color: textSec }, active && { color: colors.accentOnBg }]}>
+                    {item ? item.value : 'No title'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
       {/* ── Add Game modal ── */}
       {showGameModal && (
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? '#1C1C24' : '#FFF', borderColor: border }]}>
+          <View style={[styles.modalCard, { backgroundColor: card, borderColor: border }]}>
             <Text style={[styles.modalTitle, { color: textPrimary }]}>Games I Play</Text>
             <Text style={[styles.modalSub, { color: textSec }]}>Tap to select or deselect</Text>
             {ALL_GAMES.map((g) => {
@@ -249,7 +363,7 @@ export default function ProfileScreen() {
             })}
             <View style={styles.modalBtns}>
               <Pressable
-                style={[styles.modalCancelBtn, { backgroundColor: isDark ? '#2C2C38' : '#EEE' }]}
+                style={[styles.modalCancelBtn, { backgroundColor: border }]}
                 onPress={() => { setModalGames(editGames); setShowGameModal(false); }}
               >
                 <Text style={[styles.modalCancelText, { color: textSec }]}>Cancel</Text>
@@ -358,7 +472,7 @@ export default function ProfileScreen() {
                 style={[styles.chip, { borderColor: border, backgroundColor: card }, active && styles.chipNoGo]}
                 onPress={() => toggleNoGo(rule)}
               >
-                <Text style={[styles.chipText, { color: textSec }, active && styles.chipTextActive]}>{rule}</Text>
+                <Text style={[styles.chipText, { color: textSec }, active && { color: colors.dangerOnBg }]}>{rule}</Text>
               </Pressable>
             );
           })}
@@ -394,12 +508,12 @@ export default function ProfileScreen() {
                   <View style={styles.rivalBadge}><Text style={styles.rivalBadgeText}>RIVAL</Text></View>
                 ) : isFoe ? (
                   <Pressable style={[styles.rivalBadge, styles.foeBadge]}
-                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); setChosenRivalId(rival.id); }}>
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
                     <Text style={[styles.rivalBadgeText, styles.foeBadgeText]}>FAMILIAR FOE</Text>
                   </Pressable>
                 ) : (
                   <Pressable style={[styles.rivalBadge, styles.contenderBadge]}
-                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); setChosenRivalId(rival.id); }}>
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
                     <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
                   </Pressable>
                 )}
@@ -430,16 +544,6 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
         </View>
-
-        {currentUser.isDeveloper && (
-          <Pressable
-            style={[styles.devToolsBtn, { backgroundColor: card, borderColor: border }]}
-            onPress={() => router.push('/dev-tools')}
-          >
-            <Text style={styles.devToolsBtnText}>🔧 Developer Tools</Text>
-            <Text style={styles.devToolsArrow}>→</Text>
-          </Pressable>
-        )}
 
         <View style={[styles.settingsCard, { backgroundColor: card, borderColor: border }]}>
           <Pressable
@@ -495,6 +599,9 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
+
+        {/* Dev Tools entry point removed along with src/app/dev-tools.tsx — see
+            DEV_TOOLS_ENABLED above and CLAUDE.md git workflow. */}
       </View>
 
       {/* ── Save / Discard / Log Out ── */}
@@ -511,7 +618,7 @@ export default function ProfileScreen() {
         )}
         <Pressable
           style={styles.logoutBtn}
-          onPress={() => Alert.alert(
+          onPress={() => showDialog(
             'Log Out',
             'Are you sure you want to log out?',
             [
@@ -527,14 +634,16 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1 },
   content: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 50 },
   unsavedBanner: {
     borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
     marginBottom: 16, borderWidth: 1, borderColor: '#E6A817', alignItems: 'center',
   },
-  unsavedBannerText: { fontSize: 13, fontWeight: '700', color: '#E6A817' },
+  unsavedBannerText: { fontSize: 13, fontWeight: '700', color: c.warnText },
 
   /* Profile header */
   profileHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28, gap: 18 },
@@ -553,10 +662,10 @@ const styles = StyleSheet.create({
   },
   locationInput: { fontSize: 14, borderBottomWidth: 1, paddingVertical: 4, paddingHorizontal: 0 },
   devBadge: {
-    backgroundColor: '#0A2A0A', borderRadius: 6, paddingHorizontal: 8,
+    backgroundColor: c.successBg, borderRadius: 6, paddingHorizontal: 8,
     paddingVertical: 3, alignSelf: 'flex-start',
   },
-  devBadgeText: { fontSize: 10, fontWeight: '800', color: '#34C759', letterSpacing: 1 },
+  devBadgeText: { fontSize: 10, fontWeight: '800', color: c.successText, letterSpacing: 1 },
 
   /* Sections */
   section: { marginBottom: 24 },
@@ -593,6 +702,13 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
 
+  titlePreview: { borderRadius: 14, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12 },
+  titlePreviewName: { fontSize: 18, fontWeight: '800' },
+  titlePreviewTitle: { fontSize: 13, marginTop: 2 },
+  titlePreviewEmpty: { fontSize: 12, marginTop: 2 },
+  titleHint: { fontSize: 12, lineHeight: 17 },
+  titleChipActive: { backgroundColor: c.accentBg, borderColor: '#007AFF' },
+
   /* Add Game modal */
   modalOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -621,18 +737,18 @@ const styles = StyleSheet.create({
   chip: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1.5 },
   chipText: { fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: '#FFF' },
-  chipNoGo: { backgroundColor: '#3D1215', borderColor: '#C0392B' },
+  chipNoGo: { backgroundColor: c.dangerBg, borderColor: '#C0392B' },
   bracketRow: { flexDirection: 'row', gap: 8 },
   bracketBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5 },
-  bracketBtnActive: { borderColor: '#007AFF', backgroundColor: '#001A3D' },
+  bracketBtnActive: { borderColor: '#007AFF', backgroundColor: c.accentBg },
   bracketNum: { fontSize: 20, fontWeight: '800' },
   bracketNumActive: { color: '#007AFF' },
   bracketLabel: { fontSize: 9, marginTop: 2 },
 
   /* Rivals */
   rivalCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1.5 },
-  rivalCardChosen: { borderColor: '#FF3B30', backgroundColor: '#1F1012' },
-  rivalCardFoe: { borderColor: '#5B3FCF', backgroundColor: '#12101F' },
+  rivalCardChosen: { borderColor: '#FF3B30', backgroundColor: c.rivalMainBg },
+  rivalCardFoe: { borderColor: '#5B3FCF', backgroundColor: c.rivalFamiliarFoeBg },
   rivalAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#444', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rivalAvatarChosen: { backgroundColor: '#FF3B30' },
   rivalInitial: { fontSize: 18, fontWeight: '800', color: '#FFF' },
@@ -653,11 +769,11 @@ const styles = StyleSheet.create({
   themeRow: { flexDirection: 'row', gap: 10 },
   themeBtn: {
     flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#2C2C38', backgroundColor: 'transparent',
+    borderWidth: 1.5, borderColor: c.border, backgroundColor: 'transparent',
   },
-  themeBtnActive: { backgroundColor: '#0A1030', borderColor: '#007AFF' },
+  themeBtnActive: { backgroundColor: c.accentBg, borderColor: '#007AFF' },
   themeBtnActiveLight: { backgroundColor: '#FFF8E0', borderColor: '#E6A817' },
-  themeBtnText: { fontSize: 14, fontWeight: '700', color: '#888' },
+  themeBtnText: { fontSize: 14, fontWeight: '700', color: c.textSecondary },
   passwordToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   passwordToggleArrow: { fontSize: 18, fontWeight: '700' },
   passwordForm: { marginTop: 14, gap: 10 },
@@ -665,7 +781,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, fontSize: 14,
   },
   passwordErrorText: { fontSize: 12, color: '#C0392B', fontWeight: '600' },
-  passwordSuccessText: { fontSize: 12, color: '#34C759', fontWeight: '600' },
+  passwordSuccessText: { fontSize: 12, color: c.successText, fontWeight: '600' },
   passwordSubmitBtn: {
     backgroundColor: '#007AFF', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
   },
@@ -677,8 +793,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', borderRadius: 14,
     padding: 16, borderWidth: 1,
   },
-  devToolsBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#34C759' },
-  devToolsArrow: { fontSize: 18, color: '#34C759' },
+  devToolsBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: c.successText },
+  devToolsArrow: { fontSize: 18, color: c.successText },
 
   /* Actions */
   editActions: { gap: 10, marginTop: 8 },
@@ -688,7 +804,7 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontWeight: '700', fontSize: 15 },
   logoutBtn: {
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
-    borderWidth: 1, borderColor: '#3D1215', backgroundColor: 'transparent', marginTop: 8,
+    borderWidth: 1, borderColor: '#C0392B', backgroundColor: 'transparent', marginTop: 8,
   },
   logoutBtnText: { color: '#C0392B', fontWeight: '800', fontSize: 13, letterSpacing: 1.5 },
 });

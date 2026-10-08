@@ -350,6 +350,19 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   (the payout credits the spendable balance), so it is the last link:
   `event-calendar` -> `commander-only` -> `security-hardening` -> `shop` -> `final-results`. Its
   migration is live on Supabase (applied 2026-10-07).
+- **`readme-refresh`** — rewrites `README.md` with diagrams of the app and the branch flow, plus
+  the `.env` setup step it was missing. Documentation only: no code, no migration. **Stacked on
+  `final-results`** (made 2026-10-08) because the README describes the app as it is once the
+  stack has landed, so it merges into `development` after `final-results`.
+- **`playtest-fixes`** — fixes from the developer's first play-test of `combined-preview` in a
+  browser (2026-10-08): pop-ups that work on web (`showDialog`), one group per day, light mode
+  on every signed-in screen, a title picker on the Profile tab, the "How PlayLink works" guide
+  as a button and as the last step of onboarding, and 25-point starter rewards. **Stacked on
+  `readme-refresh`**, so it lands last. It carries two migrations that are **not yet applied to
+  the live database**: `20261008120000_group_play_date.sql` and
+  `20261008130000_starter_rewards.sql`. The app works without them (groups fall back to the
+  live per-UTC-day rule, and the starter checklist stays hidden) but neither feature is complete
+  until they are applied.
 - **`combined-preview`** — not a feature: `development` plus the whole stack merged in order
   (`event-calendar`, `commander-only`, `security-hardening`, `shop`), made on 2026-10-07 so the
   developer can test everything together. Its tree is identical to `shop`. Do not build on it;
