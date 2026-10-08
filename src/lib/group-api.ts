@@ -15,7 +15,13 @@ interface GroupPlayerRow {
   player_id: string;
   role: string;
   bracket: number;
-  profiles: { username: string; display_name: string | null; location: string } | null;
+  profiles: {
+    username: string;
+    display_name: string | null;
+    location: string;
+    title?: string | null;
+    name_color?: string | null;
+  } | null;
 }
 
 interface GroupRow {
@@ -42,7 +48,7 @@ interface GroupRow {
 }
 
 const GROUP_SELECT =
-  '*, group_players(player_id, role, bracket, profiles(username, display_name, location)), game_stores(name, website_url)';
+  '*, group_players(player_id, role, bracket, profiles(username, display_name, location, title, name_color)), game_stores(name, website_url)';
 
 const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   id: row.player_id,
@@ -51,6 +57,8 @@ const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   bracket: row.bracket,
   location: row.profiles?.location ?? '',
   role: row.role,
+  title: row.profiles?.title ?? undefined,
+  nameColor: row.profiles?.name_color ?? undefined,
 });
 
 const mapGroupRow = (row: GroupRow): Group => ({
@@ -363,7 +371,9 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
 /**
  * Submits a round's results through the submit_group_result SQL function, which verifies the
  * caller is the group's host and that every placed player is a member, scores the raw placement
- * order server-side (so points can't be inflated from the client), and inserts a pending result
+ * order server-side (so points can't be inflated from the client), adds the one-time store-event
+ * bonus for a group linked to a store event if the round is reported inside that event's window
+ * (decided by the server's own clock in the venue's time zone), and inserts a pending result
  * with a fresh dispute window. The caller sends only the finish order, never computed points.
  * Parameters: groupId, roundNumber (1-indexed — the caller passes group.roundsPlayed + 1),
  * submittedBy (unused server-side, kept for call-site compatibility; the host is derived from the
@@ -371,17 +381,13 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
  * Returns: a promise that resolves once the round is recorded; the caller refetches the results
  * query to pick up the new row rather than relying on a return value.
  * Edge cases: throws if the caller isn't the host, if a placement names a non-member, or on any
- * Postgres/network error. The store-event bonus (see venue-bonus-utils.ts) is NOT applied on
- * this code path yet: with scoring done by the SQL function, the bonus has to be computed there
- * too, and that port is still to do. _nowMs is accepted so call sites match the client-scored
- * version of this function, and is unused until then.
+ * Postgres/network error.
  */
 export const submitGroupResult = async (
   groupId: string,
   roundNumber: number,
   submittedBy: string,
-  placements: PlacementInput[],
-  _nowMs?: number
+  placements: PlacementInput[]
 ): Promise<void> => {
   const { error } = await supabase.rpc('submit_group_result', {
     p_group_id: groupId,

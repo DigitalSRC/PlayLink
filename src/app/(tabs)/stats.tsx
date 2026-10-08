@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Dimensions, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQueries } from '@tanstack/react-query';
+import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, GameType, UserProfile, visibleGames } from '../../data/types';
 import { useThemeColors } from '../../utils/theme-utils';
@@ -18,6 +19,9 @@ interface LeaderRow {
   losses: number;
   draws: number;
   isMe: boolean;
+  /** What the player is wearing from the shop, shown on their leaderboard row. */
+  title?: string;
+  nameColor?: string;
 }
 
 /**
@@ -38,10 +42,15 @@ const buildSelfRow = (user: UserProfile): LeaderRow => ({
   losses: user.losses,
   draws: user.draws,
   isMe: true,
+  title: user.title,
+  nameColor: user.nameColor,
 });
 
 /**
  * Stats tab showing the player's detailed performance history and per-game monthly rankings.
+ * The leaderboard ranks by Score (this month's earnings, `monthlyPoints`), which is separate from
+ * the spendable Points shown on Home and in the Shop; each row shows the player's bought title and
+ * name color.
  * Displays win/loss record, all-time points, win-rate bar, per-game breakdown, and milestone
  * badges, plus one swipeable leaderboard page per game the player plays — each page only shows
  * players who share that specific game, since a Pokemon ranking full of Magic players (or vice
@@ -108,7 +117,7 @@ export default function StatsScreen() {
             { value: currentUser.wins, label: 'Wins', color: '#34C759' },
             { value: currentUser.losses, label: 'Losses', color: '#FF3B30' },
             { value: currentUser.draws, label: 'Draws', color: '#E6A817' },
-            { value: currentUser.points, label: 'All-Time Pts', color: '#007AFF' },
+            { value: currentUser.points, label: 'All-Time', color: '#007AFF' },
           ].map((stat, i, arr) => (
             <View key={stat.label} style={styles.overviewStatWrap}>
               <View style={styles.overviewStat}>
@@ -165,6 +174,9 @@ export default function StatsScreen() {
       {games.length > 0 && (
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Monthly Leaderboard</Text>
+          <Text style={[styles.scoreHint, { color: colors.textMuted }]}>
+            Ranked by Score: everything you&apos;ve earned this month. It resets when the month ends, and spending points in the Shop never lowers it.
+          </Text>
           <View style={styles.gameTabRow}>
             {games.map((g, i) => (
               <Pressable
@@ -201,6 +213,8 @@ export default function StatsScreen() {
                 losses: p.losses,
                 draws: p.draws,
                 isMe: false,
+                title: p.title,
+                nameColor: p.nameColor,
               }));
               const rows = [selfRow, ...others].sort((a, b) => b.monthlyPoints - a.monthlyPoints);
               const myRank = rows.findIndex((r) => r.isMe) + 1;
@@ -213,8 +227,8 @@ export default function StatsScreen() {
                     <Text style={styles.rankNum}>#{myRank}</Text>
                     <Text style={styles.rankSub}>out of {rows.length} players</Text>
                     <View style={styles.monthlyPtsBadge}>
-                      <Text style={styles.monthlyPtsLabel}>THIS MONTH</Text>
-                      <Text style={styles.monthlyPtsVal}>{currentUser.monthlyPoints} pts</Text>
+                      <Text style={styles.monthlyPtsLabel}>SCORE THIS MONTH</Text>
+                      <Text style={styles.monthlyPtsVal}>{currentUser.monthlyPoints}</Text>
                     </View>
                   </View>
 
@@ -236,13 +250,15 @@ export default function StatsScreen() {
                         {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
                       </Text>
                       <View style={styles.leaderNameCol}>
-                        <Text style={[styles.leaderName, { color: colors.textSecondary }, p.isMe && styles.leaderNameMe]}>
-                          {p.displayName}
-                        </Text>
+                        <PlayerName
+                          name={p.displayName}
+                          cosmetics={{ title: p.title, nameColor: p.nameColor }}
+                          style={[styles.leaderName, { color: colors.textSecondary }, p.isMe && styles.leaderNameMe]}
+                        />
                         {p.isMe && <Text style={styles.leaderYou}>YOU</Text>}
                         <Text style={[styles.leaderRecord, { color: colors.textMuted }]}>{p.wins}-{p.losses}-{p.draws}</Text>
                       </View>
-                      <Text style={[styles.leaderPts, { color: colors.textSecondary }, p.isMe && styles.leaderPtsMe]}>{p.monthlyPoints} pts</Text>
+                      <Text style={[styles.leaderPts, { color: colors.textSecondary }, p.isMe && styles.leaderPtsMe]}>{p.monthlyPoints}</Text>
                     </Pressable>
                   ))}
                   {myRank > 10 && (
@@ -257,7 +273,7 @@ export default function StatsScreen() {
                           {currentUser.wins}-{currentUser.losses}-{currentUser.draws}
                         </Text>
                       </View>
-                      <Text style={[styles.leaderPts, styles.leaderPtsMe]}>{currentUser.monthlyPoints} pts</Text>
+                      <Text style={[styles.leaderPts, styles.leaderPtsMe]}>{currentUser.monthlyPoints}</Text>
                     </View>
                   )}
                 </View>
@@ -273,6 +289,11 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 50 },
+  scoreHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
+  },
   screenTitle: { fontSize: 32, fontWeight: '900', marginBottom: 24 },
   overviewCard: {
     borderRadius: 18, padding: 18,

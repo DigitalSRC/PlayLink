@@ -202,6 +202,22 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* ── Shop ── */}
+      <Pressable
+        style={[styles.shopRow, { backgroundColor: card, borderColor: border }]}
+        onPress={() => router.push('/(tabs)/shop')}
+        accessibilityRole="button"
+        accessibilityLabel={`Open the shop. You have ${currentUser.pointBalance} points`}
+      >
+        <View style={styles.shopRowInfo}>
+          <Text style={[styles.shopRowTitle, { color: textPrimary }]}>🛍️ Shop</Text>
+          <Text style={[styles.shopRowSub, { color: textSec }]}>
+            {currentUser.title ? `Wearing “${currentUser.title}”` : 'Titles, name colors, and card borders'}
+          </Text>
+        </View>
+        <Text style={styles.shopRowPoints}>{currentUser.pointBalance} pts →</Text>
+      </Pressable>
+
       {/* ── Add Game modal ── */}
       {showGameModal && (
         <View style={styles.modalOverlay}>
@@ -550,6 +566,32 @@ const styles = StyleSheet.create({
   gamePill: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.5 },
   gamePillText: { fontSize: 13, fontWeight: '600' },
   addGameBtn: { borderStyle: 'dashed' },
+
+  shopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 20,
+    gap: 12,
+  },
+  shopRowInfo: {
+    flex: 1,
+  },
+  shopRowTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  shopRowSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  shopRowPoints: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#007AFF',
+  },
 
   /* Add Game modal */
   modalOverlay: {

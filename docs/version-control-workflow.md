@@ -323,7 +323,7 @@ an **individual** owns one piece of it.
 ## 5. Current top-level feature branches
 
 This list records which features exist and roughly what state they're in; who is working on
-each one is tracked by GitHub issue assignment, not here. As of 2026-10-06, the top-level
+each one is tracked by GitHub issue assignment, not here. As of 2026-10-07, the top-level
 branches not yet merged into `development` — all of them shared on `origin` (§2.9) — are:
 
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
@@ -335,11 +335,22 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
 - **`security-hardening`** — server-authoritative scoring and RLS hardening. The migration is
   written but not yet applied to Supabase; see `docs/security-backlog.md` (on that branch).
-- **`event-calendar`** — the Calendar tab: a month view of local Commander nights from the
+- **`event-calendar`** — **PENDING DEV MERGE (marked 2026-10-07, GitHub issue #12).** The
+  developer considers it finished and will review it before it lands; do not merge it into
+  `development` until they say so. The Calendar tab: a month view of local Commander nights from the
   `local_events` table, starting with Reno-Sparks, filled by the `sync-local-events` Edge Function.
-  Its two migrations and the function are live on Supabase (applied/deployed 2026-10-07).
+  Its two migrations and the function are live on Supabase (applied/deployed 2026-10-07). Also
+  carries the "Create game" button that starts a store-linked group, and a batch of first-time
+  player fixes (sign-in, onboarding, Home) that were placed here rather than on their own branch.
+- **`commander-only`** — hides every game and Magic format except Commander behind the
+  `COMMANDER_ONLY` flag in `src/data/types.ts`, deleting nothing. **Stacked on `event-calendar`**
+  (it has to hide the Calendar's format switcher), so it merges into `development` only after
+  `event-calendar` does. Tracked in GitHub issue #9.
 - **`calendar-system`** — shelved (2026-10-06) in favor of `event-calendar`: a weekly calendar of
   player groups plus a one-group-per-day rule change. Kept as a reference, not planned to merge.
+  **Its `group_players_one_per_day` migration is nonetheless live on Supabase** (confirmed
+  2026-10-07), so the live database enforces one group per day while `development`'s migrations
+  still declare one group per player overall — see GitHub issue #10.
 - **`location-autocomplete`**, **`store-events`**, **`ui-polish`**, **`onboarding-fixes`** —
   in-progress features with unmerged work.
 - **`LandingPage`** — the marketing site; not an app feature and never merged into the app

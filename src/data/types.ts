@@ -21,8 +21,20 @@ export interface UserProfile {
   wins: number;
   losses: number;
   draws: number;
+  /** Everything ever earned. Never goes down; milestones are measured against it. */
   points: number;
+  /** This month's total - shown as "Score", ranks the leaderboard, resets each month. */
   monthlyPoints: number;
+  /** Points available to spend in the shop - what the app calls "Points". Goes up by exactly
+   * what is earned and down only on a purchase. Written by the server only. */
+  pointBalance: number;
+  /** What the player is wearing, bought in the shop. Each is absent when nothing is equipped.
+   * Set only through the shop (equip_shop_item); a client cannot write them directly. */
+  title?: string;
+  nameColor?: string;
+  cardBorder?: string;
+  /** When the profile was created (epoch ms). Decides early-supporter shop items. */
+  createdAt?: number;
   rivalIds?: string[];
   lastRivalRefresh?: string;
 }

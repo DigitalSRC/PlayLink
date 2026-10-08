@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import PlayerName, { CosmeticBorder } from '../components/PlayerName';
 import { useApp } from '../context/AppContext';
 import {
   BRACKET_INFO,
@@ -78,7 +79,12 @@ export default function PlayerProfileScreen() {
           <View style={[styles.avatar, isChosenRival && styles.avatarRival]}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
-          <Text style={styles.displayName}>{profile?.displayName ?? username}</Text>
+          <PlayerName
+            name={profile?.displayName ?? username}
+            cosmetics={{ title: profile?.title, nameColor: profile?.nameColor }}
+            style={styles.displayName}
+            titleStyle={styles.cosmeticTitle}
+          />
           <Text style={styles.usernameTag}>@{username}</Text>
           {profile && <Text style={styles.location}>{profile.location}</Text>}
           {isChosenRival && (
@@ -95,7 +101,8 @@ export default function PlayerProfileScreen() {
 
         {profile ? (
           <>
-            {/* Stats */}
+            {/* Stats, framed by the card border this player bought in the shop, if any */}
+            <CosmeticBorder borderKey={profile.cardBorder} radius={16} style={styles.statsCardWrap}>
             <View style={styles.statsCard}>
               <View style={styles.statRow}>
                 <View style={styles.stat}>
@@ -114,14 +121,15 @@ export default function PlayerProfileScreen() {
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.stat}>
-                  <Text style={[styles.statNum, styles.pointsColor]}>{profile.points}</Text>
-                  <Text style={styles.statLabel}>Points</Text>
+                  <Text style={[styles.statNum, styles.pointsColor]}>{profile.monthlyPoints}</Text>
+                  <Text style={styles.statLabel}>Score</Text>
                 </View>
               </View>
               <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${winPct}%` }]} />
               </View>
             </View>
+            </CosmeticBorder>
 
             {/* Games and formats: hidden while the app is Commander-only (see COMMANDER_ONLY) */}
             {!COMMANDER_ONLY && (
@@ -350,11 +358,19 @@ const styles = StyleSheet.create({
     color: '#C9952A',
     letterSpacing: 1,
   },
+  // The bottom gap lives on the wrapper so a bought card border hugs the card, not the gap.
+  statsCardWrap: {
+    marginBottom: 24,
+  },
+  cosmeticTitle: {
+    fontSize: 14,
+    marginTop: 2,
+    marginBottom: 2,
+  },
   statsCard: {
     backgroundColor: '#1C1C24',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 24,
     borderWidth: 1,
     borderColor: '#2C2C38',
   },
