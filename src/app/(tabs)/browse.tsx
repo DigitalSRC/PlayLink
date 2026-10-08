@@ -219,7 +219,7 @@ export default function BrowseScreen() {
         { text: 'OK', style: 'cancel' },
         { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
       ]);
-      claimReward('join_group');
+      claimReward('first_group');
     } catch (err) {
       showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
@@ -330,7 +330,7 @@ export default function BrowseScreen() {
           { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: created.id } }) },
         ]
       );
-      claimReward('create_group');
+      claimReward('first_group');
     } catch (err) {
       showDialog('Couldn’t post group', groupErrorMessage(err, 'Please try again.'));
     }
