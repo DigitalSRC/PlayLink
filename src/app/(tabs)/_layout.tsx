@@ -12,9 +12,10 @@ const TAB_ICON: Record<string, { active: string; inactive: string }> = {
   profile: { active: '👤', inactive: '👤' },
 };
 
-// The Shop tab is only a "coming soon" placeholder, so its slot in the tab bar is lent to the
-// Calendar tab until the shop is actually built. The route file stays in place; flipping this to
-// true shows Shop again, at which point it needs a slot of its own (six tabs is one too many).
+// The Shop is built and reachable, but not from the tab bar: its old slot is the Calendar's now,
+// and six tabs is one too many. Players open it from the points badge on Home and from the
+// Profile tab. The route stays registered here (hidden) so those pushes work and the tab bar
+// stays visible on it. Flip this to true only if the bar is redesigned to make room.
 const SHOP_TAB_ENABLED = false;
 
 const HOME_ICON_SIZE = 34;

@@ -20,6 +20,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import PlayerName from '../components/PlayerName';
 import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
@@ -638,7 +639,11 @@ export default function GroupDetail() {
               <Text style={styles.playerInitial}>{(player.displayName ?? player.username)[0]}</Text>
             </View>
             <View style={styles.playerInfo}>
-              <Text style={styles.playerName}>{player.displayName ?? player.username}</Text>
+              <PlayerName
+                name={player.displayName ?? player.username}
+                cosmetics={{ title: player.title, nameColor: player.nameColor }}
+                style={styles.playerName}
+              />
               <Text style={styles.playerMeta}>
                 {player.role} · Bracket {player.bracket} · {player.location}
               </Text>

@@ -232,6 +232,7 @@ export default function ProfileCreation() {
         draws: 0,
         points: 0,
         monthlyPoints: 0,
+        pointBalance: 0,
       };
 
       setSubmitError("");

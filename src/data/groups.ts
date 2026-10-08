@@ -10,6 +10,9 @@ export interface PlayerProfile {
   bracket: number;
   location: string;
   role: string;
+  /** What this player is wearing from the shop, if anything (see src/data/shop.ts). */
+  title?: string;
+  nameColor?: string;
 }
 
 export interface Group {

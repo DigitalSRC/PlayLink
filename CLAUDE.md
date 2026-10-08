@@ -61,7 +61,7 @@ index             (no UI of its own — a spinner, then a Redirect based on useA
        └─ profile      (user settings, theme, change password, sign-out)
 ```
 
-The tabs are listed above in their on-screen order (Stats, Calendar, Home, Find, Profile), which is deliberate — see the comment in [(tabs)/_layout.tsx](src/app/(tabs)/_layout.tsx). `(tabs)/shop.tsx` (a "coming soon" placeholder) still exists as a route but is hidden from the tab bar by `SHOP_TAB_ENABLED = false` in that layout; Calendar occupies its old slot until the shop is built.
+The tabs are listed above in their on-screen order (Stats, Calendar, Home, Find, Profile), which is deliberate — see the comment in [(tabs)/_layout.tsx](src/app/(tabs)/_layout.tsx). `(tabs)/shop.tsx` is the working Shop, but it is **not in the tab bar** (`SHOP_TAB_ENABLED = false` in that layout - the Calendar has its old slot and six tabs is one too many). It stays registered as a hidden tab route so the tab bar remains visible on it; players reach it from the points badge on Home and the Shop row on the Profile tab.
 
 `sign-in` does not rely on the auth listener alone to leave the screen: `index` and `sign-in` are sibling routes, so `index`'s gate only re-evaluates when remounted. After a successful sign-in the screen explicitly navigates back to `/`.
 
@@ -116,6 +116,29 @@ Areas are rows, not code. `event_areas` (`20261007120000_event_areas.sql`) holds
 - **[src/components/MonthCalendar.tsx](src/components/MonthCalendar.tsx)** — the grid itself; display only.
 
 **Store-event bonus.** A group is tied to a store event only by starting it from the Calendar tab: every listed event from today onward has a "Create game" button, which pushes `browse` with `openCreate` plus the `storeEvent*` route params built by `storeEventLinkParams`. `browse.tsx` validates them with `parseStoreEventLink` (a bad link alerts and opens nothing) and opens the normal create form with the game, format, venue, and night fixed to the event; posting sets `groups.local_event_id` (`20261007130000_group_store_event.sql`, `ON DELETE SET NULL`). The create form has no event picker of its own, and `group-detail` won't let the host edit a linked group's location. Weekly events can be linked too — the day they were listed under pins the night. When the host reports a round, the server's `submit_group_result` adds `VENUE_EVENT_BONUS` (10) to each player who hasn't already had it for that group, but only if the round is reported from the event's start time on its own day until 4:00 AM the next morning, in the venue's time zone. Each placement records its `venueBonus` so the bonus is paid once per player per event. The rule lives in SQL (`venue_bonus_eligible` in `20261007140000_server_venue_bonus.sql`, using the server's clock) and fails closed: no bonus, never a blocked round. The pure functions in **[src/utils/venue-bonus-utils.ts](src/utils/venue-bonus-utils.ts)** are the reference copy the unit tests pin - a **hand-maintained duplicate**, like `computePlacementScores` and its SQL port, so change both together.
+
+### Points, Score, and the Shop
+
+A profile has three numbers, and they must not be confused:
+
+| Column | App name | What it is |
+|---|---|---|
+| `point_balance` (`pointBalance`) | **Points** | Spendable. Goes up by exactly what is earned, down only on a purchase. Shown on Home and in the Shop. |
+| `monthly_points` (`monthlyPoints`) | **Score** | This month's earnings. Ranks the leaderboard and rival matching; reset to 0 each month by `refresh-rivals`. Never reduced by spending. |
+| `points` | **All-Time** | Everything ever earned. Never goes down; milestones are measured against it. |
+
+All three are credited together, once, by `apply_group_result`. None is writable by a client.
+
+The Shop sells cosmetics only - **titles**, **name colors**, and **card borders** - all drawn from text and color, so nothing needs artwork. Schema and rules are in `supabase/migrations/20261007150000_point_balance_and_shop.sql`:
+
+- `shop_items` is the catalog (read-only to clients; add or reprice items in Studio or by migration - no app release needed). `joined_before` marks early-supporter items such as "Beta Tester", obtainable only by profiles created before that date; the seeded cutoff (2027-01-01) is a placeholder to move when beta ends. `is_active = false` hides an item without taking it from anyone who owns it.
+- `shop_purchases` records ownership; a player can read only their own rows.
+- `purchase_shop_item(item_id)` looks the price up itself, locks the buyer's profile row, checks the balance, deducts, and records the purchase in one transaction. Re-buying an owned item charges nothing (safe on a double tap or retry).
+- `equip_shop_item(kind, item_id | null)` writes the worn item's **display value** onto the profile (`title`, `name_color`, `card_border`), so any screen can draw another player's look straight from their profile row without loading the catalog.
+
+Client side: **[src/data/shop.ts](src/data/shop.ts)** (types, `BORDER_STYLES` - the key-to-colors map for borders; a key the build doesn't know draws no border), **[src/utils/shop-utils.ts](src/utils/shop-utils.ts)** (pure: `groupShopItems`, `shopItemState`, `pointsShort`, `safeNameColor`, `borderStyleFor`), **[src/lib/shop-api.ts](src/lib/shop-api.ts)**, **[src/hooks/useShopQueries.ts](src/hooks/useShopQueries.ts)**, and **[src/components/PlayerName.tsx](src/components/PlayerName.tsx)** (`PlayerName` draws a name in its bought color with the title beneath; `CosmeticBorder` frames a card). **Any screen that shows a player's name should render it with `PlayerName`** so a purchase shows everywhere; today that is Home (own name), the group roster, the leaderboard, `player-profile`, and the Shop preview. Name colors from other players' rows go through `safeNameColor` before reaching a style.
+
+Adding a new border means a `shop_items` row **and** a `BORDER_STYLES` entry; adding a title or color needs only the row.
 
 ### Rival matching
 

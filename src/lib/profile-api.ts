@@ -16,6 +16,11 @@ interface ProfileRow {
   draws: number;
   points: number;
   monthly_points: number;
+  point_balance?: number;
+  title?: string | null;
+  name_color?: string | null;
+  card_border?: string | null;
+  created_at?: string;
   rival_ids: string[];
   last_rival_refresh: string | null;
 }
@@ -59,6 +64,13 @@ export const mapRowToProfile = (row: ProfileRow): UserProfile => ({
   draws: row.draws,
   points: row.points,
   monthlyPoints: row.monthly_points,
+  // Read-only from the client's side: the server writes these (see the shop migration), so
+  // mapProfileToRow below deliberately has no way to send them back.
+  pointBalance: row.point_balance ?? 0,
+  title: row.title ?? undefined,
+  nameColor: row.name_color ?? undefined,
+  cardBorder: row.card_border ?? undefined,
+  createdAt: row.created_at ? new Date(row.created_at).getTime() : undefined,
   rivalIds: row.rival_ids,
   lastRivalRefresh: row.last_rival_refresh ?? undefined,
 });
