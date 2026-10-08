@@ -23,6 +23,7 @@ interface GroupRow {
   created_by: string | null;
   created_at: string;
   scheduled_at: string | null;
+  play_date?: string | null;
   rounds_played: number;
   target_players: number;
   brackets: number[];
@@ -60,6 +61,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   createdBy: row.created_by ?? undefined,
   createdAt: new Date(row.created_at).getTime(),
   scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).getTime() : undefined,
+  playDate: row.play_date ?? undefined,
   roundsPlayed: row.rounds_played,
   players: row.group_players.map(mapPlayerRow),
   targetPlayers: row.target_players,
@@ -113,6 +115,9 @@ export interface CreateGroupDraft {
   name: string;
   joinCode: string;
   scheduledAt?: number;
+  /** The calendar day the host picked, "YYYY-MM-DD" on their phone. The one-group-per-day rule
+   * counts this day, not the UTC date of scheduledAt. */
+  playDate?: string;
   targetPlayers: number;
   brackets: number[];
   location: string;
@@ -133,26 +138,35 @@ export interface CreateGroupDraft {
  * Edge cases: throws (and leaves no group_players row) if the group insert fails; throws if the
  * host's own group_players insert fails even though the group row was created — callers should
  * treat any error here as "creation failed," not attempt to reuse a partially-created group.
+ * A host who already has a group that day is refused at the seat insert (the per-day rule lives
+ * on group_players), which is that second case. If the database does not have the play_date
+ * column yet (20261008120000 not applied), the group is created without it and the server falls
+ * back to bucketing by UTC date, rather than every create failing.
  */
 export const createGroup = async (hostId: string, draft: CreateGroupDraft): Promise<Group> => {
-  const { data, error } = await supabase
+  const row: Record<string, unknown> = {
+    name: draft.name,
+    join_code: draft.joinCode,
+    created_by: hostId,
+    scheduled_at: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : null,
+    target_players: draft.targetPlayers,
+    brackets: draft.brackets,
+    location: draft.location,
+    time: draft.time,
+    game_type: draft.gameType,
+    format: draft.format,
+    no_go: draft.noGo,
+    local_event_id: draft.localEventId ?? null,
+  };
+  let { data, error } = await supabase
     .from('groups')
-    .insert({
-      name: draft.name,
-      join_code: draft.joinCode,
-      created_by: hostId,
-      scheduled_at: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : null,
-      target_players: draft.targetPlayers,
-      brackets: draft.brackets,
-      location: draft.location,
-      time: draft.time,
-      game_type: draft.gameType,
-      format: draft.format,
-      no_go: draft.noGo,
-      local_event_id: draft.localEventId ?? null,
-    })
+    .insert(draft.playDate ? { ...row, play_date: draft.playDate } : row)
     .select()
     .single();
+  // PGRST204: the API doesn't know the column. Only then is it safe to retry without it.
+  if (error && error.code === 'PGRST204' && draft.playDate) {
+    ({ data, error } = await supabase.from('groups').insert(row).select().single());
+  }
   if (error) throw error;
 
   const { error: joinError } = await supabase

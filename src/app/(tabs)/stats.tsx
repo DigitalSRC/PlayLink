@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Dimensions, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQueries } from '@tanstack/react-query';
 import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, GameType, UserProfile, visibleGames } from '../../data/types';
-import { useThemeColors } from '../../utils/theme-utils';
+import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { fetchLeaderboard } from '../../lib/profile-api';
 
 const PAGE_WIDTH = Dimensions.get('window').width - 40;
@@ -65,6 +65,7 @@ export default function StatsScreen() {
   const router = useRouter();
   const { currentUser } = useApp();
   const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
   const [activeGameIndex, setActiveGameIndex] = useState(0);
 
@@ -250,11 +251,13 @@ export default function StatsScreen() {
                         {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
                       </Text>
                       <View style={styles.leaderNameCol}>
-                        <PlayerName
-                          name={p.displayName}
-                          cosmetics={{ title: p.title, nameColor: p.nameColor }}
-                          style={[styles.leaderName, { color: colors.textSecondary }, p.isMe && styles.leaderNameMe]}
-                        />
+                        <View style={styles.leaderNameStack}>
+                          <PlayerName
+                            name={p.displayName}
+                            cosmetics={{ title: p.title, nameColor: p.nameColor }}
+                            style={[styles.leaderName, { color: colors.textPrimary }, p.isMe && styles.leaderNameMe]}
+                          />
+                        </View>
                         {p.isMe && <Text style={styles.leaderYou}>YOU</Text>}
                         <Text style={[styles.leaderRecord, { color: colors.textMuted }]}>{p.wins}-{p.losses}-{p.draws}</Text>
                       </View>
@@ -265,9 +268,13 @@ export default function StatsScreen() {
                     <View style={[styles.leaderRow, { backgroundColor: colors.card, borderColor: colors.border }, styles.leaderRowMe, { marginTop: 8 }]}>
                       <Text style={[styles.leaderRank, { color: colors.textSecondary }]}>#{myRank}</Text>
                       <View style={styles.leaderNameCol}>
-                        <Text style={[styles.leaderName, styles.leaderNameMe]}>
-                          {currentUser.displayName ?? currentUser.username}
-                        </Text>
+                        <View style={styles.leaderNameStack}>
+                          <PlayerName
+                            name={currentUser.displayName ?? currentUser.username}
+                            cosmetics={{ title: currentUser.title, nameColor: currentUser.nameColor }}
+                            style={[styles.leaderName, styles.leaderNameMe]}
+                          />
+                        </View>
                         <Text style={styles.leaderYou}>YOU</Text>
                         <Text style={[styles.leaderRecord, { color: colors.textMuted }]}>
                           {currentUser.wins}-{currentUser.losses}-{currentUser.draws}
@@ -286,7 +293,9 @@ export default function StatsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1 },
   content: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 50 },
   scoreHint: {
@@ -307,22 +316,22 @@ const styles = StyleSheet.create({
   overviewDivider: { width: 1, height: 40 },
   winRateRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   winRateLabel: { fontSize: 12, fontWeight: '700' },
-  winRateNum: { fontSize: 12, color: '#34C759', fontWeight: '700' },
+  winRateNum: { fontSize: 12, color: c.successText, fontWeight: '700' },
   progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#34C759', borderRadius: 3 },
   rankCard: {
-    backgroundColor: '#1A0A2A', borderRadius: 18, padding: 20, marginBottom: 16,
+    backgroundColor: c.purpleBg, borderRadius: 18, padding: 20, marginBottom: 16,
     borderWidth: 1.5, borderColor: '#7B4FBF', alignItems: 'center',
   },
-  rankLabel: { fontSize: 11, fontWeight: '700', color: '#8B6FBF', letterSpacing: 1.5, marginBottom: 6 },
-  rankNum: { fontSize: 52, fontWeight: '900', color: '#A07FDF', lineHeight: 58 },
-  rankSub: { fontSize: 13, color: '#7B5FAF', marginTop: 4, marginBottom: 12 },
+  rankLabel: { fontSize: 11, fontWeight: '700', color: c.purpleTextSoft, letterSpacing: 1.5, marginBottom: 6 },
+  rankNum: { fontSize: 52, fontWeight: '900', color: c.purpleText, lineHeight: 58 },
+  rankSub: { fontSize: 13, color: c.purpleTextSoft, marginTop: 4, marginBottom: 12 },
   monthlyPtsBadge: {
-    backgroundColor: '#2A1A3A', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8,
+    backgroundColor: c.purpleBgAlt, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8,
     alignItems: 'center', borderWidth: 1, borderColor: '#5B3FCF',
   },
-  monthlyPtsLabel: { fontSize: 9, fontWeight: '800', color: '#8B6FBF', letterSpacing: 1.5, marginBottom: 2 },
-  monthlyPtsVal: { fontSize: 22, fontWeight: '900', color: '#C0A0FF' },
+  monthlyPtsLabel: { fontSize: 9, fontWeight: '800', color: c.purpleTextSoft, letterSpacing: 1.5, marginBottom: 2 },
+  monthlyPtsVal: { fontSize: 22, fontWeight: '900', color: c.purpleText },
   section: { marginBottom: 28 },
   sectionTitle: {
     fontSize: 11, fontWeight: '700', letterSpacing: 1.5,
@@ -346,7 +355,7 @@ const styles = StyleSheet.create({
   milestoneLocked: { opacity: 0.45 },
   milestoneIcon: { fontSize: 28, marginBottom: 6 },
   milestoneLabel: { fontSize: 9, fontWeight: '700', textAlign: 'center', lineHeight: 13 },
-  milestoneLabelLocked: { color: '#666' },
+  milestoneLabelLocked: { color: c.textMuted },
   gameTabRow: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
   gameTab: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -359,13 +368,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 12, padding: 14, marginBottom: 6, borderWidth: 1,
   },
-  leaderRowMe: { backgroundColor: '#0A1A2A', borderColor: '#007AFF' },
+  leaderRowMe: { backgroundColor: c.accentBg, borderColor: '#007AFF' },
   leaderRank: { width: 40, fontSize: 14, fontWeight: '700' },
   leaderRankTop: { fontSize: 22 },
   leaderNameCol: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  leaderNameStack: { flexShrink: 1 },
   leaderName: { fontSize: 14, fontWeight: '700' },
   leaderNameMe: { color: '#007AFF' },
-  leaderYou: { fontSize: 9, fontWeight: '800', color: '#007AFF', backgroundColor: '#001830', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  leaderYou: { fontSize: 9, fontWeight: '800', color: '#007AFF', backgroundColor: c.accentBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
   leaderRecord: { fontSize: 10, fontWeight: '600' },
   leaderPts: { fontSize: 13, fontWeight: '700' },
   leaderPtsMe: { color: '#007AFF' },

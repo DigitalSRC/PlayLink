@@ -4,9 +4,12 @@ import {
   buildNewPlayer,
   canJoinGroup,
   findGroupByUsername,
-  findGroupOnSameDay,
+  findGroupOnDay,
+  findGroupsForPlayer,
   formatBrackets,
   generateJoinCode,
+  groupDayKey,
+  groupErrorMessage,
   isGroupFull,
   isHostForUser,
   normalizePositiveInt,
@@ -206,35 +209,102 @@ describe("group-utils", () => {
     expect(canJoinGroup(group, group)).toBe(false);
   });
 
-  // ── findGroupOnSameDay ────────────────────────────────────────────────────
+  // ── one group per day: groupDayKey / findGroupOnDay / findGroupsForPlayer ──
 
   const SAME_DAY_MORNING = Date.parse("2026-07-15T12:00:00Z");
-  const SAME_DAY_EVENING = Date.parse("2026-07-15T23:00:00Z");
-  const NEXT_DAY = Date.parse("2026-07-16T01:00:00Z");
+  // Built from local parts, so the expected day key is the same in whatever zone the tests run.
+  const FRIDAY_EVENING = new Date(2026, 9, 9, 19, 0).getTime();
+  const SATURDAY_AFTERNOON = new Date(2026, 9, 10, 13, 0).getTime();
+  const alice = () => [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")];
 
-  it("returns undefined when the target has no scheduledAt", () => {
-    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
-    expect(findGroupOnSameDay([group], '1', undefined)).toBeUndefined();
+  it("groupDayKey prefers the day the host picked", () => {
+    expect(groupDayKey(makeGroup({ playDate: "2026-10-09", scheduledAt: SATURDAY_AFTERNOON }))).toBe("2026-10-09");
   });
 
-  it("finds a group the player belongs to on the same UTC calendar day, even at a different time", () => {
-    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
-    expect(findGroupOnSameDay([group], '1', SAME_DAY_EVENING)).toBe(group);
+  it("groupDayKey falls back to the local date of the scheduled time", () => {
+    expect(groupDayKey(makeGroup({ scheduledAt: FRIDAY_EVENING }))).toBe("2026-10-09");
   });
 
-  it("does not match a group scheduled on a different calendar day", () => {
-    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
-    expect(findGroupOnSameDay([group], '1', NEXT_DAY)).toBeUndefined();
+  it("groupDayKey is undefined for a group with no day at all", () => {
+    expect(groupDayKey(makeGroup())).toBeUndefined();
   });
 
-  it("ignores groups the player is not a member of", () => {
-    const group = makeGroup({ scheduledAt: SAME_DAY_MORNING, players: [buildNewPlayer('2', "Bob", 2, "Downtown", "Host")] });
-    expect(findGroupOnSameDay([group], '1', SAME_DAY_EVENING)).toBeUndefined();
+  it("findGroupOnDay finds the group a player already has that day", () => {
+    const group = makeGroup({ playDate: "2026-10-09", players: alice() });
+    expect(findGroupOnDay([group], '1', "2026-10-09")).toBe(group);
   });
 
-  it("ignores candidate groups that have no scheduledAt", () => {
-    const group = makeGroup({ scheduledAt: undefined, players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Host")] });
-    expect(findGroupOnSameDay([group], '1', SAME_DAY_MORNING)).toBeUndefined();
+  it("findGroupOnDay leaves the next day free, even when both fall on the same UTC date", () => {
+    // 7 PM Pacific on Friday and 1 PM Pacific on Saturday are the same date in UTC.
+    const friday = makeGroup({ playDate: "2026-10-09", scheduledAt: Date.parse("2026-10-10T02:00:00Z"), players: alice() });
+    expect(findGroupOnDay([friday], '1', "2026-10-10")).toBeUndefined();
+  });
+
+  it("findGroupOnDay catches two groups on one day, even when their UTC dates differ", () => {
+    // 1 PM and 7 PM Pacific on Saturday are different dates in UTC.
+    const afternoon = makeGroup({ playDate: "2026-10-10", scheduledAt: Date.parse("2026-10-10T20:00:00Z"), players: alice() });
+    const evening = makeGroup({ id: '2', playDate: "2026-10-10", scheduledAt: Date.parse("2026-10-11T02:00:00Z") });
+    expect(findGroupOnDay([afternoon], '1', groupDayKey(evening))).toBe(afternoon);
+  });
+
+  it("findGroupOnDay ignores groups the player is not in", () => {
+    const group = makeGroup({ playDate: "2026-10-09", players: [buildNewPlayer('2', "Bob", 2, "Riverside", "Host")] });
+    expect(findGroupOnDay([group], '1', "2026-10-09")).toBeUndefined();
+  });
+
+  it("findGroupOnDay never clashes with an undefined day or a group that has no day", () => {
+    const dated = makeGroup({ playDate: "2026-10-09", players: alice() });
+    const undated = makeGroup({ id: '2', players: alice() });
+    expect(findGroupOnDay([dated, undated], '1', undefined)).toBeUndefined();
+    expect(findGroupOnDay([undated], '1', "2026-10-09")).toBeUndefined();
+    expect(findGroupOnDay([], '1', "2026-10-09")).toBeUndefined();
+  });
+
+  it("findGroupsForPlayer lists a player's groups soonest first, unscheduled last", () => {
+    const later = makeGroup({ id: 'later', scheduledAt: SATURDAY_AFTERNOON, players: alice() });
+    const sooner = makeGroup({ id: 'sooner', scheduledAt: FRIDAY_EVENING, players: alice() });
+    const unscheduled = makeGroup({ id: 'unscheduled', players: alice() });
+    const notMine = makeGroup({ id: 'not-mine', scheduledAt: 0, players: [buildNewPlayer('2', "Bob", 2, "Riverside", "Host")] });
+
+    expect(findGroupsForPlayer([unscheduled, later, notMine, sooner], '1').map((g) => g.id)).toEqual(['sooner', 'later', 'unscheduled']);
+  });
+
+  it("findGroupsForPlayer returns nothing for a player in no group, and does not reorder its input", () => {
+    const groups = [makeGroup({ id: 'b', scheduledAt: 2 }), makeGroup({ id: 'a', scheduledAt: 1 })];
+    expect(findGroupsForPlayer(groups, 'nobody')).toEqual([]);
+    findGroupsForPlayer(groups, '1');
+    expect(groups.map((g) => g.id)).toEqual(['b', 'a']);
+  });
+
+  // ── groupErrorMessage ─────────────────────────────────────────────────────
+
+  it("groupErrorMessage explains the one-group-per-day refusal", () => {
+    const err = { code: '23505', message: 'duplicate key value violates unique constraint "group_players_one_per_day"' };
+    expect(groupErrorMessage(err, 'Please try again.')).toBe('You already have a group that day. You can be in one group per day.');
+  });
+
+  it("groupErrorMessage explains joining a group twice", () => {
+    const err = { code: '23505', message: 'duplicate key value violates unique constraint "group_players_pkey"' };
+    expect(groupErrorMessage(err, 'Please try again.')).toBe("You're already in this group.");
+  });
+
+  it("groupErrorMessage reads the constraint from details when the message lacks it", () => {
+    const err = { code: '23505', message: 'duplicate key', details: 'Key violates group_players_one_per_day' };
+    expect(groupErrorMessage(err, 'Please try again.')).toBe('You already have a group that day. You can be in one group per day.');
+  });
+
+  it("groupErrorMessage passes other errors through in their own words", () => {
+    expect(groupErrorMessage(new Error('Network request failed'), 'Please try again.')).toBe('Network request failed');
+    expect(groupErrorMessage({ code: '23505', message: 'duplicate key value violates unique constraint "groups_join_code_idx"' }, 'x'))
+      .toBe('duplicate key value violates unique constraint "groups_join_code_idx"');
+  });
+
+  it("groupErrorMessage falls back when there is nothing usable to say", () => {
+    expect(groupErrorMessage(undefined, 'Please try again.')).toBe('Please try again.');
+    expect(groupErrorMessage(null, 'Please try again.')).toBe('Please try again.');
+    expect(groupErrorMessage('boom', 'Please try again.')).toBe('Please try again.');
+    expect(groupErrorMessage({ message: '   ' }, 'Please try again.')).toBe('Please try again.');
+    expect(groupErrorMessage({ message: 42 }, 'Please try again.')).toBe('Please try again.');
   });
 
   it("canJoinGroup blocks joining when a same-day conflict is passed in", () => {

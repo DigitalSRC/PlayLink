@@ -1,7 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { showDialog } from '../../components/AppDialog';
 import PlayerName, { CosmeticBorder } from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import { Cosmetics, SHOP_KIND_HINTS, SHOP_KIND_LABELS, ShopItem } from '../../data/shop';
@@ -80,7 +81,7 @@ export default function ShopScreen() {
       await equipMutation.mutateAsync({ userId, kind: item.kind, itemId: wearing ? null : item.id });
       Haptics.selectionAsync();
     } catch (err) {
-      Alert.alert('Couldn’t change your look', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t change your look', err instanceof Error ? err.message : 'Please try again.');
     } finally {
       setBusyItemId(null);
     }
@@ -101,13 +102,21 @@ export default function ShopScreen() {
     try {
       await purchaseMutation.mutateAsync({ userId, itemId: item.id });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      let wearing = true;
       try {
         await equipMutation.mutateAsync({ userId, kind: item.kind, itemId: item.id });
       } catch {
         // Bought but not worn: it now shows as "Wear" in the list, which is recoverable by tapping.
+        wearing = false;
       }
+      showDialog(
+        `“${item.name}” is yours`,
+        wearing
+          ? 'You’re wearing it now. You can change what you wear here or on your Profile tab.'
+          : 'It’s in your collection. Tap Wear to put it on.'
+      );
     } catch (err) {
-      Alert.alert('Couldn’t buy that', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t buy that', err instanceof Error ? err.message : 'Please try again.');
     } finally {
       setBusyItemId(null);
     }
@@ -115,7 +124,7 @@ export default function ShopScreen() {
 
   const confirmBuy = (item: ShopItem) => {
     if (busy) return;
-    Alert.alert(
+    showDialog(
       item.price === 0 ? `Claim “${item.name}”?` : `Buy “${item.name}”?`,
       item.price === 0
         ? 'It’s free, and yours to keep.'

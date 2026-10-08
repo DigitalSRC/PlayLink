@@ -1,11 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Alert,
-  Linking,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { showDialog } from '../components/AppDialog';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -21,16 +19,16 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import DateOffsetPicker from '../components/DateOffsetPicker';
-import TimeOfDayPicker from '../components/TimeOfDayPicker';
 import PlayerName from '../components/PlayerName';
 import { useApp } from '../context/AppContext';
-import { BRACKET_INFO, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
-import { findGroupOnSameDay, formatBrackets } from '../utils/group-utils';
-import { buildScheduledAt, formatScheduledAt, toScheduleParts } from '../utils/schedule-utils';
+import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
+import { formatDayHeading } from '../utils/calendar-utils';
+import { findGroupOnDay, formatBrackets, groupDayKey, groupErrorMessage } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
+import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { profileKeys } from '../hooks/useProfileQueries';
+import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
   useConfirmGroupMutation,
   useDeleteGroupMutation,
@@ -75,13 +73,17 @@ const ROW_HEIGHT = 64;                  // draggable placement row height, inclu
  * Returns: a scrollable detail screen or null when the group ID does not match any group, or
  * currentUser hasn't loaded yet.
  * Edge cases: renders null when the group is not found (e.g. it was just deleted by its last
- * player leaving).
+ * player leaving); joining is refused with an explanation when the player already has a group
+ * on the same day, since a player can be in one group per day.
  */
 export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentUser, groups, getNow } = useApp();
+  const { currentUser, groups } = useApp();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const queryClient = useQueryClient();
+  const claimReward = useClaimStarterReward(currentUser?.id);
 
   const { data: group } = useGroupQuery(id);
   const { data: results = [] } = useGroupResultsQuery(id);
@@ -99,7 +101,16 @@ export default function GroupDetail() {
   const [editLocation, setEditLocation] = useState(group?.location ?? '');
   const [editTarget, setEditTarget] = useState(String(group?.targetPlayers ?? 4));
   const [editBrackets, setEditBrackets] = useState<number[]>(group?.brackets ?? [2]);
-  const [scheduleParts, setScheduleParts] = useState(() => toScheduleParts(group?.scheduledAt));
+  const timeParts = (group?.time ?? '').split(' · ');
+  const parseTime = (s: string) => {
+    const m = s.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+    return m ? { h: parseInt(m[1], 10), min: parseInt(m[2], 10), p: m[3].toUpperCase() as 'AM' | 'PM' } : { h: 7, min: 0, p: 'PM' as 'AM' | 'PM' };
+  };
+  const parsedTime = parseTime(timeParts[1] ?? '');
+  const [editDay, setEditDay] = useState(timeParts[0] ?? '');
+  const [editHour, setEditHour] = useState(parsedTime.h);
+  const [editMinute, setEditMinute] = useState(parsedTime.min);
+  const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
 
   const [showReportModal, setShowReportModal] = useState(false);
   // Finish order, best first — the source of truth for the report modal's drag-and-drop list.
@@ -151,11 +162,16 @@ export default function GroupDetail() {
 
   const handleJoin = async () => {
     if (isFull) {
-      Alert.alert('Group full', 'No open spots in this group.');
+      showDialog('Group full', 'No open spots in this group.');
       return;
     }
-    if (findGroupOnSameDay(groups, currentUser.id, group.scheduledAt)) {
-      Alert.alert('Already scheduled that day', 'You already have a group on this day — leave it first or pick a group on a different day.');
+    const dayKey = groupDayKey(group);
+    const sameDay = findGroupOnDay(groups, currentUser.id, dayKey);
+    if (sameDay && sameDay.id !== group.id) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${dayKey ? formatDayHeading(dayKey) : 'that day'}. You can be in one group per day - leave that one first, or join a group on another day.`
+      );
       return;
     }
     try {
@@ -165,14 +181,14 @@ export default function GroupDetail() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showDialog('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
+      claimReward('join_group');
     } catch (err) {
-      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
-  const handleLeave = async () => {
-    if (!group.players.some((p) => p.id === currentUser.id)) return;
-
+  const leaveGroupNow = async () => {
     try {
       // One server call: it removes this user, deletes the group if they were the last member,
       // and appoints a new host if they were the host. Doing those as separate requests from
@@ -180,14 +196,36 @@ export default function GroupDetail() {
       await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
+      showDialog('You left the group', `You’re no longer in “${group.name}”.`);
     } catch (err) {
-      Alert.alert('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
     }
+  };
+
+  /**
+   * Asks before leaving, since leaving gives up the seat (and, for a host, the host role).
+   * Parameters: none.
+   * Returns: void; leaves only if the player confirms.
+   * Edge cases: does nothing if the player isn't in the group; a host leaving with others still
+   * in the group is told the host role will pass on.
+   */
+  const handleLeave = () => {
+    if (!group.players.some((p) => p.id === currentUser.id)) return;
+    showDialog(
+      'Leave this group?',
+      isHost && group.players.length > 1
+        ? 'You’ll give up your seat, and another player becomes the host.'
+        : 'You’ll give up your seat. You can join again if there is still room.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        { text: 'Leave', style: 'destructive', onPress: leaveGroupNow },
+      ]
+    );
   };
 
   const handleDeletePosting = () => {
     const otherPlayers = group.players.filter((p) => p.id !== currentUser.id).length;
-    Alert.alert(
+    showDialog(
       'Delete this posting?',
       otherPlayers > 0
         ? `This removes the group for everyone, including the other ${otherPlayers} player${otherPlayers > 1 ? 's' : ''} in it. This can't be undone.`
@@ -202,8 +240,9 @@ export default function GroupDetail() {
               await deleteMutation.mutateAsync({ groupId: group.id });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.back();
+              showDialog('Posting deleted', `“${group.name}” has been removed.`);
             } catch (err) {
-              Alert.alert('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
+              showDialog('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
             }
           },
         },
@@ -211,14 +250,29 @@ export default function GroupDetail() {
     );
   };
 
-  const handleMakeHost = async (playerId: string) => {
+  const handleMakeHost = (playerId: string) => {
     if (!isHost) return;
     Haptics.selectionAsync();
-    try {
-      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
-    } catch (err) {
-      Alert.alert('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
-    }
+    const target = group.players.find((p) => p.id === playerId);
+    const targetName = target?.displayName ?? target?.username ?? 'this player';
+    showDialog(
+      `Make ${targetName} the host?`,
+      'They’ll confirm the game and report rounds from now on. You stay in the group as a player.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Make Host',
+          onPress: async () => {
+            try {
+              await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
+              showDialog('Host changed', `${targetName} is now the host.`);
+            } catch (err) {
+              showDialog('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleConfirmGame = async () => {
@@ -226,8 +280,9 @@ export default function GroupDetail() {
     try {
       await confirmMutation.mutateAsync({ groupId: group.id, confirmed: true });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showDialog('Game confirmed', 'When a round ends, tap Report Results to record how it finished.');
     } catch (err) {
-      Alert.alert('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -301,8 +356,9 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowReportModal(false);
+      showDialog(`Round ${group.roundsPlayed + 1} recorded`, 'Points have been paid to every player. The standings are at the top of this page.');
     } catch (err) {
-      Alert.alert('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -323,7 +379,7 @@ export default function GroupDetail() {
         return `${ordinal(p.placement)} - ${player?.displayName ?? player?.username ?? 'Player'}`;
       })
       .join('\n');
-    Alert.alert(
+    showDialog(
       `Submit round ${group.roundsPlayed + 1}?`,
       `${summary}\n\nThis is final. Points are paid right away and the round can’t be changed afterwards.`,
       [
@@ -335,26 +391,25 @@ export default function GroupDetail() {
 
   const handleSaveEdit = async () => {
     if (!editName.trim() || !editLocation.trim()) {
-      Alert.alert('Missing info', 'Name and location are required.');
+      showDialog('Missing info', 'Name and location are required.');
       return;
     }
-    const scheduledAt = buildScheduledAt(scheduleParts);
     try {
       await updateGroupMutation.mutateAsync({
         groupId: group.id,
         draft: {
           name: editName.trim(),
           location: editLocation.trim(),
-          time: formatScheduledAt(scheduledAt),
-          scheduledAt,
+          time: `${editDay} · ${editHour}:${String(editMinute).padStart(2, '0')} ${editPeriod}`,
           targetPlayers: Math.max(2, Number(editTarget) || group.targetPlayers),
           brackets: editBrackets,
         },
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditing(false);
+      showDialog('Changes saved', 'Everyone in the group sees the update.');
     } catch (err) {
-      Alert.alert('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -421,20 +476,52 @@ export default function GroupDetail() {
               {group.localEventId ? (
                 <Text style={styles.metaRow}>📍 {group.location}</Text>
               ) : (
-                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor={colors.placeholder} />
               )}
 
               <Text style={styles.editLabel}>Day</Text>
-              <DateOffsetPicker
-                value={scheduleParts.dateOffsetDays}
-                onChange={(dateOffsetDays) => setScheduleParts((prev) => ({ ...prev, dateOffsetDays }))}
-              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                {DAYS_OF_WEEK.map((day) => (
+                  <Pressable
+                    key={day}
+                    style={[styles.editChip, editDay === day && styles.editChipActive]}
+                    onPress={() => setEditDay(day)}
+                  >
+                    <Text style={[styles.editChipText, editDay === day && styles.editChipTextActive]}>{day}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
 
               <Text style={styles.editLabel}>Time</Text>
-              <TimeOfDayPicker
-                value={scheduleParts}
-                onChange={(next) => setScheduleParts((prev) => ({ ...prev, ...next }))}
-              />
+              <View style={styles.timePicker}>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditHour((h) => h === 12 ? 1 : h + 1); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={styles.timeValue}>{String(editHour).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditHour((h) => h === 1 ? 12 : h - 1); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.timeSeparator}>:</Text>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditMinute((m) => (m + 15) % 60); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={styles.timeValue}>{String(editMinute).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setEditMinute((m) => m === 0 ? 45 : m - 15); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.timePeriod}>
+                  <Pressable style={[styles.periodBtn, editPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setEditPeriod('AM'); }}>
+                    <Text style={[styles.periodText, editPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
+                  </Pressable>
+                  <Pressable style={[styles.periodBtn, editPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setEditPeriod('PM'); }}>
+                    <Text style={[styles.periodText, editPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
+                  </Pressable>
+                </View>
+              </View>
 
               <Text style={styles.editLabel}>Players Needed</Text>
               <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
@@ -486,21 +573,10 @@ export default function GroupDetail() {
                   🔄 {group.roundsPlayed} round{group.roundsPlayed > 1 ? 's' : ''} completed this session
                 </Text>
               )}
-              {group.source === 'store' ? (
-                <View style={styles.storeHostRow}>
-                  <Text style={styles.storeHostLabel}>🏬 Hosted by {group.storeName}</Text>
-                  {!!group.storeWebsite && (
-                    <Pressable onPress={() => Linking.openURL(group.storeWebsite!)}>
-                      <Text style={styles.storeHostLink}>Visit store →</Text>
-                    </Pressable>
-                  )}
-                </View>
-              ) : (
-                <View style={styles.joinCodeRow}>
-                  <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
-                  <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
-                </View>
-              )}
+              <View style={styles.joinCodeRow}>
+                <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
+                <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
+              </View>
               {isHost && (
                 <Text style={styles.hostHelpNote}>
                   Share this code with friends — they enter it under Find → Join a Group.
@@ -510,9 +586,8 @@ export default function GroupDetail() {
           )}
         </View>
 
-        {/* Host controls (never shown for store-sourced groups, which have no host - the
-            groups_update_members RLS policy also blocks writes to them at the database layer) */}
-        {isHost && group.source === 'player' && (
+        {/* Host controls */}
+        {isHost && (
           <View style={styles.hostControls}>
             {editing ? (
               <View style={styles.editBtnRow}>
@@ -641,7 +716,8 @@ export default function GroupDetail() {
       </ScrollView>
 
       {/* Report Results modal */}
-      <Modal visible={showReportModal} animationType="slide" transparent onRequestClose={() => setShowReportModal(false)}>
+      {/* An overlay rather than a native Modal, so the confirm pop-up can open on top of it. */}
+      {showReportModal && (
         <View style={styles.modalBackdrop}>
           <View style={styles.reportSheet}>
             <Text style={styles.reportTitle}>Report Round {group.roundsPlayed + 1}</Text>
@@ -677,7 +753,7 @@ export default function GroupDetail() {
             </View>
           </View>
         </View>
-      </Modal>
+      )}
 
     </View>
   );
@@ -722,6 +798,8 @@ function DraggablePlacementRow({
   'use no memo'; // React Compiler can't see that mutating a SharedValue's .value is the sanctioned
   // Reanimated update pattern, not an actual prop mutation — opt this component out rather than
   // have the compiler bail on (or the linter flag) every drag gesture callback below.
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const dragY = useSharedValue(0);
   const startY = useSharedValue(0);
   const isDragging = useSharedValue(false);
@@ -787,22 +865,24 @@ function DraggablePlacementRow({
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   hostHelpNote: {
     fontSize: 12,
     lineHeight: 17,
-    color: '#888',
+    color: c.textSecondary,
     marginTop: 8,
   },
   storeEventRow: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#34C759',
+    color: c.successText,
     marginBottom: 6,
   },
   container: {
     flex: 1,
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
   },
   content: {
     paddingTop: 56,
@@ -823,7 +903,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1.5,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     marginBottom: 12,
   },
   gameBadgeText: {
@@ -833,13 +913,13 @@ const styles = StyleSheet.create({
   groupName: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 10,
   },
   editTitleInput: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     borderBottomWidth: 1,
     borderBottomColor: '#007AFF',
     marginBottom: 10,
@@ -847,7 +927,7 @@ const styles = StyleSheet.create({
   },
   confirmedBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderRadius: 8,
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -856,13 +936,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   confirmedText: {
-    color: '#34C759',
+    color: c.successText,
     fontSize: 12,
     fontWeight: '700',
   },
   roundInProgressBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#001A3D',
+    backgroundColor: c.accentBg,
     borderRadius: 8,
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -876,7 +956,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   resultStatusCard: {
-    backgroundColor: '#001A3D',
+    backgroundColor: c.accentBg,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
@@ -890,27 +970,27 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   resultStatusSub: {
-    color: '#AAA',
+    color: c.textBody,
     fontSize: 12,
     marginTop: 8,
   },
   resultRow: {
-    color: '#FFF',
+    color: c.textPrimary,
     fontSize: 13,
     lineHeight: 20,
   },
   metaCard: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     gap: 8,
   },
   metaRow: {
     fontSize: 14,
-    color: '#AAA',
+    color: c.textBody,
   },
   noGoRow: {
     color: '#C0392B',
@@ -924,48 +1004,31 @@ const styles = StyleSheet.create({
   joinCodeLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#555',
+    color: c.textMuted,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
   joinCodeValue: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#E6A817',
+    color: c.warnText,
     letterSpacing: 3,
     fontVariant: ['tabular-nums'],
   },
-  storeHostRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-    gap: 8,
-  },
-  storeHostLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#AAA',
-  },
-  storeHostLink: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#007AFF',
-  },
   editInput: {
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
     fontSize: 14,
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 8,
   },
   editLabel: {
     fontSize: 11,
-    color: '#555',
+    color: c.textMuted,
     marginBottom: 4,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -979,12 +1042,12 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     flex: 1,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   editBtnText: {
     color: '#007AFF',
@@ -993,7 +1056,7 @@ const styles = StyleSheet.create({
   },
   confirmBtn: {
     flex: 1,
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
@@ -1001,20 +1064,20 @@ const styles = StyleSheet.create({
     borderColor: '#34C759',
   },
   confirmBtnLocked: {
-    backgroundColor: '#1C1C24',
-    borderColor: '#333',
+    backgroundColor: c.card,
+    borderColor: c.border,
   },
   confirmBtnText: {
-    color: '#34C759',
+    color: c.successText,
     fontWeight: '700',
     fontSize: 14,
   },
   confirmBtnTextLocked: {
-    color: '#555',
+    color: c.textMuted,
   },
   confirmLockNote: {
     fontSize: 12,
-    color: '#666',
+    color: c.textMuted,
     marginTop: 8,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -1033,22 +1096,22 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   cancelBtnText: {
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '700',
     fontSize: 14,
   },
   rosterTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#555',
+    color: c.textMuted,
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
@@ -1056,18 +1119,18 @@ const styles = StyleSheet.create({
   playerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   playerAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -1075,7 +1138,7 @@ const styles = StyleSheet.create({
   playerInitial: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
   },
   playerInfo: {
     flex: 1,
@@ -1083,18 +1146,18 @@ const styles = StyleSheet.create({
   playerName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 2,
   },
   playerMeta: {
     fontSize: 12,
-    color: '#666',
+    color: c.textMuted,
   },
   makeHostBtn: {
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 7,
-    backgroundColor: '#2C1A00',
+    backgroundColor: c.warnBg,
     borderWidth: 1,
     borderColor: '#E6A817',
     marginLeft: 8,
@@ -1102,7 +1165,7 @@ const styles = StyleSheet.create({
   makeHostText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#E6A817',
+    color: c.warnText,
   },
   hostBadge: {
     paddingVertical: 3,
@@ -1127,7 +1190,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   joinBtnDisabled: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.disabledBg,
   },
   joinBtnText: {
     color: '#FFF',
@@ -1135,7 +1198,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   leaveBtn: {
-    backgroundColor: '#3D1215',
+    backgroundColor: c.dangerBg,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
@@ -1155,15 +1218,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   deletePostingBtn: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#555',
+    borderColor: c.border,
   },
   deletePostingBtnText: {
-    color: '#AAA',
+    color: c.textBody,
     fontWeight: '700',
     fontSize: 16,
   },
@@ -1182,45 +1245,109 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#333',
-    backgroundColor: '#0F0F14',
+    borderColor: c.border,
+    backgroundColor: c.bg,
   },
   editChipActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   editChipText: {
     fontSize: 12,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
   },
   editChipTextActive: {
-    color: '#FFF',
+    color: c.accentOnBg,
+  },
+  timePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: c.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 10,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  timeUnit: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  timeArrow: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timeArrowText: {
+    color: '#007AFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  timeValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: c.textPrimary,
+    minWidth: 38,
+    textAlign: 'center',
+  },
+  timeSeparator: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: c.textMuted,
+    marginBottom: 2,
+  },
+  timePeriod: {
+    gap: 6,
+    marginLeft: 4,
+  },
+  periodBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    backgroundColor: c.card,
+  },
+  periodBtnActive: {
+    backgroundColor: c.accentBg,
+    borderColor: '#007AFF',
+  },
+  periodText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: c.textMuted,
+  },
+  periodTextActive: {
+    color: '#007AFF',
   },
   modalBackdrop: {
-    flex: 1,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   reportSheet: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: 40,
     maxHeight: '80%',
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   reportTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 6,
   },
   reportSubtitle: {
     fontSize: 13,
-    color: '#AAA',
+    color: c.textBody,
     lineHeight: 18,
     marginBottom: 16,
   },
@@ -1235,11 +1362,11 @@ const styles = StyleSheet.create({
     height: ROW_HEIGHT - 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
     borderRadius: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   dragHandle: {
     paddingHorizontal: 6,
@@ -1247,7 +1374,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   dragHandleText: {
-    color: '#666',
+    color: c.textMuted,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -1255,24 +1382,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
   },
   tieChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#333',
-    backgroundColor: '#1C1C24',
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   tieChipActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   tieChipText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
   },
   tieChipTextActive: {
     color: '#007AFF',
