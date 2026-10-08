@@ -194,10 +194,15 @@ export default function GroupDetail() {
       // One server call: it removes this user, deletes the group if they were the last member,
       // and appoints a new host if they were the host. Doing those as separate requests from
       // here could leave the group half-changed if the app dropped off in between.
-      await leaveMutation.mutateAsync({ groupId: group.id });
+      const outcome = await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
-      showToast('You left the group', `You’re no longer in “${group.name}”.`);
+      showToast(
+        'You left the group',
+        outcome === 'deleted' && group.players.length > 1
+          ? `Nobody else could host “${group.name}”, so the posting was removed.`
+          : `You’re no longer in “${group.name}”.`
+      );
     } catch (err) {
       showDialog('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -215,7 +220,7 @@ export default function GroupDetail() {
     showDialog(
       'Leave this group?',
       isHost && group.players.length > 1
-        ? 'You’ll give up your seat, and another player becomes the host.'
+        ? 'You’ll give up your seat, and the host role passes to the next player who has room for another posting. If nobody does, the posting is removed.'
         : 'You’ll give up your seat. You can join again if there is still room.',
       [
         { text: 'Stay', style: 'cancel' },
@@ -258,7 +263,7 @@ export default function GroupDetail() {
     const targetName = target?.displayName ?? target?.username ?? 'this player';
     showDialog(
       `Make ${targetName} the host?`,
-      'They’ll confirm the game and report rounds from now on. You stay in the group as a player.',
+      'They’ll confirm the game and report rounds from now on, and it becomes one of their postings instead of yours. You stay in the group as a player.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
