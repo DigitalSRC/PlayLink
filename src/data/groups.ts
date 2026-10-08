@@ -26,6 +26,9 @@ export interface Group {
    * in one group per day, and this is the day that rule counts. Absent on groups posted before
    * the column existed; use groupDayKey() rather than reading it directly. */
   playDate?: string;
+  /** The event area (an event_areas id) the host was in when they posted. The Find tab lists
+   * only postings from the player's own area. Absent on older groups, which are listed everywhere. */
+  area?: string;
   roundsPlayed: number;
   players: PlayerProfile[];
   targetPlayers: number;

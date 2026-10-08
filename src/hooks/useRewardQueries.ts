@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { showDialog } from '../components/AppDialog';
+import { showToast } from '../components/AppToast';
 import { STARTER_REWARDS, StarterRewardKey } from '../data/rewards';
 import { claimStarterReward, fetchStarterRewards } from '../lib/reward-api';
 import { profileKeys } from './useProfileQueries';
@@ -35,7 +35,7 @@ export const useStarterRewardsQuery = (userId: string | undefined) =>
 /**
  * Returns a function screens call right after a player does one of the starter tasks. It asks
  * the server for the reward; if points were paid it refreshes the player's profile and reward
- * list and shows a pop-up saying what they earned.
+ * list and shows a short message saying what they earned.
  * It is deliberately quiet about everything else: a reward already held, a task the server
  * says wasn't done, or a server without starter rewards all end with nothing shown, because
  * none of them should interrupt the thing the player was actually doing.
@@ -60,7 +60,7 @@ export const useClaimStarterReward = (userId: string | undefined) => {
         if (paid > 0) {
           queryClient.invalidateQueries({ queryKey: profileKeys.detail(userId) });
           const task = STARTER_REWARDS.find((r) => r.key === key)?.label ?? 'Getting started';
-          showDialog(`+${paid} points`, `${task}: done. The points are yours to spend in the Shop. Starter points don’t count toward your Score.`);
+          showToast(`+${paid} points`, `${task}: done. They’re yours to spend in the Shop.`);
         }
       } catch (err) {
         console.warn(`Starter reward ${key} not claimed:`, err);

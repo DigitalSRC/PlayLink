@@ -8,8 +8,9 @@
 -- row with a primary key.
 --
 -- Starter points are a welcome gift, not a result. They are added to the spendable balance and
--- to the all-time total, and deliberately NOT to monthly_points (Score): the leaderboard and
--- rival matching rank by Score, and that should only ever reflect rounds played.
+-- to nothing else: not monthly_points (Score), which ranks the leaderboard and rival matching,
+-- and not points (All-Time), which is the lifetime score behind milestones. Both of those should
+-- only ever reflect rounds played. Decided by the developer on 2026-10-08.
 --
 -- What the server can and cannot verify, stated plainly:
 --   first_group   - verified. The caller must hold a seat in a group, whether they posted it or
@@ -19,7 +20,7 @@
 --                   picked is remembered on their phone, not on the server.
 --   view_calendar - not at all. Opening a screen leaves nothing to check.
 -- So a player who calls this function directly can collect the last two without doing them. The
--- most that gets anyone is 50 spendable points, once per account, and no Score at all.
+-- most that gets anyone is 50 spendable points, once per account, and no score of either kind.
 
 create table if not exists public.starter_rewards (
   player_id uuid not null references public.profiles (id) on delete cascade,
@@ -52,7 +53,7 @@ create policy "starter_rewards_select_own"
 -- profile row is locked first, so two claims at the same instant are handled one after the
 -- other; the claim row is inserted before the points are added and both are in one transaction,
 -- so a reward is never recorded without being paid or paid without being recorded. Score
--- (monthly_points) is never touched.
+-- (monthly_points) and All-Time (points) are never touched.
 create or replace function public.claim_starter_reward(p_key text)
 returns integer
 language plpgsql
@@ -95,10 +96,9 @@ begin
     return 0;  -- already claimed; nothing more to pay
   end if;
 
-  -- Spendable balance and all-time total only. Not monthly_points: see the note at the top.
+  -- Spendable balance only. Not monthly_points or points: see the note at the top.
   update public.profiles
-     set points = points + reward,
-         point_balance = point_balance + reward
+     set point_balance = point_balance + reward
    where id = caller;
 
   return reward;

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import PlayerName, { CosmeticBorder } from '../components/PlayerName';
-import { showDialog } from '../components/AppDialog';
+import { showToast } from '../components/AppToast';
 import { useApp } from '../context/AppContext';
 import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
@@ -253,7 +253,7 @@ export default function PlayerProfileScreen() {
               setChosenRivalId(profile.id);
               router.back();
               if (!isChosenRival) {
-                showDialog('Rival set', `${profile.displayName ?? profile.username} is now your Rival.`);
+                showToast('Rival set', `${profile.displayName ?? profile.username} is now your Rival.`);
                 claimReward('choose_rival');
               }
             }}

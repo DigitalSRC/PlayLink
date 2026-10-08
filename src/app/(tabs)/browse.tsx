@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../../components/AppDialog';
+import { showToast } from '../../components/AppToast';
 import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
@@ -28,11 +29,22 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
-import { findGroupOnDay, formatBrackets, generateJoinCode, groupDayKey, groupErrorMessage } from '../../utils/group-utils';
+import {
+  countPostingsBy,
+  findGroupOnDay,
+  formatBrackets,
+  generateJoinCode,
+  groupDayKey,
+  groupErrorMessage,
+  isGroupInArea,
+  MAX_POSTINGS,
+  sortGroupsBySchedule,
+} from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
+import { useEventAreaQuery } from '../../hooks/useLocalEventQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
-import { dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
+import { calendarLocation, dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
 import { parseStoreEventLink, StoreEventLink, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
 type FilterType = GameType | 'all' | 'myGames';
@@ -63,7 +75,8 @@ const CLEARED_CREATE_PARAMS = {
  * and the group it posts is linked to it for the store-event bonus. The form has no way to add that link itself.
  * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load, plus the storeEvent* params written by storeEventLinkParams.
  * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
- * A player can be in one group per day. Creating or joining a second group on a day they already have one explains that and names the group in the way; a different day is always allowed. Every create and join ends with a pop-up saying it worked.
+ * The list shows postings from the player's own area only (with a switch to see everywhere), soonest game first; two games at the same time are listed in the order they were posted. Join-by-code still finds a group in any area. A player can have at most 7 postings up at once. The "Create a Game" button sits at the bottom of the screen, just above the tab bar.
+ * A player can be in one group per day. Creating or joining a second group on a day they already have one explains that and names the group in the way; a different day is always allowed. Every create and join ends with a short message saying it worked, which closes by itself.
  * Edge cases: join by code explains when the code is the wrong length, not found, for a group the player is already in (with a shortcut to open it), for a day they already have a group, or for a full group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
  */
 export default function BrowseScreen() {
@@ -75,6 +88,10 @@ export default function BrowseScreen() {
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
   const claimReward = useClaimStarterReward(currentUser?.id);
+  // The player's event area - the same lookup the Calendar uses, so it is normally already cached.
+  const areaQuery = useEventAreaQuery(calendarLocation(currentUser?.location));
+  const myArea = areaQuery.data?.area;
+  const [showAllAreas, setShowAllAreas] = useState(false);
 
   const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
@@ -174,15 +191,20 @@ export default function BrowseScreen() {
     return false;
   };
 
+  // Only the player's own area, unless they've asked to see everywhere or their area isn't known.
+  const areaGroups = listedGroups.filter((g) => isGroupInArea(g, showAllAreas ? undefined : myArea?.id));
   // While the app is Commander-only the game filter is hidden and the list is simply every
-  // Commander group; otherwise the chosen filter narrows it.
-  const filtered = COMMANDER_ONLY
-    ? listedGroups
-    : filter === 'all'
-      ? listedGroups
-      : filter === 'myGames'
-      ? listedGroups.filter((g) => currentUser?.games.includes(g.gameType))
-      : listedGroups.filter((g) => g.gameType === filter);
+  // Commander group in the area; otherwise the chosen filter narrows it. Soonest game first.
+  const filtered = sortGroupsBySchedule(
+    COMMANDER_ONLY
+      ? areaGroups
+      : filter === 'all'
+        ? areaGroups
+        : filter === 'myGames'
+        ? areaGroups.filter((g) => currentUser?.games.includes(g.gameType))
+        : areaGroups.filter((g) => g.gameType === filter)
+  );
+  const hiddenElsewhere = listedGroups.length - areaGroups.length;
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
@@ -215,10 +237,7 @@ export default function BrowseScreen() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showDialog('You’re in!', `You joined “${group.name}” - ${group.location}, ${group.time}. It’s on your Home tab.`, [
-        { text: 'OK', style: 'cancel' },
-        { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
-      ]);
+      showToast('You’re in!', `You joined “${group.name}” - ${group.location}, ${group.time}.`);
       claimReward('first_group');
     } catch (err) {
       showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
@@ -280,6 +299,13 @@ export default function BrowseScreen() {
       showDialog('Missing info', 'Group name and location are required.');
       return;
     }
+    if (countPostingsBy(groups, currentUser.id) >= MAX_POSTINGS) {
+      showDialog(
+        'Posting limit reached',
+        `You already have ${MAX_POSTINGS} postings up, which is the most allowed at once. Delete one, or wait for one to finish.`
+      );
+      return;
+    }
 
     const scheduledAt = (() => {
       const d = new Date(); d.setDate(d.getDate() + newDateOffset);
@@ -308,6 +334,7 @@ export default function BrowseScreen() {
       localEventId: storeEvent?.eventId,
       scheduledAt,
       playDate,
+      area: myArea?.id,
       time: (() => {
         const d = new Date(); d.setDate(d.getDate() + newDateOffset);
         const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -322,14 +349,7 @@ export default function BrowseScreen() {
       const created = await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeCreateForm();
-      showDialog(
-        'Group posted!',
-        `“${created.name}” is live for ${formatDayHeading(playDate)}. Other players can find it here, or join with the code ${created.joinCode}.`,
-        [
-          { text: 'OK', style: 'cancel' },
-          { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: created.id } }) },
-        ]
-      );
+      showToast('Group posted!', `“${created.name}” is live for ${formatDayHeading(playDate)}. Join code ${created.joinCode}.`);
       claimReward('first_group');
     } catch (err) {
       showDialog('Couldn’t post group', groupErrorMessage(err, 'Please try again.'));
@@ -364,12 +384,6 @@ export default function BrowseScreen() {
           >
             <Text style={styles.joinToggleText}>🔑 Join a Group</Text>
           </Pressable>
-          <Pressable
-            style={styles.createToggle}
-            onPress={() => { Haptics.selectionAsync(); setShowCreate(true); }}
-          >
-            <Text style={styles.createToggleText}>+ Create</Text>
-          </Pressable>
         </View>
       </View>
 
@@ -396,10 +410,31 @@ export default function BrowseScreen() {
         })}
       </ScrollView>}
 
+      {myArea && (
+        <View style={styles.areaRow}>
+          <Text style={[styles.areaLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+            {showAllAreas ? 'Showing games everywhere' : `Games near ${myArea.label}`}
+          </Text>
+          <Pressable
+            onPress={() => { Haptics.selectionAsync(); setShowAllAreas((v) => !v); }}
+            accessibilityRole="button"
+            hitSlop={8}
+          >
+            <Text style={[styles.areaToggle, { color: colors.accentText }]}>
+              {showAllAreas ? 'Only near me' : 'Show everywhere'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {/* Group cards */}
         {filtered.length === 0 && (
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>{COMMANDER_ONLY ? 'No Commander groups posted yet. Be the first — tap + Create.' : 'No groups found for this game type.'}</Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+            {hiddenElsewhere > 0
+              ? `No games posted near you yet. Be the first - tap Create a Game. (${hiddenElsewhere} in other areas.)`
+              : COMMANDER_ONLY ? 'No Commander groups posted yet. Be the first - tap Create a Game.' : 'No groups found for this game type.'}
+          </Text>
         )}
         {filtered.map((group) => {
           const inThisGroup = group.players.some((p) => p.id === currentUser?.id);
@@ -462,6 +497,18 @@ export default function BrowseScreen() {
           );
         })}
       </ScrollView>
+
+      {/* The main action sits just above the tab bar, where a thumb already is. */}
+      <View style={[styles.createBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+        <Pressable
+          style={styles.createBarButton}
+          onPress={() => { Haptics.selectionAsync(); setShowCreate(true); }}
+          accessibilityRole="button"
+          accessibilityLabel="Create a game"
+        >
+          <Text style={styles.createBarButtonText}>+ Create a Game</Text>
+        </Pressable>
+      </View>
 
       {/* ── Join a Group popup ── */}
       {showJoinModal && (
@@ -731,17 +778,39 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 26,
     fontWeight: '800',
   },
-  createToggle: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#007AFF',
+  areaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
-  createToggleText: {
-    color: '#007AFF',
-    fontWeight: '700',
+  areaLabel: {
+    flex: 1,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  areaToggle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  createBar: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+  },
+  createBarButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  createBarButtonText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 17,
   },
   filterRow: {
     paddingLeft: 20,

@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../components/AppDialog';
+import { showToast } from '../components/AppToast';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -181,7 +182,7 @@ export default function GroupDetail() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showDialog('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
+      showToast('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
       claimReward('first_group');
     } catch (err) {
       showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
@@ -196,7 +197,7 @@ export default function GroupDetail() {
       await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
-      showDialog('You left the group', `You’re no longer in “${group.name}”.`);
+      showToast('You left the group', `You’re no longer in “${group.name}”.`);
     } catch (err) {
       showDialog('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -240,7 +241,7 @@ export default function GroupDetail() {
               await deleteMutation.mutateAsync({ groupId: group.id });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.back();
-              showDialog('Posting deleted', `“${group.name}” has been removed.`);
+              showToast('Posting deleted', `“${group.name}” has been removed.`);
             } catch (err) {
               showDialog('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
             }
@@ -265,7 +266,7 @@ export default function GroupDetail() {
           onPress: async () => {
             try {
               await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
-              showDialog('Host changed', `${targetName} is now the host.`);
+              showToast('Host changed', `${targetName} is now the host.`);
             } catch (err) {
               showDialog('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
             }
@@ -280,7 +281,7 @@ export default function GroupDetail() {
     try {
       await confirmMutation.mutateAsync({ groupId: group.id, confirmed: true });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showDialog('Game confirmed', 'When a round ends, tap Report Results to record how it finished.');
+      showToast('Game confirmed', 'When a round ends, tap Report Results to record how it finished.');
     } catch (err) {
       showDialog('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -356,7 +357,7 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowReportModal(false);
-      showDialog(`Round ${group.roundsPlayed + 1} recorded`, 'Points have been paid to every player. The standings are at the top of this page.');
+      showToast(`Round ${group.roundsPlayed + 1} recorded`, 'Points have been paid to every player. The standings are at the top of this page.');
     } catch (err) {
       showDialog('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -407,7 +408,7 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditing(false);
-      showDialog('Changes saved', 'Everyone in the group sees the update.');
+      showToast('Changes saved', 'Everyone in the group sees the update.');
     } catch (err) {
       showDialog('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
     }

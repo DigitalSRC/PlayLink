@@ -358,11 +358,15 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   browser (2026-10-08): pop-ups that work on web (`showDialog`), one group per day, light mode
   on every signed-in screen, a title picker on the Profile tab, the "How PlayLink works" guide
   as a button and as the last step of onboarding, and 25-point starter rewards. **Stacked on
-  `readme-refresh`**, so it lands last. It carries two migrations that are **not yet applied to
-  the live database**: `20261008120000_group_play_date.sql` and
-  `20261008130000_starter_rewards.sql`. The app works without them (groups fall back to the
-  live per-UTC-day rule, and the starter checklist stays hidden) but neither feature is complete
-  until they are applied.
+  `readme-refresh`**, so it lands last. It carries three migrations that are **not yet applied to
+  the live database**: `20261008120000_group_play_date.sql`,
+  `20261008130000_starter_rewards.sql`, and
+  `20261008140000_group_area_and_posting_limit.sql`. The app works without them (groups fall back
+  to the live per-UTC-day rule, the starter checklist stays hidden and pays nothing, postings are
+  listed in every area, and the 7-posting limit is only checked by the app) but none of those
+  features is complete until they are applied. A second round of fixes from testing in Expo Go
+  the same day added self-closing confirmations (`showToast`), the Find tab's bottom Create
+  button, area filter, and date sorting, and the reworked Profile tab.
 - **`combined-preview`** — not a feature: `development` plus the whole stack merged in order
   (`event-calendar`, `commander-only`, `security-hardening`, `shop`), made on 2026-10-07 so the
   developer can test everything together. Its tree is identical to `shop`. Do not build on it;

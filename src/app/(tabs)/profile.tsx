@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../../components/AppDialog';
-import PlayerName from '../../components/PlayerName';
+import { showToast } from '../../components/AppToast';
 import { useApp } from '../../context/AppContext';
 import {
   BRACKET_INFO,
@@ -32,6 +33,7 @@ import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
 import { updatePassword } from '../../lib/auth-api';
+import { formatBrackets } from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
@@ -54,24 +56,28 @@ const DEV_TOOLS_ENABLED = false;
  * Header row shows an avatar circle on the left and display name / username / location on the right.
  * Settings section includes a dark/light mode toggle, a change-password form, and a Dev Tools
  * shortcut for developer accounts.
- * "Your Title" shows the player's name as others see it and lists the titles they own; tapping
- * one wears it, and "No title" takes it off. Buying happens in the Shop, which the row above
- * opens. Tapping a contender's badge makes them the player's Rival and confirms it.
+ * The player's title is a headline under their photo with a small Change button, which opens a
+ * picker listing every title they own plus "No title". Rivals come next. Settings that belong
+ * to one game live behind a row under "Game Settings" (today: Commander's brackets and "won't
+ * play against"), each opening its own sheet that saves by itself, so the page stays short as
+ * more games and options are added. Tapping a contender's badge makes them the player's Rival.
  * Edits save via useUpdateProfileMutation directly (an optimistic Supabase update keyed to the
  * session id), not through AppContext's currentUser setter; logging out ends the Supabase
  * session and redirects to /sign-in rather than /profile-creation.
- * Parameters: none; reads currentUser, session, chosenRivalId, rivals, and theme from global context.
- * Returns: a scrollable profile page; null when no user is logged in.
+ * Parameters: currentUser (the signed-in player's profile, passed in by ProfileScreen so every
+ * hook here can rely on it); reads session, chosenRivalId, rivals, and theme from global context.
+ * Returns: a scrollable profile page.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
  * non-developer profiles; the password form validates a 6-character minimum and that both
  * fields match before ever calling Supabase, and shows an inline error or success message; a
- * player who owns no titles sees a pointer to the Shop instead of a picker; a title they own
- * that has since been taken off sale is not listed, though they keep wearing it if it is on.
+ * player who owns no titles sees only "No title" and a link to the Shop in the picker; a title
+ * they own that has since been taken off sale is not listed, though they keep wearing it if it
+ * is on; the Commander sheet won't save with no bracket picked.
  */
-export default function ProfileScreen() {
+function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const router = useRouter();
   const {
-    session, currentUser, rivals, chosenRivalId, mostPlayedAgainst,
+    session, rivals, chosenRivalId, mostPlayedAgainst,
     clearCurrentUser, setChosenRivalId,
     theme, setTheme,
   } = useApp();
@@ -85,8 +91,6 @@ export default function ProfileScreen() {
   const equipMutation = useEquipShopItemMutation();
   const claimReward = useClaimStarterReward(userId);
 
-  if (!currentUser) return null;
-
   const ownedItemIds = new Set(ownedItemsQuery.data ?? []);
   const ownedTitles = (shopItemsQuery.data ?? []).filter(
     (item) => item.kind === 'title' && ownedItemIds.has(item.id)
@@ -96,20 +100,27 @@ export default function ProfileScreen() {
    * Puts on one of the player's own titles, or takes the title off.
    * Parameters: item (an owned title, or null for no title).
    * Returns: a promise that resolves once the change is saved or refused.
-   * Edge cases: does nothing when signed out, while another change is in flight, or when the
-   * choice is what is already worn; a refusal from the server is shown and nothing changes.
+   * Edge cases: does nothing when signed out or while another change is in flight; choosing
+   * what is already worn just closes the picker; the picker is closed before any message is
+   * shown, so the message is never hidden behind it; a refusal from the server is shown and
+   * nothing changes.
    */
   const changeTitle = async (item: ShopItem | null) => {
     if (!userId || equipMutation.isPending) return;
-    if ((item?.value ?? undefined) === (currentUser.title ?? undefined)) return;
+    if ((item?.value ?? undefined) === (currentUser.title ?? undefined)) {
+      setShowTitlePicker(false);
+      return;
+    }
     try {
       await equipMutation.mutateAsync({ userId, kind: 'title', itemId: item?.id ?? null });
       Haptics.selectionAsync();
-      showDialog(
+      setShowTitlePicker(false);
+      showToast(
         item ? 'Title changed' : 'Title removed',
-        item ? `You’re now “${item.value}”. It shows under your name everywhere.` : 'Your name now shows without a title.'
+        item ? `You’re now “${item.value}”.` : 'Your name now shows without a title.'
       );
     } catch (err) {
+      setShowTitlePicker(false);
       showDialog('Couldn’t change your title', err instanceof Error ? err.message : 'Please try again.');
     }
   };
@@ -123,16 +134,19 @@ export default function ProfileScreen() {
    */
   const chooseRival = (rival: UserProfile) => {
     setChosenRivalId(rival.id);
-    showDialog('Rival set', `${rival.displayName ?? rival.username} is now your Rival.`);
+    showToast('Rival set', `${rival.displayName ?? rival.username} is now your Rival.`);
     claimReward('choose_rival');
   };
 
   const [editDisplayName, setEditDisplayNameState] = useState(currentUser.displayName ?? '');
   const [editLocation, setEditLocationState] = useState(currentUser.location);
   const [editGames, setEditGames] = useState<GameType[]>(currentUser.games);
-  const [editBrackets, setEditBrackets] = useState<number[]>(currentUser.brackets);
   const [editFormats, setEditFormats] = useState(currentUser.preferredFormats);
-  const [editNoGo, setEditNoGo] = useState<NoGoRule[]>(currentUser.noGo);
+  const [showTitlePicker, setShowTitlePicker] = useState(false);
+  // Commander settings are edited in their own sheet, on a copy, and saved from there.
+  const [showCommanderSheet, setShowCommanderSheet] = useState(false);
+  const [draftBrackets, setDraftBrackets] = useState<number[]>(currentUser.brackets);
+  const [draftNoGo, setDraftNoGo] = useState<NoGoRule[]>(currentUser.noGo);
   const [dirty, setDirty] = useState(false);
   const [showGameModal, setShowGameModal] = useState(false);
   const [modalGames, setModalGames] = useState<GameType[]>(currentUser.games);
@@ -165,23 +179,19 @@ export default function ProfileScreen() {
         displayName: editDisplayName.trim() || undefined,
         location: editLocation.trim() || currentUser.location,
         games: editGames.length > 0 ? editGames : currentUser.games,
-        brackets: editBrackets.length > 0 ? editBrackets : currentUser.brackets,
         preferredFormats: editFormats,
-        noGo: editNoGo,
       },
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDirty(false);
-    showDialog('Profile saved', 'Your changes are live.');
+    showToast('Profile saved');
   };
 
   const discardChanges = () => {
     setEditDisplayNameState(currentUser.displayName ?? '');
     setEditLocationState(currentUser.location);
     setEditGames(currentUser.games);
-    setEditBrackets(currentUser.brackets);
     setEditFormats(currentUser.preferredFormats);
-    setEditNoGo(currentUser.noGo);
     setDirty(false);
   };
 
@@ -219,10 +229,38 @@ export default function ProfileScreen() {
     });
   };
 
-  const toggleNoGo = (rule: NoGoRule) => {
+  /**
+   * Opens the Commander settings sheet on a fresh copy of what is saved, so anything left
+   * half-changed the last time the sheet was cancelled is forgotten.
+   * Parameters: none.
+   * Returns: void.
+   * Edge cases: none.
+   */
+  const openCommanderSheet = () => {
     Haptics.selectionAsync();
-    setDirty(true);
-    setEditNoGo((prev) => prev.includes(rule) ? prev.filter((r) => r !== rule) : [...prev, rule]);
+    setDraftBrackets(currentUser.brackets);
+    setDraftNoGo(currentUser.noGo);
+    setShowCommanderSheet(true);
+  };
+
+  /**
+   * Saves the Commander sheet's brackets and "won't play against" choices to the profile.
+   * These save by themselves, separately from the page's own Save Changes button, so opening a
+   * game's settings never leaves the rest of the page looking unsaved.
+   * Parameters: none; reads the sheet's draft values.
+   * Returns: void.
+   * Edge cases: does nothing when signed out or with no bracket picked (the Save button is
+   * disabled then, and the sheet says why); the sheet closes before the confirmation shows.
+   */
+  const saveCommanderSettings = () => {
+    if (!session || draftBrackets.length === 0) return;
+    updateProfileMutation.mutate({
+      userId: session.user.id,
+      patch: { brackets: [...draftBrackets].sort((a, b) => a - b), noGo: draftNoGo },
+    });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowCommanderSheet(false);
+    showToast('Commander settings saved');
   };
 
   const allRivalsInSection = [
@@ -274,6 +312,26 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* ── Title: a headline under the photo, with a small button that opens the picker ── */}
+      <View style={styles.titleHeader}>
+        <Text
+          style={[styles.titleHeaderText, { color: currentUser.title ? textPrimary : textSec }]}
+          numberOfLines={2}
+          accessibilityRole="header"
+        >
+          {currentUser.title ?? 'No title yet'}
+        </Text>
+        <Pressable
+          style={[styles.titleChangeBtn, { borderColor: border, backgroundColor: card }]}
+          onPress={() => { Haptics.selectionAsync(); setShowTitlePicker(true); }}
+          accessibilityRole="button"
+          accessibilityLabel={currentUser.title ? 'Change your title' : 'Choose a title'}
+          hitSlop={6}
+        >
+          <Text style={[styles.titleChangeText, { color: colors.accentText }]}>{currentUser.title ? 'Change' : 'Choose'}</Text>
+        </Pressable>
+      </View>
+
       {/* ── Shop ── */}
       <Pressable
         style={[styles.shopRow, { backgroundColor: card, borderColor: border }]}
@@ -290,47 +348,49 @@ export default function ProfileScreen() {
         <Text style={styles.shopRowPoints}>{currentUser.pointBalance} pts →</Text>
       </Pressable>
 
-      {/* ── Title: see what is worn and switch between owned titles ── */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: textSec }]}>Your Title</Text>
-        <View style={[styles.titlePreview, { backgroundColor: card, borderColor: border }]}>
-          <PlayerName
-            name={currentUser.displayName ?? currentUser.username}
-            cosmetics={{ title: currentUser.title, nameColor: currentUser.nameColor }}
-            style={[styles.titlePreviewName, { color: textPrimary }]}
-            titleStyle={styles.titlePreviewTitle}
-          />
-          {!currentUser.title && (
-            <Text style={[styles.titlePreviewEmpty, { color: textSec }]}>No title on</Text>
-          )}
-        </View>
-        {ownedTitles.length === 0 ? (
-          <Text style={[styles.titleHint, { color: textSec }]}>
-            You don’t own a title yet. Pick one up in the Shop and it will appear here to wear.
-          </Text>
-        ) : (
-          <View style={styles.chipRow}>
-            {[null, ...ownedTitles].map((item) => {
-              const active = (item?.value ?? undefined) === (currentUser.title ?? undefined);
-              return (
-                <Pressable
-                  key={item?.id ?? 'none'}
-                  style={[styles.chip, { borderColor: border, backgroundColor: card }, active && styles.titleChipActive]}
-                  onPress={() => changeTitle(item)}
-                  disabled={equipMutation.isPending}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={item ? `Wear the title ${item.value}` : 'Wear no title'}
-                >
-                  <Text style={[styles.chipText, { color: textSec }, active && { color: colors.accentOnBg }]}>
-                    {item ? item.value : 'No title'}
+      {/* ── Rivals ── */}
+      {allRivalsInSection.length > 0 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: textSec }]}>Rivals & Contenders</Text>
+          <Text style={[styles.sectionHint, { color: textSec }]}>Tap card to view · tap badge to set as rival</Text>
+          {allRivalsInSection.map((rival) => {
+            const isChosen = rival.id === chosenRivalId;
+            const isFoe = mostPlayedAgainst?.id === rival.id && !rivals.some((r) => r.id === rival.id);
+            return (
+              <Pressable
+                key={rival.id}
+                style={[styles.rivalCard, { backgroundColor: card, borderColor: border },
+                  isChosen && styles.rivalCardChosen, isFoe && styles.rivalCardFoe]}
+                onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}
+              >
+                <View style={[styles.rivalAvatar, isChosen && styles.rivalAvatarChosen]}>
+                  <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
+                </View>
+                <View style={styles.rivalInfo}>
+                  <Text style={[styles.rivalName, { color: textPrimary }]}>{rival.displayName ?? rival.username}</Text>
+                  <Text style={[styles.rivalMeta, { color: textSec }]}>
+                    {rival.wins}W – {rival.losses}L · {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(' ')}
                   </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-      </View>
+                  <Text style={[styles.rivalLocation, { color: textSec }]}>{rival.location}</Text>
+                </View>
+                {isChosen ? (
+                  <View style={styles.rivalBadge}><Text style={styles.rivalBadgeText}>RIVAL</Text></View>
+                ) : isFoe ? (
+                  <Pressable style={[styles.rivalBadge, styles.foeBadge]}
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
+                    <Text style={[styles.rivalBadgeText, styles.foeBadgeText]}>FAMILIAR FOE</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable style={[styles.rivalBadge, styles.contenderBadge]}
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
+                    <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
+                  </Pressable>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       {/* ── Add Game modal ── */}
       {showGameModal && (
@@ -433,93 +493,26 @@ export default function ProfileScreen() {
       </>
       )}
 
-      {/* ── Brackets (Commander only) ── */}
+      {/* ── Game settings: one row per game, each opening its own sheet. A new game (or a new
+          format with settings of its own) gets a row here and a sheet below, so this page never
+          grows a section per option. ── */}
       {commanderSelected && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: textSec }]}>Commander Bracket</Text>
-          <Text style={[styles.sectionHint, { color: textSec }]}>Wizards 1–5 · select all you play</Text>
-          <View style={styles.bracketRow}>
-            {[1, 2, 3, 4, 5].map((b) => {
-              const active = editBrackets.includes(b);
-              return (
-                <Pressable
-                  key={b}
-                  style={[styles.bracketBtn, { borderColor: border, backgroundColor: card },
-                    active && styles.bracketBtnActive]}
-                  onPress={() => {
-                    Haptics.selectionAsync(); setDirty(true);
-                    setEditBrackets((prev) => prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]);
-                  }}
-                >
-                  <Text style={[styles.bracketNum, { color: textSec }, active && styles.bracketNumActive]}>{b}</Text>
-                  <Text style={[styles.bracketLabel, { color: textSec }]}>{BRACKET_INFO[b].label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* ── No-Go ── */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: textSec }]}>Won't Play Against</Text>
-        <View style={styles.chipRow}>
-          {NO_GO_OPTIONS.map((rule) => {
-            const active = editNoGo.includes(rule);
-            return (
-              <Pressable
-                key={rule}
-                style={[styles.chip, { borderColor: border, backgroundColor: card }, active && styles.chipNoGo]}
-                onPress={() => toggleNoGo(rule)}
-              >
-                <Text style={[styles.chipText, { color: textSec }, active && { color: colors.dangerOnBg }]}>{rule}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ── Rivals ── */}
-      {allRivalsInSection.length > 0 && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: textSec }]}>Rivals & Contenders</Text>
-          <Text style={[styles.sectionHint, { color: textSec }]}>Tap card to view · tap badge to set as rival</Text>
-          {allRivalsInSection.map((rival) => {
-            const isChosen = rival.id === chosenRivalId;
-            const isFoe = mostPlayedAgainst?.id === rival.id && !rivals.some((r) => r.id === rival.id);
-            return (
-              <Pressable
-                key={rival.id}
-                style={[styles.rivalCard, { backgroundColor: card, borderColor: border },
-                  isChosen && styles.rivalCardChosen, isFoe && styles.rivalCardFoe]}
-                onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}
-              >
-                <View style={[styles.rivalAvatar, isChosen && styles.rivalAvatarChosen]}>
-                  <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
-                </View>
-                <View style={styles.rivalInfo}>
-                  <Text style={[styles.rivalName, { color: textPrimary }]}>{rival.displayName ?? rival.username}</Text>
-                  <Text style={[styles.rivalMeta, { color: textSec }]}>
-                    {rival.wins}W – {rival.losses}L · {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(' ')}
-                  </Text>
-                  <Text style={[styles.rivalLocation, { color: textSec }]}>{rival.location}</Text>
-                </View>
-                {isChosen ? (
-                  <View style={styles.rivalBadge}><Text style={styles.rivalBadgeText}>RIVAL</Text></View>
-                ) : isFoe ? (
-                  <Pressable style={[styles.rivalBadge, styles.foeBadge]}
-                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
-                    <Text style={[styles.rivalBadgeText, styles.foeBadgeText]}>FAMILIAR FOE</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable style={[styles.rivalBadge, styles.contenderBadge]}
-                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
-                    <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
-                  </Pressable>
-                )}
-              </Pressable>
-            );
-          })}
+          <Text style={[styles.sectionTitle, { color: textSec }]}>Game Settings</Text>
+          <Pressable
+            style={[styles.shopRow, styles.settingsRow, { backgroundColor: card, borderColor: border }]}
+            onPress={openCommanderSheet}
+            accessibilityRole="button"
+            accessibilityLabel="Open Commander settings"
+          >
+            <View style={styles.shopRowInfo}>
+              <Text style={[styles.shopRowTitle, { color: textPrimary }]}>⚔️ Commander</Text>
+              <Text style={[styles.shopRowSub, { color: textSec }]}>
+                {formatBrackets(currentUser.brackets) || 'No bracket set'} · {currentUser.noGo.length === 0 ? 'Plays against anything' : `Won’t play: ${currentUser.noGo.join(', ')}`}
+              </Text>
+            </View>
+            <Text style={[styles.settingsRowArrow, { color: textSec }]}>→</Text>
+          </Pressable>
         </View>
       )}
 
@@ -604,6 +597,128 @@ export default function ProfileScreen() {
             DEV_TOOLS_ENABLED above and CLAUDE.md git workflow. */}
       </View>
 
+      {/* ── Title picker ── */}
+      <Modal visible={showTitlePicker} transparent animationType="fade" onRequestClose={() => setShowTitlePicker(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setShowTitlePicker(false)} accessibilityLabel="Close">
+          <Pressable style={[styles.sheetCard, { backgroundColor: card, borderColor: border }]} onPress={(e) => e.stopPropagation()}>
+            <Text style={[styles.modalTitle, { color: textPrimary }]}>Your Title</Text>
+            <Text style={[styles.modalSub, { color: textSec }]}>
+              {ownedTitles.length === 0 ? 'You don’t own a title yet.' : 'Pick the one that shows under your name.'}
+            </Text>
+            <ScrollView style={styles.sheetScroll}>
+              {[null, ...ownedTitles].map((item) => {
+                const active = (item?.value ?? undefined) === (currentUser.title ?? undefined);
+                return (
+                  <Pressable
+                    key={item?.id ?? 'none'}
+                    style={[styles.titleOption, { borderColor: active ? '#007AFF' : border, backgroundColor: active ? colors.accentBg : 'transparent' }]}
+                    onPress={() => changeTitle(item)}
+                    disabled={equipMutation.isPending}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={item ? `Wear the title ${item.value}` : 'Wear no title'}
+                  >
+                    <Text style={[styles.titleOptionText, { color: active ? colors.accentOnBg : item ? textPrimary : textSec }]}>
+                      {item ? item.value : 'No title'}
+                    </Text>
+                    {active && <Text style={[styles.titleOptionCheck, { color: colors.accentOnBg }]}>✓</Text>}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable
+              style={styles.sheetLink}
+              onPress={() => { setShowTitlePicker(false); router.push('/(tabs)/shop'); }}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.sheetLinkText, { color: colors.accentText }]}>Get more titles in the Shop →</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalCancelBtn, styles.sheetClose, { backgroundColor: border }]}
+              onPress={() => setShowTitlePicker(false)}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.modalCancelText, { color: textSec }]}>Close</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Commander settings ── */}
+      <Modal visible={showCommanderSheet} transparent animationType="fade" onRequestClose={() => setShowCommanderSheet(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setShowCommanderSheet(false)} accessibilityLabel="Close">
+          <Pressable style={[styles.sheetCard, { backgroundColor: card, borderColor: border }]} onPress={(e) => e.stopPropagation()}>
+            <Text style={[styles.modalTitle, { color: textPrimary }]}>Commander Settings</Text>
+            <ScrollView style={styles.sheetScroll}>
+              <Text style={[styles.sectionTitle, styles.sheetSectionTitle, { color: textSec }]}>Bracket</Text>
+              <Text style={[styles.sectionHint, { color: textSec }]}>Wizards 1–5 · select all you play</Text>
+              <View style={styles.bracketRow}>
+                {[1, 2, 3, 4, 5].map((b) => {
+                  const active = draftBrackets.includes(b);
+                  return (
+                    <Pressable
+                      key={b}
+                      style={[styles.bracketBtn, { borderColor: border, backgroundColor: bg }, active && styles.bracketBtnActive]}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setDraftBrackets((prev) => prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={`Bracket ${b}, ${BRACKET_INFO[b].label}`}
+                    >
+                      <Text style={[styles.bracketNum, { color: textSec }, active && styles.bracketNumActive]}>{b}</Text>
+                      <Text style={[styles.bracketLabel, { color: textSec }]}>{BRACKET_INFO[b].label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.sectionTitle, styles.sheetSectionTitle, { color: textSec }]}>Won’t Play Against</Text>
+              <View style={styles.chipRow}>
+                {NO_GO_OPTIONS.map((rule) => {
+                  const active = draftNoGo.includes(rule);
+                  return (
+                    <Pressable
+                      key={rule}
+                      style={[styles.chip, { borderColor: border, backgroundColor: bg }, active && styles.chipNoGo]}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setDraftNoGo((prev) => prev.includes(rule) ? prev.filter((r) => r !== rule) : [...prev, rule]);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.chipText, { color: textSec }, active && { color: colors.dangerOnBg }]}>{rule}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+            {draftBrackets.length === 0 && (
+              <Text style={styles.passwordErrorText}>Pick at least one bracket you play.</Text>
+            )}
+            <View style={styles.modalBtns}>
+              <Pressable
+                style={[styles.modalCancelBtn, { backgroundColor: border }]}
+                onPress={() => setShowCommanderSheet(false)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.modalCancelText, { color: textSec }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalConfirmBtn, draftBrackets.length === 0 && styles.passwordSubmitBtnDisabled]}
+                onPress={saveCommanderSettings}
+                disabled={draftBrackets.length === 0}
+                accessibilityRole="button"
+              >
+                <Text style={styles.modalConfirmText}>Save</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* ── Save / Discard / Log Out ── */}
       <View style={styles.editActions}>
         {dirty && (
@@ -632,6 +747,22 @@ export default function ProfileScreen() {
       </View>
     </ScrollView>
   );
+}
+
+/**
+ * The Profile tab's route. It only waits for the signed-in player's profile and then hands it to
+ * ProfileContent, which holds the whole page.
+ * Keeping the wait out here means ProfileContent's form state can start from the profile's
+ * values without any hook having to run after an early return.
+ * Parameters: none; reads currentUser from global context.
+ * Returns: the profile page, or null when no user is logged in.
+ * Edge cases: the tab layout redirects before this renders without a profile, so null is only
+ * ever seen for a moment during sign-out.
+ */
+export default function ProfileScreen() {
+  const { currentUser } = useApp();
+  if (!currentUser) return null;
+  return <ProfileContent currentUser={currentUser} />;
 }
 
 // Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
@@ -702,12 +833,28 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: '#007AFF',
   },
 
-  titlePreview: { borderRadius: 14, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12 },
-  titlePreviewName: { fontSize: 18, fontWeight: '800' },
-  titlePreviewTitle: { fontSize: 13, marginTop: 2 },
-  titlePreviewEmpty: { fontSize: 12, marginTop: 2 },
-  titleHint: { fontSize: 12, lineHeight: 17 },
-  titleChipActive: { backgroundColor: c.accentBg, borderColor: '#007AFF' },
+  /* Title headline, under the photo */
+  titleHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: -12, marginBottom: 22 },
+  titleHeaderText: { flex: 1, fontSize: 26, fontWeight: '900', fontStyle: 'italic', lineHeight: 30 },
+  titleChangeBtn: { borderRadius: 16, borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12 },
+  titleChangeText: { fontSize: 12, fontWeight: '700' },
+
+  /* Game settings rows, and the sheets they and the title button open */
+  settingsRow: { marginBottom: 0 },
+  settingsRowArrow: { fontSize: 18, fontWeight: '700' },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  sheetCard: { width: '100%', maxWidth: 460, maxHeight: '85%', borderRadius: 20, borderWidth: 1, padding: 22 },
+  sheetScroll: { flexGrow: 0 },
+  sheetSectionTitle: { marginTop: 14 },
+  sheetLink: { paddingVertical: 12, alignItems: 'center' },
+  sheetLinkText: { fontSize: 14, fontWeight: '700' },
+  sheetClose: { flex: 0 },
+  titleOption: {
+    flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1.5,
+    paddingVertical: 12, paddingHorizontal: 14, marginBottom: 8,
+  },
+  titleOptionText: { flex: 1, fontSize: 15, fontWeight: '700' },
+  titleOptionCheck: { fontSize: 16, fontWeight: '900' },
 
   /* Add Game modal */
   modalOverlay: {
