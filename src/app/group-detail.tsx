@@ -182,7 +182,7 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showDialog('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
-      claimReward('join_group');
+      claimReward('first_group');
     } catch (err) {
       showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
