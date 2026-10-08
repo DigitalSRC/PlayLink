@@ -1,0 +1,11 @@
+-- A player may only be an active member of one group at a time (already the app's intended
+-- business rule, enforced client-side in browse.tsx/group-detail.tsx by checking for an existing
+-- membership before allowing create/join). That client-side check alone isn't reliable during a
+-- brief window where the groups list hasn't finished loading (e.g. right after a cold start or
+-- app refresh, before the persisted React Query cache rehydrates) - it read as "not in any
+-- group" and let a second group through, landing a player in two groups.
+--
+-- Enforcing this as a table constraint makes it impossible regardless of any client-side race:
+-- player_id becomes globally unique across group_players (not just per group), so a second
+-- membership insert fails outright rather than silently succeeding.
+create unique index group_players_one_group_per_player on public.group_players (player_id);

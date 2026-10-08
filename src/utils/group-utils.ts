@@ -73,12 +73,12 @@ export const canJoinGroup = (
 
 /**
  * Creates a new player object with deterministic fields.
- * Parameters: playerId (numeric identifier), username, bracket, location, and role.
+ * Parameters: playerId (the joining user's Supabase auth id), username, bracket, location, and role.
  * Returns: a PlayerProfile object with the supplied values.
  * Edge cases: role defaults to Member if a non-standard value is provided.
  */
 export const buildNewPlayer = (
-  playerId: number,
+  playerId: string,
   username: string,
   bracket: number,
   location: string,
@@ -115,7 +115,7 @@ export const normalizePositiveInt = (
  */
 export const removePlayerFromGroup = (
   group: Group,
-  playerId: number
+  playerId: string
 ): {
   updatedGroup: Group | null;
   wasHost: boolean;
@@ -187,7 +187,7 @@ export const formatBrackets = (brackets: number[]): string => {
  */
 export const setPlayerAsHost = (
   group: Group,
-  playerId: number
+  playerId: string
 ): Group => {
   const playerExists = group.players.some((player) => player.id === playerId);
 

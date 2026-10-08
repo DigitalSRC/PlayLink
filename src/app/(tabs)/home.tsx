@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../../context/AppContext';
 import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
+import { useThemeColors } from '../../utils/theme-utils';
 
 /**
  * Home tab — the player's personal dashboard after logging in.
@@ -15,6 +16,7 @@ import { GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../../data/types';
 export default function HomeScreen() {
   const router = useRouter();
   const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, awardPoints } = useApp();
+  const colors = useThemeColors();
 
   if (!currentUser) return null;
 
@@ -26,38 +28,38 @@ export default function HomeScreen() {
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.username}>{currentUser.displayName ?? currentUser.username}</Text>
-          <Text style={styles.location}>{currentUser.location}</Text>
+          <Text style={[styles.greeting, { color: colors.textSecondary }]}>Welcome back,</Text>
+          <Text style={[styles.username, { color: colors.textPrimary }]}>{currentUser.displayName ?? currentUser.username}</Text>
+          <Text style={[styles.location, { color: colors.textSecondary }]}>{currentUser.location}</Text>
         </View>
-        <View style={styles.xpBadge}>
+        <View style={[styles.xpBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={styles.xpLabel}>PTS</Text>
-          <Text style={styles.xpValue}>{currentUser.points}</Text>
+          <Text style={[styles.xpValue, { color: colors.textPrimary }]}>{currentUser.points}</Text>
         </View>
       </View>
 
       {/* Record card */}
-      <View style={styles.recordCard}>
+      <View style={[styles.recordCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.recordRow}>
           <View style={styles.recordStat}>
-            <Text style={styles.recordNum}>{currentUser.wins}</Text>
-            <Text style={styles.recordLabel}>Wins</Text>
+            <Text style={[styles.recordNum, { color: colors.textPrimary }]}>{currentUser.wins}</Text>
+            <Text style={[styles.recordLabel, { color: colors.textSecondary }]}>Wins</Text>
           </View>
-          <View style={styles.recordDivider} />
+          <View style={[styles.recordDivider, { backgroundColor: colors.border }]} />
           <View style={styles.recordStat}>
-            <Text style={styles.recordNum}>{currentUser.losses}</Text>
-            <Text style={styles.recordLabel}>Losses</Text>
+            <Text style={[styles.recordNum, { color: colors.textPrimary }]}>{currentUser.losses}</Text>
+            <Text style={[styles.recordLabel, { color: colors.textSecondary }]}>Losses</Text>
           </View>
-          <View style={styles.recordDivider} />
+          <View style={[styles.recordDivider, { backgroundColor: colors.border }]} />
           <View style={styles.recordStat}>
-            <Text style={styles.recordNum}>{winPct}%</Text>
-            <Text style={styles.recordLabel}>Win Rate</Text>
+            <Text style={[styles.recordNum, { color: colors.textPrimary }]}>{winPct}%</Text>
+            <Text style={[styles.recordLabel, { color: colors.textSecondary }]}>Win Rate</Text>
           </View>
         </View>
-        <View style={styles.progressTrack}>
+        <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
           <View style={[styles.progressFill, { width: `${winPct}%` }]} />
         </View>
       </View>
@@ -65,8 +67,8 @@ export default function HomeScreen() {
       {/* Games played */}
       <View style={styles.gamesRow}>
         {currentUser.games.map((g) => (
-          <View key={g} style={[styles.gamePill, { borderColor: GAME_COLOR[g] }]}>
-            <Text style={styles.gamePillText}>
+          <View key={g} style={[styles.gamePill, { backgroundColor: colors.card, borderColor: GAME_COLOR[g] }]}>
+            <Text style={[styles.gamePillText, { color: colors.textSecondary }]}>
               {GAME_EMOJI[g]} {GAME_LABELS[g]}
             </Text>
           </View>
@@ -76,16 +78,16 @@ export default function HomeScreen() {
       {/* Active group */}
       {activeGroup ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Active Group</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your Active Group</Text>
           <Pressable
-            style={[styles.activeGroupCard, { borderLeftColor: GAME_COLOR[activeGroup.gameType] }]}
+            style={[styles.activeGroupCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: GAME_COLOR[activeGroup.gameType] }]}
             onPress={() => router.push({ pathname: '/group-detail', params: { id: activeGroup.id } })}
           >
-            <Text style={styles.activeGroupGame}>
+            <Text style={[styles.activeGroupGame, { color: colors.textSecondary }]}>
               {GAME_EMOJI[activeGroup.gameType]} {activeGroup.format}
             </Text>
-            <Text style={styles.activeGroupName}>{activeGroup.name}</Text>
-            <Text style={styles.activeGroupMeta}>
+            <Text style={[styles.activeGroupName, { color: colors.textPrimary }]}>{activeGroup.name}</Text>
+            <Text style={[styles.activeGroupMeta, { color: colors.textSecondary }]}>
               {activeGroup.players.length}/{activeGroup.targetPlayers} players · {activeGroup.location}
             </Text>
             <Text style={styles.activeGroupTime}>{activeGroup.time}</Text>
@@ -93,18 +95,18 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>No Active Group</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>No Active Group</Text>
           <View style={styles.groupActionRow}>
-            <Pressable style={styles.groupActionBtn} onPress={() => router.push('/(tabs)/browse')}>
+            <Pressable style={[styles.groupActionBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push('/(tabs)/browse')}>
               <Text style={styles.groupActionEmoji}>🔍</Text>
-              <Text style={styles.groupActionLabel}>Find a Group</Text>
+              <Text style={[styles.groupActionLabel, { color: colors.textSecondary }]}>Find a Group</Text>
             </Pressable>
             <Pressable
-              style={styles.groupActionBtn}
+              style={[styles.groupActionBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
               onPress={() => router.push({ pathname: '/(tabs)/browse', params: { openCreate: '1' } })}
             >
               <Text style={styles.groupActionEmoji}>➕</Text>
-              <Text style={styles.groupActionLabel}>Create Group</Text>
+              <Text style={[styles.groupActionLabel, { color: colors.textSecondary }]}>Create Group</Text>
             </Pressable>
           </View>
         </View>
@@ -113,17 +115,17 @@ export default function HomeScreen() {
       {/* Rivals */}
       {rivals.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Rival</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your Rival</Text>
 
           {/* Chosen rival */}
           {rivals.filter((r) => r.id === chosenRivalId).map((rival) => (
-            <Pressable key={rival.id} style={[styles.rivalCard, styles.rivalCardMain]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
+            <Pressable key={rival.id} style={[styles.rivalCard, { backgroundColor: colors.rivalMainBg }, styles.rivalCardMain]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
               <View style={[styles.rivalAvatar, styles.rivalAvatarMain]}>
                 <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.rivalInfo}>
-                <Text style={styles.rivalName}>{rival.displayName ?? rival.username}</Text>
-                <Text style={styles.rivalMeta}>
+                <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{rival.displayName ?? rival.username}</Text>
+                <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
                   {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
                 </Text>
               </View>
@@ -136,15 +138,15 @@ export default function HomeScreen() {
           {/* Contenders */}
           {rivals.filter((r) => r.id !== chosenRivalId).length > 0 && (
             <>
-              <Text style={styles.contendersLabel}>CONTENDERS</Text>
+              <Text style={[styles.contendersLabel, { color: colors.textSecondary }]}>CONTENDERS</Text>
               {rivals.filter((r) => r.id !== chosenRivalId).map((rival) => (
-                <Pressable key={rival.id} style={[styles.rivalCard, styles.rivalCardContender]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
+                <Pressable key={rival.id} style={[styles.rivalCard, { backgroundColor: colors.card, borderColor: colors.border }, styles.rivalCardContender]} onPress={() => router.push({ pathname: '/player-profile', params: { username: rival.username } })}>
                   <View style={[styles.rivalAvatar, styles.rivalAvatarContender]}>
                     <Text style={styles.rivalInitial}>{rival.username.charAt(0) || '?'}</Text>
                   </View>
                   <View style={styles.rivalInfo}>
-                    <Text style={styles.rivalName}>{rival.displayName ?? rival.username}</Text>
-                    <Text style={styles.rivalMeta}>
+                    <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{rival.displayName ?? rival.username}</Text>
+                    <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
                       {rival.wins}W – {rival.losses}L · {rival.games.map((g) => GAME_EMOJI[g]).join(' ')}
                     </Text>
                   </View>
@@ -159,14 +161,14 @@ export default function HomeScreen() {
           {/* Familiar Foe — most played against (exception, shown only when set) */}
           {mostPlayedAgainst && !rivals.some((r) => r.id === mostPlayedAgainst.id) && (
             <>
-              <Text style={styles.contendersLabel}>FAMILIAR FOE</Text>
-              <View style={[styles.rivalCard, styles.rivalCardFamiliarFoe]}>
+              <Text style={[styles.contendersLabel, { color: colors.textSecondary }]}>FAMILIAR FOE</Text>
+              <View style={[styles.rivalCard, { backgroundColor: colors.rivalFamiliarFoeBg }, styles.rivalCardFamiliarFoe]}>
                 <View style={[styles.rivalAvatar, styles.rivalAvatarFamiliarFoe]}>
                   <Text style={styles.rivalInitial}>{mostPlayedAgainst.username.charAt(0) || '?'}</Text>
                 </View>
                 <View style={styles.rivalInfo}>
-                  <Text style={styles.rivalName}>{mostPlayedAgainst.displayName ?? mostPlayedAgainst.username}</Text>
-                  <Text style={styles.rivalMeta}>
+                  <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{mostPlayedAgainst.displayName ?? mostPlayedAgainst.username}</Text>
+                  <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
                     {mostPlayedAgainst.wins}W – {mostPlayedAgainst.losses}L · {mostPlayedAgainst.games.map((g) => GAME_EMOJI[g]).join(' ')}
                   </Text>
                 </View>
@@ -186,7 +188,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F14',
   },
   content: {
     paddingTop: 60,
@@ -201,17 +202,14 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 14,
-    color: '#999',
   },
   username: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFF',
     marginTop: 2,
   },
   location: {
     fontSize: 13,
-    color: '#888',
     marginTop: 4,
   },
   headerRight: {
@@ -229,12 +227,10 @@ const styles = StyleSheet.create({
   },
   xpBadge: {
     alignItems: 'center',
-    backgroundColor: '#1C1C24',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#2C2C38',
   },
   xpLabel: {
     fontSize: 10,
@@ -245,15 +241,12 @@ const styles = StyleSheet.create({
   xpValue: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFF',
   },
   recordCard: {
-    backgroundColor: '#1C1C24',
     borderRadius: 16,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#2C2C38',
   },
   recordRow: {
     flexDirection: 'row',
@@ -266,20 +259,16 @@ const styles = StyleSheet.create({
   recordNum: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FFF',
   },
   recordLabel: {
     fontSize: 12,
-    color: '#999',
     marginTop: 2,
   },
   recordDivider: {
     width: 1,
-    backgroundColor: '#2C2C38',
   },
   progressTrack: {
     height: 4,
-    backgroundColor: '#2C2C38',
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -299,11 +288,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 20,
     borderWidth: 1.5,
-    backgroundColor: '#1C1C24',
   },
   gamePillText: {
     fontSize: 13,
-    color: '#CCC',
     fontWeight: '600',
   },
   section: {
@@ -312,34 +299,28 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#888',
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
   },
   activeGroupCard: {
-    backgroundColor: '#1C1C24',
     borderRadius: 14,
     padding: 16,
     borderLeftWidth: 4,
     borderWidth: 1,
-    borderColor: '#2C2C38',
   },
   activeGroupGame: {
     fontSize: 12,
-    color: '#888',
     marginBottom: 4,
     fontWeight: '600',
   },
   activeGroupName: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFF',
     marginBottom: 6,
   },
   activeGroupMeta: {
     fontSize: 13,
-    color: '#999',
     marginBottom: 2,
   },
   activeGroupTime: {
@@ -354,12 +335,10 @@ const styles = StyleSheet.create({
   },
   groupActionBtn: {
     flex: 1,
-    backgroundColor: '#1C1C24',
     borderRadius: 14,
     paddingVertical: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2C2C38',
   },
   groupActionEmoji: {
     fontSize: 26,
@@ -367,22 +346,18 @@ const styles = StyleSheet.create({
   },
   groupActionLabel: {
     fontSize: 13,
-    color: '#AAA',
     fontWeight: '600',
   },
   rivalCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C24',
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#2C2C38',
   },
   rivalCardMain: {
     borderColor: '#FF3B30',
-    backgroundColor: '#1F1012',
     borderWidth: 1.5,
   },
   rivalCardContender: {
@@ -390,7 +365,6 @@ const styles = StyleSheet.create({
   },
   rivalCardFamiliarFoe: {
     borderColor: '#5B3FCF',
-    backgroundColor: '#12101F',
     borderWidth: 1.5,
   },
   rivalAvatar: {
@@ -422,12 +396,10 @@ const styles = StyleSheet.create({
   rivalName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFF',
     marginBottom: 2,
   },
   rivalMeta: {
     fontSize: 12,
-    color: '#999',
   },
   rivalBadge: {
     paddingVertical: 3,
@@ -444,7 +416,6 @@ const styles = StyleSheet.create({
   contendersLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#888',
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 8,

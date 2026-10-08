@@ -1,8 +1,10 @@
 # PlayLink
 
+*A Silvenari product.*
+
 A React Native / Expo Router app for finding and organizing tabletop card game play groups. Users create a profile, select the games they play, get matched with rivals, and browse or create local play groups.
 
-Built with **Expo SDK 56**, **React Native**, and **TypeScript**.
+Built with **Expo SDK 57**, **React Native**, and **TypeScript**.
 
 ---
 
@@ -53,18 +55,26 @@ a developer explicitly cuts a release.** Everything else exists to protect it.
 ```bash
 git checkout main          # release only — never commit here directly
 git checkout development   # integration branch — everything ready lands here
-git checkout life-counter  # example top-level feature branch
-git checkout -b feature/your-change life-counter
+git pull                   # refresh development from origin before branching
+git checkout -b my-feature # new top-level feature branch, owned by a team...
+git push -u origin my-feature                    # ...so share it on origin
+git checkout -b feature/your-change my-feature   # your own piece — stays local, never pushed
 ```
 
-| Branch | Purpose |
-|---|---|
-| `main` | Release only. Ships to MVP testers. Tagged at every release (e.g. `v0.1.0-mvp`). Never commit here, never merge here without an explicit release request. |
-| `development` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
-| `<feature>` (no prefix) | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `rival-system`, `shop`). |
-| `feature/<function>` | Sub-branch of a top-level feature branch, scoped to one specific piece of work, merges back into it. |
-| `unitTests` | Kept in sync with `development`; feeds the `test/<feature>` cycle. |
-| `test/<feature>` | Created fresh per test cycle as `unitTests` + `<feature>`; tests are written and run here before promotion. |
+| Branch | Lives on | Purpose |
+|---|---|---|
+| `main` | `origin` | Release only. Ships to MVP testers. Tagged at every release (e.g. `v0.1.0-mvp`). Never commit here, never merge here without an explicit release request. |
+| `development` | `origin` | Integration branch. Everything tested and finished lands here first. Not itself shippable. |
+| `unitTests` | `origin` | Kept in sync with `development`; feeds the `test/<feature>` cycle. |
+| `LandingPage` | `origin` | The static marketing site. GitHub Pages deploys from it, so it must stay on `origin`. |
+| `<feature>` (no prefix) | `origin`, while in progress | Top-level feature branch forked from `development`, named after the feature (e.g. `life-counter`, `shop`). Owned by a team. Removed from `origin` once it merges into `development`. |
+| `feature/<function>` | local only | One person's piece of a feature. Sub-branch of the top-level feature branch, merges back into it. |
+| `test/<feature>` | local only | Created fresh per test cycle as `unitTests` + `<feature>`; tests are written and run here before promotion. |
+
+**Teams share, individuals stay local.** A feature branch is shared on `origin` so its whole team
+can work on it. Each person builds their part in a local `feature/<function>` branch, merges it
+into the team's feature branch, and pushes that. Claim work through GitHub Issues: the team is
+assigned the feature's issue, and each person assigns themselves the issue for their piece.
 
 Full details, diagrams, and the pass/fail testing cycle are documented in
 [`docs/version-control-workflow.md`](docs/version-control-workflow.md). `CLAUDE.md` has the
@@ -129,6 +139,6 @@ gitignored. Claude Code will reference that file for environment-specific comman
 
 ## Expo documentation
 
-- [Expo Router docs](https://docs.expo.dev/versions/v56.0.0/) (v56)
+- [Expo Router docs](https://docs.expo.dev/versions/v57.0.0/) (v57)
 - [React Native docs](https://reactnative.dev/docs/getting-started)
 - [Expo Go](https://expo.dev/go)

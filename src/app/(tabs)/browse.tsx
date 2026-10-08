@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,26 +26,35 @@ import {
   NoGoRule,
 } from '../../data/types';
 import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
+import { useThemeColors } from '../../utils/theme-utils';
+import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
 
 type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
 
 /**
  * Browse tab showing open groups filterable by game type, defaulting to the user's preferred games.
- * Supports joining groups via a 6-character join code entered through the # Code toggle in the top bar.
- * The create-group form auto-fills game, format, bracket, no-go rules, and location from the current user's preferences.
+ * "Join a Group" opens a popup explaining where to find a host's 6-character code and a field to enter it.
+ * "+ Create" opens a popup overlaying this tab with the group form; closing it without posting (backdrop
+ * tap, X, or the join-a-group popup taking over) asks for confirmation once the group name has been typed,
+ * since nothing is actually created — and therefore nothing is visible to other players — until "Post Group"
+ * is tapped. The create form auto-fills game, format, bracket, no-go rules, and location from the current
+ * user's preferences.
  * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load.
- * Returns: a scrollable list of group cards with filter chips, an inline create form, and a code-entry bar.
+ * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
  * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty.
  */
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, setGroups, awardPoints, rivals } = useApp();
+  const { currentUser, groups, groupsLoading, rivals } = useApp();
+  const colors = useThemeColors();
+  const createGroupMutation = useCreateGroupMutation();
+  const joinGroupMutation = useJoinGroupMutation();
 
   const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
-  const [showCodeEntry, setShowCodeEntry] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
   const [codeValue, setCodeValue] = useState('');
 
   const [newName, setNewName] = useState('');
@@ -94,7 +105,7 @@ export default function BrowseScreen() {
 
   const displayUser = currentUser?.username ?? 'Player';
   const currentUserGroup = groups.find((g) =>
-    g.players.some((p) => p.username === displayUser)
+    g.players.some((p) => p.id === currentUser?.id)
   );
 
   const filtered =
@@ -106,6 +117,7 @@ export default function BrowseScreen() {
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
+    if (groupsLoading || joinGroupMutation.isPending) return;
     const code = codeValue.toUpperCase().trim();
     if (code.length !== 6) {
       Alert.alert('Invalid code', 'Join codes are 6 characters long.');
@@ -125,12 +137,13 @@ export default function BrowseScreen() {
       return;
     }
     setCodeValue('');
-    setShowCodeEntry(false);
+    setShowJoinModal(false);
     handleJoin(group);
   };
 
-  const handleJoin = (group: Group) => {
+  const handleJoin = async (group: Group) => {
     if (!currentUser) return;
+    if (groupsLoading || joinGroupMutation.isPending) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group before joining another.');
       return;
@@ -140,33 +153,65 @@ export default function BrowseScreen() {
       return;
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    setGroups((prev) =>
-      prev.map((g) =>
-        g.id === group.id
-          ? {
-              ...g,
-              players: [
-                ...g.players,
-                {
-                  id: Date.now(),
-                  username: displayUser,
-                  bracket: currentUser.brackets[0] ?? 2,
-                  location: currentUser.location,
-                  role: 'Member',
-                },
-              ],
-            }
-          : g
-      )
-    );
-
-    showFeedback(`Joined ${group.name}!`);
+    try {
+      await joinGroupMutation.mutateAsync({
+        groupId: group.id,
+        playerId: currentUser.id,
+        bracket: currentUser.brackets[0] ?? 2,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showFeedback(`Joined ${group.name}!`);
+    } catch (err) {
+      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
-  const handleCreate = () => {
+  /**
+   * Resets the create-group form back to its defaults and closes the popup.
+   * Shared by both the successful "Post Group" path and the discard-without-posting
+   * path so a reopened form never shows stale draft text from a discarded attempt.
+   * Parameters: none.
+   * Returns: void.
+   * Edge cases: none — safe to call whether or not the form had any input.
+   */
+  const closeCreateForm = () => {
+    setShowCreate(false);
+    setNewName('');
+    setNewDateOffset(0);
+    setNewHour(7);
+    setNewMinute(0);
+    setNewPeriod('PM');
+    setNewTarget('4');
+    setNewNoGo([]);
+  };
+
+  /**
+   * Called when the user tries to dismiss the create-group popup (backdrop tap, X
+   * button, or hardware back). Nothing is ever saved until "Post Group" is tapped —
+   * this just makes that boundary explicit instead of silently discarding typed input.
+   * Parameters: none.
+   * Returns: void.
+   * Edge cases: closes immediately with no prompt when the group name is still empty,
+   * since there's nothing meaningful to lose.
+   */
+  const requestCloseCreate = () => {
+    if (newName.trim().length > 0) {
+      Alert.alert(
+        'Discard this group?',
+        "You haven't posted this group yet — closing now won't create it. You'll need to post it from this tab before anyone else can see or join it.",
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          { text: 'Discard', style: 'destructive', onPress: closeCreateForm },
+        ],
+      );
+    } else {
+      closeCreateForm();
+    }
+  };
+
+  const handleCreate = async () => {
     if (!currentUser) return;
+    if (groupsLoading || createGroupMutation.isPending) return;
     if (currentUserGroup) {
       Alert.alert('Already in a group', 'Leave your current group first.');
       return;
@@ -177,12 +222,9 @@ export default function BrowseScreen() {
     }
 
     const resolvedFormat = newFormat || FORMAT_OPTIONS[newGame][0];
-    const group: Group = {
-      id: Date.now(),
+    const draft = {
       name: newName.trim(),
       joinCode: generateJoinCode(groups),
-      createdAt: Date.now(),
-      roundsPlayed: 0,
       gameType: newGame,
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
@@ -197,31 +239,19 @@ export default function BrowseScreen() {
         const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         return `${dayLabel} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}`;
       })(),
-      players: [
-        {
-          id: Date.now() + 1,
-          username: displayUser,
-          bracket: currentUser.brackets[0] ?? 2,
-          location: currentUser.location,
-          role: 'Host',
-        },
-      ],
       targetPlayers: Math.max(2, Number(newTarget) || 4),
       noGo: newNoGo,
-      confirmed: false,
+      hostBracket: currentUser.brackets[0] ?? 2,
     };
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    setGroups((prev) => [group, ...prev]);
-    setShowCreate(false);
-    setNewName('');
-    setNewDateOffset(0);
-    setNewHour(7);
-    setNewMinute(0);
-    setNewPeriod('PM');
-    setNewTarget('4');
-    showFeedback('Group created!');
+    try {
+      await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      closeCreateForm();
+      showFeedback('Group posted! Other players can now find and join it.');
+    } catch (err) {
+      Alert.alert('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
+    }
   };
 
   const toggleBracket = (b: number) => {
@@ -242,7 +272,7 @@ export default function BrowseScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Feedback banner */}
       <Animated.View
         style={[styles.feedbackBanner, { opacity: feedbackOpacity, transform: [{ scale: feedbackScale }] }]}
@@ -252,41 +282,22 @@ export default function BrowseScreen() {
       </Animated.View>
 
       <View style={styles.topBar}>
-        <Text style={styles.screenTitle}>Find a Game</Text>
+        <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Find a Game</Text>
         <View style={styles.topBarActions}>
           <Pressable
-            style={[styles.createToggle, showCodeEntry && styles.codeToggleActive]}
-            onPress={() => { Haptics.selectionAsync(); setShowCodeEntry((v) => !v); setShowCreate(false); setCodeValue(''); }}
+            style={styles.joinToggle}
+            onPress={() => { Haptics.selectionAsync(); setShowJoinModal(true); }}
           >
-            <Text style={[styles.createToggleText, showCodeEntry && styles.codeToggleText]}>{showCodeEntry ? '✕' : '# Code'}</Text>
+            <Text style={styles.joinToggleText}>🔑 Join a Group</Text>
           </Pressable>
           <Pressable
-            style={[styles.createToggle, showCreate && styles.createToggleActive]}
-            onPress={() => { Haptics.selectionAsync(); setShowCreate((v) => !v); setShowCodeEntry(false); setCodeValue(''); }}
+            style={styles.createToggle}
+            onPress={() => { Haptics.selectionAsync(); setShowCreate(true); }}
           >
-            <Text style={styles.createToggleText}>{showCreate ? '✕ Close' : '+ Create'}</Text>
+            <Text style={styles.createToggleText}>+ Create</Text>
           </Pressable>
         </View>
       </View>
-
-      {/* Join by code */}
-      {showCodeEntry && (
-        <View style={styles.codeEntryBar}>
-          <TextInput
-            style={styles.codeInput}
-            value={codeValue}
-            onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
-            placeholder="XXXXXX"
-            placeholderTextColor="#444"
-            autoCapitalize="characters"
-            autoCorrect={false}
-            maxLength={6}
-          />
-          <Pressable style={styles.codeJoinBtn} onPress={handleJoinByCode}>
-            <Text style={styles.codeJoinText}>Join →</Text>
-          </Pressable>
-        </View>
-      )}
 
       {/* Game filter chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
@@ -296,10 +307,14 @@ export default function BrowseScreen() {
           return (
             <Pressable
               key={f}
-              style={[styles.filterChip, active && { backgroundColor: chipColor, borderColor: 'transparent' }]}
+              style={[
+                styles.filterChip,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                active && { backgroundColor: chipColor, borderColor: 'transparent' },
+              ]}
               onPress={() => { Haptics.selectionAsync(); setFilter(f); }}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+              <Text style={[styles.filterChipText, { color: colors.textSecondary }, active && styles.filterChipTextActive]}>
                 {f === 'myGames' ? '🎮 My Games' : f === 'all' ? 'All Games' : `${GAME_EMOJI[f as GameType]} ${GAME_LABELS[f as GameType]}`}
               </Text>
             </Pressable>
@@ -308,158 +323,9 @@ export default function BrowseScreen() {
       </ScrollView>
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {/* Create form */}
-        {showCreate && (
-          <View style={styles.createForm}>
-            <Text style={styles.createTitle}>Post a Group</Text>
-
-            <Text style={styles.fieldLabel}>Game</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gamePickerRow}>
-              {(['mtg', 'pokemon', 'lorcana', 'onepiece'] as GameType[]).map((g) => (
-                <Pressable
-                  key={g}
-                  style={[styles.gamePicker, newGame === g && { borderColor: GAME_COLOR[g], backgroundColor: GAME_COLOR[g] + '22' }]}
-                  onPress={() => { setNewGame(g); setNewFormat(''); setNewBrackets([2]); }}
-                >
-                  <Text style={styles.gamePickerEmoji}>{GAME_EMOJI[g]}</Text>
-                  <Text style={[styles.gamePickerLabel, newGame === g && { color: GAME_COLOR[g] }]}>
-                    {GAME_LABELS[g]}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            <Text style={styles.fieldLabel}>Format</Text>
-            <View style={styles.chipRow}>
-              {FORMAT_OPTIONS[newGame].map((fmt) => (
-                <Pressable
-                  key={fmt}
-                  style={[styles.chip, newFormat === fmt && { backgroundColor: GAME_COLOR[newGame], borderColor: GAME_COLOR[newGame] }]}
-                  onPress={() => setNewFormat(fmt)}
-                >
-                  <Text style={[styles.chipText, newFormat === fmt && styles.chipTextActive]}>{fmt}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={styles.fieldLabel}>Group Name</Text>
-            <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
-
-            <Text style={styles.fieldLabel}>Location</Text>
-            <TextInput style={styles.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
-
-            <Text style={styles.fieldLabel}>Date</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
-              {Array.from({ length: 15 }, (_, i) => {
-                const d = new Date(); d.setDate(d.getDate() + i);
-                const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
-                  : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                return (
-                  <Pressable
-                    key={i}
-                    style={[styles.chip, newDateOffset === i && styles.chipTimeActive]}
-                    onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
-                  >
-                    <Text style={[styles.chipText, newDateOffset === i && styles.chipTextActive]}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            <Text style={styles.fieldLabel}>Time</Text>
-            <View style={styles.timePicker}>
-              <View style={styles.timeUnit}>
-                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 12 ? 1 : h + 1); }}>
-                  <Text style={styles.timeArrowText}>▲</Text>
-                </Pressable>
-                <Text style={styles.timeValue}>{String(newHour).padStart(2, '0')}</Text>
-                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 1 ? 12 : h - 1); }}>
-                  <Text style={styles.timeArrowText}>▼</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.timeSeparator}>:</Text>
-              <View style={styles.timeUnit}>
-                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => (m + 15) % 60); }}>
-                  <Text style={styles.timeArrowText}>▲</Text>
-                </Pressable>
-                <Text style={styles.timeValue}>{String(newMinute).padStart(2, '0')}</Text>
-                <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => m === 0 ? 45 : m - 15); }}>
-                  <Text style={styles.timeArrowText}>▼</Text>
-                </Pressable>
-              </View>
-              <View style={styles.timePeriod}>
-                <Pressable style={[styles.periodBtn, newPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('AM'); }}>
-                  <Text style={[styles.periodText, newPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
-                </Pressable>
-                <Pressable style={[styles.periodBtn, newPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('PM'); }}>
-                  <Text style={[styles.periodText, newPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.halfField}>
-              <Text style={styles.fieldLabel}>Players Needed</Text>
-              <TextInput style={styles.input} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
-            </View>
-
-            {newGame !== 'mtg' && (
-              <Text style={styles.comingSoonNote}>
-                ⏳ PlayLink is currently focused on MTG Commander. Full {GAME_LABELS[newGame]} support is planned — basic grouping and rivals available now.
-              </Text>
-            )}
-            {newGame === 'mtg' && newFormat !== '' && newFormat !== 'Commander' && (
-              <Text style={styles.comingSoonNote}>
-                ⏳ Bracket preferences are available for Commander groups. Other MTG formats support basic grouping and rivals.
-              </Text>
-            )}
-
-            {newGame === 'mtg' && newFormat === 'Commander' && (
-              <>
-                <Text style={styles.fieldLabel}>Bracket (select all that apply)</Text>
-                <View style={styles.chipRow}>
-                  {([1, 2, 3, 4, 5] as number[]).map((b) => {
-                    const active = newBrackets.includes(b);
-                    return (
-                      <Pressable
-                        key={b}
-                        style={[styles.chip, active && styles.chipBracketActive]}
-                        onPress={() => toggleBracket(b)}
-                      >
-                        <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                          {BRACKET_INFO[b].label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </>
-            )}
-
-            <Text style={styles.fieldLabel}>No-Go Rules</Text>
-            <View style={styles.chipRow}>
-              {NO_GO_OPTIONS.map((rule) => {
-                const active = newNoGo.includes(rule);
-                return (
-                  <Pressable
-                    key={rule}
-                    style={[styles.chip, active && styles.chipNoGo]}
-                    onPress={() => toggleNoGo(rule)}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{rule}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <Pressable style={styles.postBtn} onPress={handleCreate}>
-              <Text style={styles.postBtnText}>Post Group</Text>
-            </Pressable>
-          </View>
-        )}
-
         {/* Group cards */}
         {filtered.length === 0 && (
-          <Text style={styles.emptyText}>No groups found for this game type.</Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No groups found for this game type.</Text>
         )}
         {filtered.map((group) => {
           const inThisGroup = group.players.some((p) => p.username === displayUser);
@@ -470,7 +336,11 @@ export default function BrowseScreen() {
           return (
             <Pressable
               key={group.id}
-              style={[styles.groupCard, rivalInGroup && styles.groupCardRival]}
+              style={[
+                styles.groupCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                rivalInGroup && styles.groupCardRival,
+              ]}
               onPress={() => router.push({ pathname: '/group-detail', params: { id: group.id } })}
             >
               <View style={styles.cardTop}>
@@ -489,11 +359,11 @@ export default function BrowseScreen() {
                 )}
               </View>
 
-              <Text style={styles.groupName}>{group.name}</Text>
-              <Text style={styles.groupMeta}>
+              <Text style={[styles.groupName, { color: colors.textPrimary }]}>{group.name}</Text>
+              <Text style={[styles.groupMeta, { color: colors.textSecondary }]}>
                 {group.players.length}/{group.targetPlayers} players{group.format === 'Commander' ? ` · ${formatBrackets(group.brackets)}` : ''}
               </Text>
-              <Text style={styles.groupMeta}>{group.location} · {group.time}</Text>
+              <Text style={[styles.groupMeta, { color: colors.textSecondary }]}>{group.location} · {group.time}</Text>
 
               {group.noGo.length > 0 && (
                 <Text style={styles.noGoText}>🚫 No {group.noGo.join(', ')}</Text>
@@ -506,9 +376,9 @@ export default function BrowseScreen() {
                   </View>
                 ) : (
                   <Pressable
-                    style={[styles.joinBtn, isFull && styles.joinBtnDisabled]}
+                    style={[styles.joinBtn, (isFull || groupsLoading || joinGroupMutation.isPending) && styles.joinBtnDisabled]}
                     onPress={(e) => { e.stopPropagation(); handleJoin(group); }}
-                    disabled={isFull}
+                    disabled={isFull || groupsLoading || joinGroupMutation.isPending}
                   >
                     <Text style={styles.joinBtnText}>{isFull ? 'Full' : 'Join →'}</Text>
                   </Pressable>
@@ -518,6 +388,218 @@ export default function BrowseScreen() {
           );
         })}
       </ScrollView>
+
+      {/* ── Join a Group popup ── */}
+      {showJoinModal && (
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdropFill} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
+            <Pressable style={[styles.joinModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Join a Group</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                Enter the 6-character code your host shared with you. Hosts can find their
+                group's code on the group's detail page, under "Join Code."
+              </Text>
+              <TextInput
+                style={styles.codeInput}
+                value={codeValue}
+                onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
+                placeholder="XXXXXX"
+                placeholderTextColor="#444"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={6}
+                autoFocus
+              />
+              <View style={styles.modalBtnRow}>
+                <Pressable style={styles.modalCancelBtn} onPress={() => { setShowJoinModal(false); setCodeValue(''); }}>
+                  <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.codeJoinBtn, (groupsLoading || joinGroupMutation.isPending) && styles.joinBtnDisabled]}
+                  onPress={handleJoinByCode}
+                  disabled={groupsLoading || joinGroupMutation.isPending}
+                >
+                  <Text style={styles.codeJoinText}>Join →</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      )}
+
+      {/* ── Create-group popup, overlays this tab ── */}
+      {showCreate && (
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdropFill} onPress={requestCloseCreate}>
+            <Pressable style={[styles.createFormSheet, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+            <ScrollView contentContainerStyle={styles.createFormScrollContent} keyboardShouldPersistTaps="handled">
+              <View style={styles.createFormHeader}>
+                <Text style={[styles.createTitle, { color: colors.textPrimary }]}>Post a Group</Text>
+                <Pressable style={styles.createCloseBtn} onPress={requestCloseCreate}>
+                  <Text style={[styles.createCloseBtnText, { color: colors.textSecondary }]}>✕</Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                Nothing here is saved until you tap "Post Group" below — closing this
+                without posting won't create anything.
+              </Text>
+
+              <Text style={styles.fieldLabel}>Game</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gamePickerRow}>
+                {(['mtg', 'pokemon', 'lorcana', 'onepiece'] as GameType[]).map((g) => (
+                  <Pressable
+                    key={g}
+                    style={[styles.gamePicker, { backgroundColor: colors.bg, borderColor: colors.border }, newGame === g && { borderColor: GAME_COLOR[g], backgroundColor: GAME_COLOR[g] + '22' }]}
+                    onPress={() => { setNewGame(g); setNewFormat(''); setNewBrackets([2]); }}
+                  >
+                    <Text style={styles.gamePickerEmoji}>{GAME_EMOJI[g]}</Text>
+                    <Text style={[styles.gamePickerLabel, newGame === g && { color: GAME_COLOR[g] }]}>
+                      {GAME_LABELS[g]}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.fieldLabel}>Format</Text>
+              <View style={styles.chipRow}>
+                {FORMAT_OPTIONS[newGame].map((fmt) => (
+                  <Pressable
+                    key={fmt}
+                    style={[styles.chip, { backgroundColor: colors.bg }, newFormat === fmt && { backgroundColor: GAME_COLOR[newGame], borderColor: GAME_COLOR[newGame] }]}
+                    onPress={() => setNewFormat(fmt)}
+                  >
+                    <Text style={[styles.chipText, newFormat === fmt && styles.chipTextActive]}>{fmt}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Group Name</Text>
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
+
+              <Text style={styles.fieldLabel}>Location</Text>
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
+
+              <Text style={styles.fieldLabel}>Date</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
+                {Array.from({ length: 15 }, (_, i) => {
+                  const d = new Date(); d.setDate(d.getDate() + i);
+                  const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
+                    : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                  return (
+                    <Pressable
+                      key={i}
+                      style={[styles.chip, { backgroundColor: colors.bg }, newDateOffset === i && styles.chipTimeActive]}
+                      onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
+                    >
+                      <Text style={[styles.chipText, newDateOffset === i && styles.chipTextActive]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.fieldLabel}>Time</Text>
+              <View style={[styles.timePicker, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 12 ? 1 : h + 1); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={[styles.timeValue, { color: colors.textPrimary }]}>{String(newHour).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewHour((h) => h === 1 ? 12 : h - 1); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.timeSeparator}>:</Text>
+                <View style={styles.timeUnit}>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => (m + 15) % 60); }}>
+                    <Text style={styles.timeArrowText}>▲</Text>
+                  </Pressable>
+                  <Text style={[styles.timeValue, { color: colors.textPrimary }]}>{String(newMinute).padStart(2, '0')}</Text>
+                  <Pressable style={styles.timeArrow} onPress={() => { Haptics.selectionAsync(); setNewMinute((m) => m === 0 ? 45 : m - 15); }}>
+                    <Text style={styles.timeArrowText}>▼</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.timePeriod}>
+                  <Pressable style={[styles.periodBtn, { backgroundColor: colors.card, borderColor: colors.border }, newPeriod === 'AM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('AM'); }}>
+                    <Text style={[styles.periodText, newPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
+                  </Pressable>
+                  <Pressable style={[styles.periodBtn, { backgroundColor: colors.card, borderColor: colors.border }, newPeriod === 'PM' && styles.periodBtnActive]} onPress={() => { Haptics.selectionAsync(); setNewPeriod('PM'); }}>
+                    <Text style={[styles.periodText, newPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.halfField}>
+                <Text style={styles.fieldLabel}>Players Needed</Text>
+                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
+              </View>
+
+              {newGame !== 'mtg' && (
+                <Text style={styles.comingSoonNote}>
+                  ⏳ PlayLink is currently focused on MTG Commander. Full {GAME_LABELS[newGame]} support is planned — basic grouping and rivals available now.
+                </Text>
+              )}
+              {newGame === 'mtg' && newFormat !== '' && newFormat !== 'Commander' && (
+                <Text style={styles.comingSoonNote}>
+                  ⏳ Bracket preferences are available for Commander groups. Other MTG formats support basic grouping and rivals.
+                </Text>
+              )}
+
+              {newGame === 'mtg' && newFormat === 'Commander' && (
+                <>
+                  <Text style={styles.fieldLabel}>Bracket (select all that apply)</Text>
+                  <View style={styles.chipRow}>
+                    {([1, 2, 3, 4, 5] as number[]).map((b) => {
+                      const active = newBrackets.includes(b);
+                      return (
+                        <Pressable
+                          key={b}
+                          style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipBracketActive]}
+                          onPress={() => toggleBracket(b)}
+                        >
+                          <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                            {BRACKET_INFO[b].label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              <Text style={styles.fieldLabel}>No-Go Rules</Text>
+              <View style={styles.chipRow}>
+                {NO_GO_OPTIONS.map((rule) => {
+                  const active = newNoGo.includes(rule);
+                  return (
+                    <Pressable
+                      key={rule}
+                      style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipNoGo]}
+                      onPress={() => toggleNoGo(rule)}
+                    >
+                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{rule}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Pressable
+                style={[styles.postBtn, (groupsLoading || createGroupMutation.isPending) && styles.joinBtnDisabled]}
+                onPress={handleCreate}
+                disabled={groupsLoading || createGroupMutation.isPending}
+              >
+                <Text style={styles.postBtnText}>{createGroupMutation.isPending ? 'Posting…' : 'Post Group'}</Text>
+              </Pressable>
+            </ScrollView>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 }
@@ -525,7 +607,6 @@ export default function BrowseScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F14',
   },
   feedbackBanner: {
     position: 'absolute',
@@ -555,49 +636,21 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
-  codeToggleActive: {
-    backgroundColor: '#1A2A1A',
-    borderColor: '#34C759',
-  },
-  codeToggleText: {
-    color: '#34C759',
-  },
-  codeEntryBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  codeInput: {
-    flex: 1,
-    backgroundColor: '#1C1C24',
+  joinToggle: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderColor: '#34C759',
-    borderRadius: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 16,
-    fontSize: 22,
-    fontWeight: '800',
+  },
+  joinToggleText: {
     color: '#34C759',
-    letterSpacing: 6,
-    textAlign: 'center',
-  },
-  codeJoinBtn: {
-    backgroundColor: '#34C759',
-    borderRadius: 10,
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-  },
-  codeJoinText: {
-    color: '#FFF',
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: 13,
   },
   screenTitle: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFF',
   },
   createToggle: {
     paddingVertical: 8,
@@ -605,9 +658,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: '#007AFF',
-  },
-  createToggleActive: {
-    backgroundColor: '#1C2940',
   },
   createToggleText: {
     color: '#007AFF',
@@ -628,13 +678,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#2C2C38',
-    backgroundColor: '#1C1C24',
     marginRight: 0,
   },
   filterChipText: {
     fontSize: 13,
-    color: '#888',
     fontWeight: '600',
   },
   filterChipTextActive: {
@@ -647,19 +694,110 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  createForm: {
-    backgroundColor: '#1C1C24',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
+
+  // ── Modal shared chrome ──
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  // Used inside the KeyboardAvoidingView-wrapped Join popup: modalBackdrop's own
+  // justifyContent doesn't help once the keyboard adds bottom padding to it, since this
+  // fill view (not modalBackdrop itself) is what needs to sit flush above that padding.
+  modalBackdropFill: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  modalCancelText: {
+    fontWeight: '700',
+    fontSize: 15,
+  },
+
+  // ── Join a Group popup ──
+  joinModalCard: {
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    padding: 20,
+    margin: 20,
+    marginBottom: 40,
+  },
+  codeInput: {
+    backgroundColor: '#1C1C24',
+    borderWidth: 1.5,
+    borderColor: '#34C759',
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#34C759',
+    letterSpacing: 6,
+    textAlign: 'center',
+  },
+  codeJoinBtn: {
+    flex: 1,
+    backgroundColor: '#34C759',
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  codeJoinText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+
+  // ── Create-group popup ──
+  createFormSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    maxHeight: '88%',
+  },
+  createFormScrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  createFormHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  createCloseBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createCloseBtnText: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   createTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#FFF',
-    marginBottom: 16,
   },
   fieldLabel: {
     fontSize: 11,
@@ -676,10 +814,8 @@ const styles = StyleSheet.create({
   },
   gamePicker: {
     alignItems: 'center',
-    backgroundColor: '#0F0F14',
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#2C2C38',
     paddingVertical: 10,
     paddingHorizontal: 12,
     marginRight: 8,
@@ -706,7 +842,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#333',
-    backgroundColor: '#0F0F14',
   },
   chipText: {
     fontSize: 12,
@@ -735,10 +870,8 @@ const styles = StyleSheet.create({
   timePicker: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F0F14',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2C2C38',
     paddingVertical: 8,
     paddingHorizontal: 16,
     gap: 12,
@@ -761,7 +894,6 @@ const styles = StyleSheet.create({
   timeValue: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFF',
     minWidth: 42,
     textAlign: 'center',
   },
@@ -780,8 +912,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1.5,
-    borderColor: '#333',
-    backgroundColor: '#1C1C24',
   },
   periodBtnActive: {
     backgroundColor: '#001A33',
@@ -796,14 +926,12 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
   input: {
-    backgroundColor: '#0F0F14',
     borderWidth: 1,
     borderColor: '#2C2C38',
     borderRadius: 10,
     paddingVertical: 11,
     paddingHorizontal: 14,
     fontSize: 14,
-    color: '#FFF',
   },
   rowInputs: {
     flexDirection: 'row',
@@ -833,18 +961,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   emptyText: {
-    color: '#555',
     textAlign: 'center',
     marginTop: 60,
     fontSize: 15,
   },
   groupCard: {
-    backgroundColor: '#1C1C24',
     borderRadius: 16,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#2C2C38',
   },
   groupCardRival: {
     borderColor: '#FF3B30',
@@ -894,12 +1019,10 @@ const styles = StyleSheet.create({
   groupName: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFF',
     marginBottom: 5,
   },
   groupMeta: {
     fontSize: 13,
-    color: '#666',
     marginBottom: 2,
   },
   noGoText: {
