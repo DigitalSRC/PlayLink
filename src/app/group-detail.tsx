@@ -24,6 +24,7 @@ import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
+import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { applyGroupResultPoints, finalizeGroupResultIfReady, GroupResult } from '../lib/group-api';
 import { profileKeys } from '../hooks/useProfileQueries';
 import {
@@ -129,7 +130,7 @@ export default function GroupDetail() {
   useEffect(() => {
     if (!group || !activeResult) return;
     if (activeResult.status !== 'pending' || Date.now() < activeResult.disputeWindowEndsAt) return;
-    finalizeGroupResultIfReady(activeResult, group.roundsPlayed).then(() => {
+    finalizeGroupResultIfReady(activeResult).then(() => {
       queryClient.invalidateQueries({ queryKey: groupKeys.results(group.id) });
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(group.id) });
     });
@@ -187,28 +188,13 @@ export default function GroupDetail() {
   };
 
   const handleLeave = async () => {
-    const leavingPlayer = group.players.find((p) => p.id === currentUser.id);
-    if (!leavingPlayer) return;
-
-    const remaining = group.players.filter((p) => p.id !== leavingPlayer.id);
-    const wasHost = leavingPlayer.role === 'Host';
+    if (!group.players.some((p) => p.id === currentUser.id)) return;
 
     try {
-      if (remaining.length === 0) {
-        await deleteMutation.mutateAsync({ groupId: group.id });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        router.back();
-        return;
-      }
-
-      if (wasHost) {
-        await setHostMutation.mutateAsync({
-          groupId: group.id,
-          newHostId: remaining[0].id,
-          previousHostId: leavingPlayer.id,
-        });
-      }
-      await leaveMutation.mutateAsync({ groupId: group.id, playerId: leavingPlayer.id });
+      // One server call: it removes this user, deletes the group if they were the last member,
+      // and appoints a new host if they were the host. Doing those as separate requests from
+      // here could leave the group half-changed if the app dropped off in between.
+      await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
     } catch (err) {
@@ -244,11 +230,9 @@ export default function GroupDetail() {
 
   const handleMakeHost = async (playerId: string) => {
     if (!isHost) return;
-    const previousHost = group.players.find((p) => p.role === 'Host');
-    if (!previousHost) return;
     Haptics.selectionAsync();
     try {
-      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId, previousHostId: previousHost.id });
+      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
     } catch (err) {
       Alert.alert('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -434,7 +418,7 @@ export default function GroupDetail() {
               <>
                 <Text style={styles.resultStatusTitle}>Round {activeResult.roundNumber} results submitted</Text>
                 <Text style={styles.resultStatusSub}>
-                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it.
+                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it. Points are added once it&apos;s final.
                 </Text>
                 <Pressable style={styles.disputeBtn} onPress={() => handleDispute(activeResult)}>
                   <Text style={styles.disputeBtnText}>⚠️ Something's wrong with this</Text>
@@ -470,7 +454,12 @@ export default function GroupDetail() {
         <View style={styles.metaCard}>
           {editing ? (
             <>
-              <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+              {/* A store-event group stays at its store: the link (and its bonus) is to that venue. */}
+              {group.localEventId ? (
+                <Text style={styles.metaRow}>📍 {group.location}</Text>
+              ) : (
+                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+              )}
 
               <Text style={styles.editLabel}>Day</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -548,6 +537,11 @@ export default function GroupDetail() {
           ) : (
             <>
               <Text style={styles.metaRow}>📍 {group.location}</Text>
+              {group.localEventId && (
+                <Text style={styles.storeEventRow}>
+                  🏪 For {group.location}&apos;s store event · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
+                </Text>
+              )}
               <Text style={styles.metaRow}>🕐 {group.time}</Text>
               <Text style={styles.metaRow}>👥 {group.players.length} / {group.targetPlayers} players</Text>
               {group.format === 'Commander' && (
@@ -565,6 +559,11 @@ export default function GroupDetail() {
                 <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
                 <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
               </View>
+              {isHost && (
+                <Text style={styles.hostHelpNote}>
+                  Share this code with friends — they enter it under Find → Join a Group.
+                </Text>
+              )}
             </>
           )}
         </View>
@@ -615,6 +614,11 @@ export default function GroupDetail() {
                       timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
                       headcountLocked ? `👥 Need ${minPlayers - group.players.length} more player${minPlayers - group.players.length > 1 ? 's' : ''}` : null,
                     ].filter(Boolean).join('  ·  ')}
+                  </Text>
+                )}
+                {!group.confirmed && (
+                  <Text style={styles.hostHelpNote}>
+                    Confirm Game locks in who&apos;s playing so you can report results. It opens {CONFIRM_LOCK_MS / 60000} minutes after you post — time for players to join — once at least {minPlayers} are in.
                   </Text>
                 )}
               </>
@@ -865,6 +869,18 @@ function DraggablePlacementRow({
 }
 
 const styles = StyleSheet.create({
+  hostHelpNote: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#888',
+    marginTop: 8,
+  },
+  storeEventRow: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#34C759',
+    marginBottom: 6,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0F0F14',

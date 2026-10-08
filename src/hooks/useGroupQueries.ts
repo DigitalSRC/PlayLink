@@ -118,16 +118,16 @@ export const useJoinGroupMutation = () => {
 };
 
 /**
- * Leaves a group, invalidating the same queries useJoinGroupMutation does.
- * Parameters: none — call sites pass `{ groupId, playerId }`.
- * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
+ * Leaves a group as the signed-in user, invalidating the same queries useJoinGroupMutation does.
+ * Parameters: none — call sites pass `{ groupId }`.
+ * Returns: a React Query mutation object; its result is 'left', 'deleted', or 'not_member'.
+ * Edge cases: the server deletes the group if the caller was its last member and appoints a new
+ * host if the caller was host, so call sites don't sequence those steps themselves.
  */
 export const useLeaveGroupMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ groupId, playerId }: { groupId: string; playerId: string }) =>
-      leaveGroup(groupId, playerId),
+    mutationFn: ({ groupId }: { groupId: string }) => leaveGroup(groupId),
     onSuccess: (_data, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.list() });
@@ -153,22 +153,15 @@ export const useDeleteGroupMutation = () => {
 
 /**
  * Reassigns a group's host, invalidating that group's detail query.
- * Parameters: none — call sites pass `{ groupId, newHostId, previousHostId }`.
+ * Parameters: none — call sites pass `{ groupId, newHostId }`.
  * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
+ * Edge cases: rejects if the caller isn't the host or the target isn't a member.
  */
 export const useSetGroupHostMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      groupId,
-      newHostId,
-      previousHostId,
-    }: {
-      groupId: string;
-      newHostId: string;
-      previousHostId: string;
-    }) => setGroupHost(groupId, newHostId, previousHostId),
+    mutationFn: ({ groupId, newHostId }: { groupId: string; newHostId: string }) =>
+      setGroupHost(groupId, newHostId),
     onSuccess: (_data, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
     },
