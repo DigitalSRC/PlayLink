@@ -1,5 +1,7 @@
 import { Redirect, Tabs } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useApp } from '../../context/AppContext';
+import { usePreloadCalendar } from '../../hooks/useLocalEventQueries';
 import { useThemeColors } from '../../utils/theme-utils';
 import { useAuthStatus } from '../../utils/auth-status';
 
@@ -29,6 +31,8 @@ const LABEL_SIZE = 13;
  * side, Home is centered and rendered larger as the primary landing tab, and Find/
  * Profile take the two rightmost slots that are easiest to reach one-handed. The Shop screen
  * still exists as a route but is hidden from the bar while SHOP_TAB_ENABLED is false.
+ * It also preloads the Calendar tab's events in the background (usePreloadCalendar), so that
+ * tab opens without a wait.
  * Redirects to sign-in if there's no Supabase session, or to profile creation if the session
  * exists but no profiles row does yet.
  * Parameters: none.
@@ -40,6 +44,10 @@ const LABEL_SIZE = 13;
 export default function TabLayout() {
   const status = useAuthStatus();
   const colors = useThemeColors();
+  const { currentUser } = useApp();
+  // Starts loading the Calendar's events now, while the player is on Home, so the Calendar tab
+  // has them ready. Waits by itself until the profile (and so the location) has loaded.
+  usePreloadCalendar(currentUser?.location);
 
   if (status === 'loading') {
     return (

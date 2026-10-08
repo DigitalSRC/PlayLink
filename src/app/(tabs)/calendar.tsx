@@ -22,6 +22,7 @@ import {
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import {
+  calendarLocation,
   dateKeyFromMs,
   eventsOnDate,
   formatAgo,
@@ -39,7 +40,6 @@ import { storeEventLinkParams } from '../../utils/venue-bonus-utils';
 // The format shown when the tab opens. Commander is what PlayLink is built around; the others
 // are a tap away in the switcher.
 const DEFAULT_FORMAT = 'Commander';
-const LEGACY_BLANK_LOCATION = 'nearby';
 const MIN_LOCATION_LENGTH = 2;
 const MAX_LOCATION_LENGTH = 100;
 
@@ -60,6 +60,8 @@ const MAX_LOCATION_LENGTH = 100;
  * reads the results.
  * Parameters: none; reads currentUser, session, and getNow from global context.
  * Returns: a scrollable screen with the location controls, format switcher, month grid, and list.
+ * The area and its events are normally already loaded by the time this tab opens: the tab
+ * layout preloads them in the background as soon as the player is signed in (usePreloadCalendar).
  * Edge cases: returns null if currentUser is not yet set; with no location saved it asks for
  * one; while the area is being worked out it shows a spinner; a place the server can't identify
  * gets a "couldn't find" message with the editor, while an outage gets a retry; a refresh that
@@ -87,10 +89,8 @@ export default function CalendarScreen() {
   const [editing, setEditing] = useState(false);
   const [draftLocation, setDraftLocation] = useState('');
 
-  // "Nearby" is what onboarding used to save when the city was left blank. It isn't a place, so
-  // treat those older profiles as having no location and ask for one.
-  const savedLocation = currentUser?.location?.trim() ?? '';
-  const location = savedLocation.toLowerCase() === LEGACY_BLANK_LOCATION ? '' : savedLocation;
+  // An older profile's placeholder "Nearby" counts as no location, so it is asked for one.
+  const location = calendarLocation(currentUser?.location);
   const areaQuery = useEventAreaQuery(location);
   const area = areaQuery.data?.area;
   const {
