@@ -1,15 +1,7 @@
 import { supabase } from './supabase';
 import { Group, PlayerProfile } from '../data/groups';
-import { GameType, NoGoRule, UserProfile } from '../data/types';
+import { GameType, NoGoRule } from '../data/types';
 import { GameOutcome, PlacementInput } from '../utils/scoring-utils';
-
-/**
- * How long other group members have to dispute a submitted round before it auto-finalizes.
- * Used only for the client-side countdown display — the authoritative 15-minute window is set
- * server-side by the submit_group_result SQL function (see the harden_rls migration). Keep the
- * two in sync if this ever changes.
- */
-export const DISPUTE_WINDOW_MS = 15 * 60 * 1000;
 
 interface GroupPlayerRow {
   player_id: string;
@@ -301,13 +293,6 @@ export interface GroupResult {
   roundNumber: number;
   submittedBy: string;
   submittedAt: number;
-  status: 'pending' | 'disputed' | 'finalized';
-  disputeWindowEndsAt: number;
-  finalizedAt?: number;
-  disputedBy: string[];
-  /** One entry per disputing player id, holding the reason they gave when flagging the round. */
-  disputeReasons: Record<string, string>;
-  appliedBy: string[];
   placements: GroupResultPlacement[];
 }
 
@@ -317,12 +302,6 @@ interface GroupResultRow {
   round_number: number;
   submitted_by: string;
   submitted_at: string;
-  status: 'pending' | 'disputed' | 'finalized';
-  dispute_window_ends_at: string;
-  finalized_at: string | null;
-  disputed_by: string[];
-  dispute_reasons: Record<string, string>;
-  applied_by: string[];
   placements: GroupResultPlacement[];
 }
 
@@ -332,17 +311,12 @@ const mapResultRow = (row: GroupResultRow): GroupResult => ({
   roundNumber: row.round_number,
   submittedBy: row.submitted_by,
   submittedAt: new Date(row.submitted_at).getTime(),
-  status: row.status,
-  disputeWindowEndsAt: new Date(row.dispute_window_ends_at).getTime(),
-  finalizedAt: row.finalized_at ? new Date(row.finalized_at).getTime() : undefined,
-  disputedBy: row.disputed_by,
-  disputeReasons: row.dispute_reasons ?? {},
-  appliedBy: row.applied_by,
-  placements: row.placements,
+  placements: row.placements ?? [],
 });
 
 /**
- * Fetches every reported round for a group, oldest first.
+ * Fetches every reported round for a group, oldest first. Every round here is final: there is
+ * no pending or disputed state, so what this returns is exactly what was paid out.
  * Parameters: groupId.
  * Returns: an array of GroupResult.
  * Edge cases: returns an empty array if no round has been reported yet.
@@ -350,7 +324,7 @@ const mapResultRow = (row: GroupResultRow): GroupResult => ({
 export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]> => {
   const { data, error } = await supabase
     .from('group_results')
-    .select('*')
+    .select('id, group_id, round_number, submitted_by, submitted_at, placements')
     .eq('group_id', groupId)
     .order('round_number', { ascending: true });
   if (error) throw error;
@@ -358,19 +332,21 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
 };
 
 /**
- * Submits a round's results through the submit_group_result SQL function, which verifies the
- * caller is the group's host and that every placed player is a member, scores the raw placement
- * order server-side (so points can't be inflated from the client), adds the one-time store-event
- * bonus for a group linked to a store event if the round is reported inside that event's window
- * (decided by the server's own clock in the venue's time zone), and inserts a pending result
- * with a fresh dispute window. The caller sends only the finish order, never computed points.
- * Parameters: groupId, roundNumber (1-indexed — the caller passes group.roundsPlayed + 1),
- * submittedBy (unused server-side, kept for call-site compatibility; the host is derived from the
- * authenticated session), placements (each participant's rank).
- * Returns: a promise that resolves once the round is recorded; the caller refetches the results
- * query to pick up the new row rather than relying on a return value.
- * Edge cases: throws if the caller isn't the host, if a placement names a non-member, or on any
- * Postgres/network error.
+ * Reports a round, and that report is final. The submit_group_result SQL function verifies the
+ * caller is the group's host and that every placed player is a member, scores the raw finish
+ * order itself (so points can't be inflated from the client), adds the one-time store-event
+ * bonus where it applies, records the round, pays every player their points, and counts the
+ * round as played - all in one transaction. There is no dispute window and no way to edit or
+ * cancel a round afterwards, so the caller should confirm the order with the host first.
+ * Parameters: groupId, roundNumber (1-indexed - the caller passes group.roundsPlayed + 1, and
+ * the server refuses anything else, which is what makes a double tap harmless), submittedBy
+ * (unused server-side, kept for call-site compatibility; the host is the authenticated caller),
+ * placements (each participant's rank).
+ * Returns: a promise that resolves once the round is recorded and paid; the caller refetches
+ * the group, its results, and its own profile rather than relying on a return value.
+ * Edge cases: throws if the caller isn't the host, a placement names a non-member or the same
+ * player twice, the round number isn't the next one (already reported, or out of order), or on
+ * any Postgres/network error. On any failure nothing is recorded and nobody is paid.
  */
 export const submitGroupResult = async (
   groupId: string,
@@ -383,93 +359,5 @@ export const submitGroupResult = async (
     p_round_number: roundNumber,
     p_placements: placements.map((p) => ({ playerId: p.playerId, placement: p.placement })),
   });
-  if (error) throw error;
-};
-
-/**
- * Flags a pending result as disputed by a group member, permanently blocking it from
- * auto-finalizing — the host must cancel it (cancelGroupResult) and resubmit rather than the
- * dispute ever being "resolved" in place, keeping the anti-cheat model simple. The reason is
- * required so the host has some idea of what to fix before resubmitting, rather than just
- * knowing *that* someone objected.
- * Routes through the dispute_group_result SQL function, which appends only the caller's own id
- * and reason (it can't touch placements or anyone else's entry) and flips the round to disputed.
- * Parameters: result (the result being disputed), playerId (unused server-side — the disputer is
- * the authenticated caller; kept for the local already-disputed short-circuit and call-site
- * compatibility), reason (their required explanation of what's wrong with the round).
- * Returns: a promise that resolves once the update completes.
- * Edge cases: no-op if this player already disputed it (their original reason is kept); throws if
- * the reason is blank, the round is already finalized, or the caller isn't a group member.
- */
-export const disputeGroupResult = async (
-  result: GroupResult,
-  playerId: string,
-  reason: string
-): Promise<void> => {
-  if (result.disputedBy.includes(playerId)) return;
-  const { error } = await supabase.rpc('dispute_group_result', {
-    p_result_id: result.id,
-    p_reason: reason,
-  });
-  if (error) throw error;
-};
-
-/**
- * Deletes a disputed (or otherwise unwanted) result so the host can resubmit a corrected round,
- * via the cancel_group_result SQL function (host-only, and refuses to delete a finalized round).
- * This replaces a direct .delete(), which silently affected zero rows anyway since group_results
- * never had a client DELETE policy.
- * Parameters: resultId.
- * Returns: a promise that resolves once the row is deleted.
- * Edge cases: throws if the caller isn't the group's host or the round is already finalized;
- * no-op if the result no longer exists.
- */
-export const cancelGroupResult = async (resultId: string): Promise<void> => {
-  const { error } = await supabase.rpc('cancel_group_result', { p_result_id: resultId });
-  if (error) throw error;
-};
-
-/**
- * Lazily finalizes a pending result once its dispute window has elapsed with no disputes, via the
- * finalize_group_result SQL function — mirrors this app's existing getNow()/devDateOffset pattern
- * of checking elapsed time on read rather than running a scheduled job. The function re-checks the
- * status and window server-side and bumps the group's rounds_played atomically, so a concurrent
- * dispute from another device can't be clobbered. The client-side guard below just avoids a
- * needless call when the round plainly isn't due yet.
- * Parameters: result (the result to check).
- * Returns: a promise that resolves once the check completes; the caller refetches the results and
- * group queries to pick up any change rather than relying on a return value.
- * Edge cases: no-op if the round isn't pending or its window is still open; throws if the caller
- * isn't a group member or on any Postgres/network error.
- */
-export const finalizeGroupResultIfReady = async (result: GroupResult): Promise<void> => {
-  if (result.status !== 'pending' || Date.now() < result.disputeWindowEndsAt) return;
-  const { error } = await supabase.rpc('finalize_group_result', { p_result_id: result.id });
-  if (error) throw error;
-};
-
-/**
- * Applies the caller's own share of a finalized result to their profile via the apply_group_result
- * SQL function, which reads the points/outcome from the server-computed placements (the client
- * can't influence them), writes the otherwise-locked score columns on the caller's own profile
- * row only, and marks them applied so a later reload never double-awards it. Every participant's
- * own client must still call this for the group's points to fully settle; there is no single step
- * that applies everyone's at once.
- * Parameters: result (a finalized GroupResult), currentProfile (the calling user's own profile —
- * used only for the local short-circuits below so an already-applied or non-participating result
- * never makes a pointless round trip; the actual delta is computed server-side).
- * Returns: a promise that resolves once the server applies the delta, or immediately with no call
- * if the result isn't finalized, doesn't include this player, or was already applied by them.
- * Edge cases: throws on a Postgres/network error; the server rejects any attempt to apply an
- * unfinalized round or to double-apply.
- */
-export const applyGroupResultPoints = async (
-  result: GroupResult,
-  currentProfile: UserProfile
-): Promise<void> => {
-  if (result.status !== 'finalized' || result.appliedBy.includes(currentProfile.id)) return;
-  if (!result.placements.some((p) => p.playerId === currentProfile.id)) return;
-
-  const { error } = await supabase.rpc('apply_group_result', { p_result_id: result.id });
   if (error) throw error;
 };

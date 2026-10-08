@@ -345,6 +345,11 @@ branches not yet merged into `development` — all of them shared on `origin` (�
   `commander-only`, and `main` - can no longer report rounds, collect points, or delete a group
   against the live database. Only this branch, `shop`, and `combined-preview` work fully until
   the stack is merged. See `docs/security-backlog.md`.
+- **`final-results`** — removes the 15-minute dispute window: the host's report is final, and the
+  server records it, pays every player, and counts the round in one step. **Stacked on `shop`**
+  (the payout credits the spendable balance), so it is the last link:
+  `event-calendar` -> `commander-only` -> `security-hardening` -> `shop` -> `final-results`. Its
+  migration is live on Supabase (applied 2026-10-07).
 - **`combined-preview`** — not a feature: `development` plus the whole stack merged in order
   (`event-calendar`, `commander-only`, `security-hardening`, `shop`), made on 2026-10-07 so the
   developer can test everything together. Its tree is identical to `shop`. Do not build on it;
