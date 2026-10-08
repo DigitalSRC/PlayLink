@@ -329,12 +329,20 @@ branches not yet merged into `development` — all of them shared on `origin` (�
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
   `development`/`main` until finished; it has no entry points or feature flag there — see
   [CLAUDE.md](../CLAUDE.md).
-- **`shop`** — build-out of the shop tab, currently a placeholder screen on `development`.
+- **`shop`** — the working Shop: spendable Points (`point_balance`), the monthly total shown as
+  Score, and three kinds of cosmetic (titles, name colors, card borders) bought and worn through
+  server functions. **Stacked on `security-hardening`** - its migration refuses to apply unless
+  the hardening migration is in place. Its migration is not yet applied to Supabase.
 - **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
   Excluded from every other branch except `unitTests`/`test/<feature>`; see
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
-- **`security-hardening`** — server-authoritative scoring and RLS hardening. The migration is
-  written but not yet applied to Supabase; see `docs/security-backlog.md` (on that branch).
+- **`security-hardening`** — server-authoritative scoring and RLS hardening, including the
+  store-event bonus (moved to the server on 2026-10-07) and working delete/cancel (GitHub issue
+  #10). **Stacked on `commander-only`**, so the merge order into `development` is
+  `event-calendar` -> `commander-only` -> `security-hardening` -> `shop`. Its three migrations
+  are written and checked in a local sandbox but **not yet applied to Supabase**; applying them
+  stops every build that still writes scores directly (anything before this branch) from
+  reporting rounds, so apply them and merge the stack together. See `docs/security-backlog.md`.
 - **`event-calendar`** — **PENDING DEV MERGE (marked 2026-10-07, GitHub issue #12).** The
   developer considers it finished and will review it before it lands; do not merge it into
   `development` until they say so. The Calendar tab: a month view of local Commander nights from the
