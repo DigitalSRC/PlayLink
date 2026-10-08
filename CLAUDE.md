@@ -10,7 +10,7 @@ Everything in this file describes `development` unless it says otherwise. `main`
 
 ## Commands
 
-- `npm install` — install dependencies
+- `npm install` — install dependencies. From npm 12 on, a dependency's install script only runs if it is approved under `allowScripts` in `package.json`; anything else is skipped with a warning. One is approved today: `unrs-resolver` (the native resolver ESLint's import rules use). If a newly added package warns that its script was blocked, review it with `npm install-scripts ls` and approve it with `npm install-scripts approve <pkg>` only if the package really needs it; the entry is pinned to a version, so a bump of that package needs re-approving.
 - `npm start` / `npx expo start` — start the dev server (add `--android`, `--ios`, or `--web` to target a platform)
 - `npx tsc --noEmit` — type-check. There is no npm script for it. Errors under `example/` are noise (an untracked, gitignored Expo template whose `@/` imports don't resolve here); only errors under `src/` count. `supabase/functions/**` is excluded in `tsconfig.json` because it's Deno code.
 - `npm run lint` — run ESLint via expo lint. The baseline is **not** clean: it already reports dozens of errors under `src/`, almost all `react-hooks/refs`, `react-hooks/rules-of-hooks`, and `react/no-unescaped-entities`. Compare against the baseline rather than expecting zero, and don't mass-fix them as a side effect of other work.
