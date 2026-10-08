@@ -144,8 +144,31 @@ describe("ProfileCreation", () => {
     await waitFor(() => {
       expect(getByText("Choose Your Rival")).toBeTruthy();
     });
-    expect(getByText(/Rivals are players who play the same games as you/)).toBeTruthy();
+    expect(getByText(/Pick the one you refuse to lose to/)).toBeTruthy();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("keeps every rival on screen after one is picked, and unlocks Enter the Arena", async () => {
+    mockFindRivals.mockReturnValue([
+      { ...mockCreatedProfile, id: "rival-1", username: "Rival" },
+      { ...mockCreatedProfile, id: "rival-2", username: "Nemesis" },
+    ]);
+    const { getByTestId, getByPlaceholderText, getByText } = await render(<ProfileCreation />);
+
+    await fillIdentityAndGames(getByTestId, getByPlaceholderText);
+    await fireEvent.press(getByTestId("profile-creation-next-button"));
+    await waitFor(() => {
+      expect(getByText("Rival")).toBeTruthy();
+    });
+    expect(getByText("Pick Your Rival First")).toBeTruthy();
+
+    await fireEvent.press(getByText("Rival"));
+
+    expect(getByText("Rival")).toBeTruthy();
+    expect(getByText("Nemesis")).toBeTruthy();
+    expect(getByText("RIVAL")).toBeTruthy();
+    expect(getByText("CONTENDER")).toBeTruthy();
+    expect(getByText("Enter the Arena →")).toBeTruthy();
   });
 
   it("lets a player skip picking a rival and still enter the app", async () => {
