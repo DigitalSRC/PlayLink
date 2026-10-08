@@ -36,9 +36,9 @@ describe("reward-api", () => {
 
   describe("fetchStarterRewards", () => {
     it("reads the caller's claimed reward keys without sending a player id", async () => {
-      mockSelectResult = { data: [{ reward_key: "create_group" }, { reward_key: "view_calendar" }], error: null };
+      mockSelectResult = { data: [{ reward_key: "first_group" }, { reward_key: "view_calendar" }], error: null };
 
-      expect(await fetchStarterRewards()).toEqual(["create_group", "view_calendar"]);
+      expect(await fetchStarterRewards()).toEqual(["first_group", "view_calendar"]);
       expect(mockFrom).toHaveBeenCalledWith("starter_rewards");
       expect(mockSelect).toHaveBeenCalledWith("reward_key");
     });
@@ -59,8 +59,8 @@ describe("reward-api", () => {
     it("asks the server by key only - never an amount or a player id", async () => {
       mockRpcResult = { data: 25, error: null };
 
-      expect(await claimStarterReward("join_group")).toBe(25);
-      expect(mockRpc).toHaveBeenCalledWith("claim_starter_reward", { p_key: "join_group" });
+      expect(await claimStarterReward("first_group")).toBe(25);
+      expect(mockRpc).toHaveBeenCalledWith("claim_starter_reward", { p_key: "first_group" });
       expect(mockFrom).not.toHaveBeenCalled();
     });
 
@@ -77,10 +77,10 @@ describe("reward-api", () => {
     });
 
     it("throws the server's refusal", async () => {
-      const error = { message: "Post a group first" };
+      const error = { message: "Post or join a group first" };
       mockRpcResult = { data: null, error };
 
-      await expect(claimStarterReward("create_group")).rejects.toBe(error);
+      await expect(claimStarterReward("first_group")).rejects.toBe(error);
     });
   });
 });

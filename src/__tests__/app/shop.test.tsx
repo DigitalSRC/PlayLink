@@ -107,7 +107,7 @@ describe("ShopScreen", () => {
     expect(getByText("EARLY SUPPORTER")).toBeTruthy();
   });
 
-  it("asks before buying, then buys by item id and puts the item on", async () => {
+  it("asks before buying, buys by item id, and does not put the item on by itself", async () => {
     const { getByLabelText } = await render(<ShopScreen />);
 
     await fireEvent.press(getByLabelText("Buy Kingmaker for 100 pts"));
@@ -117,10 +117,47 @@ describe("ShopScreen", () => {
     await confirmLastAlert(alertSpy);
 
     await waitFor(() => {
-      expect(mockEquip).toHaveBeenCalledWith({ userId: "user-1", kind: "title", itemId: "title-kingmaker" });
+      expect(alertSpy).toHaveBeenCalledWith("“Kingmaker” is yours", expect.any(String), expect.any(Array));
     });
     expect(mockPurchase).toHaveBeenCalledTimes(1);
     expect(mockPurchase).toHaveBeenCalledWith({ userId: "user-1", itemId: "title-kingmaker" });
+    expect(mockEquip).not.toHaveBeenCalled();
+
+    const offer = alertSpy.mock.calls[alertSpy.mock.calls.length - 1][2] ?? [];
+    expect(offer.map((b) => b.text)).toEqual(["Not Now", "Wear It Now"]);
+  });
+
+  it("puts the new item on when the player chooses Wear It Now", async () => {
+    const { getByLabelText } = await render(<ShopScreen />);
+
+    await fireEvent.press(getByLabelText("Buy Kingmaker for 100 pts"));
+    await confirmLastAlert(alertSpy);
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith("“Kingmaker” is yours", expect.any(String), expect.any(Array));
+    });
+    await confirmLastAlert(alertSpy);
+
+    await waitFor(() => {
+      expect(mockEquip).toHaveBeenCalledWith({ userId: "user-1", kind: "title", itemId: "title-kingmaker" });
+    });
+    expect(mockEquip).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the player's look alone when they choose Not Now", async () => {
+    const { getByLabelText } = await render(<ShopScreen />);
+
+    await fireEvent.press(getByLabelText("Buy Kingmaker for 100 pts"));
+    await confirmLastAlert(alertSpy);
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith("“Kingmaker” is yours", expect.any(String), expect.any(Array));
+    });
+    const offer = alertSpy.mock.calls[alertSpy.mock.calls.length - 1][2] ?? [];
+    await act(async () => {
+      await offer[0].onPress?.();
+    });
+
+    expect(mockEquip).not.toHaveBeenCalled();
+    expect(mockPurchase).toHaveBeenCalledTimes(1);
   });
 
   it("buys nothing when the player cancels", async () => {
@@ -157,14 +194,21 @@ describe("ShopScreen", () => {
     expect(mockEquip).not.toHaveBeenCalled();
   });
 
-  it("still counts as bought if putting it on fails afterwards", async () => {
+  it("still counts as bought if putting it on fails afterwards, and says which step failed", async () => {
     mockEquip.mockRejectedValueOnce(new Error("offline"));
     const { getByLabelText } = await render(<ShopScreen />);
 
     await fireEvent.press(getByLabelText("Buy Kingmaker for 100 pts"));
     await confirmLastAlert(alertSpy);
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith("“Kingmaker” is yours", expect.any(String), expect.any(Array));
+    });
+    await confirmLastAlert(alertSpy);
 
-    await waitFor(() => expect(mockEquip).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith("Couldn’t change your look", "offline");
+    });
+    expect(mockEquip).toHaveBeenCalledTimes(1);
     expect(alertSpy).not.toHaveBeenCalledWith("Couldn’t buy that", expect.anything());
   });
 
