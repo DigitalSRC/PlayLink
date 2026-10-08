@@ -3,6 +3,7 @@ import { Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogHost } from '../components/AppDialog';
+import { ToastHost } from '../components/AppToast';
 import { AppProvider, useApp } from '../context/AppContext';
 import { persister, queryClient } from '../lib/query-client';
 import { useThemeColors } from '../utils/theme-utils';
@@ -40,7 +41,8 @@ function ThemedStack() {
  * react-native-gesture-handler gesture — e.g. group-detail.tsx's drag-and-drop placement
  * reordering — to receive touches correctly, especially on Android.
  * DialogHost sits beside the Stack, inside AppProvider (it reads the theme), and draws every
- * pop-up requested through showDialog above whichever screen is open.
+ * pop-up requested through showDialog above whichever screen is open. ToastHost does the same
+ * for the short "it worked" messages raised through showToast.
  * Parameters: none.
  * Returns: the themed Stack navigator (headers hidden; each screen manages its own header) and the dialog host.
  * Edge cases: none — the provider always initialises with default null user state, and the
@@ -52,6 +54,7 @@ export default function RootLayout() {
       <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
         <AppProvider>
           <ThemedStack />
+          <ToastHost />
           <DialogHost />
         </AppProvider>
       </PersistQueryClientProvider>
