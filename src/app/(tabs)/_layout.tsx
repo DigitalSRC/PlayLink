@@ -7,9 +7,15 @@ const TAB_ICON: Record<string, { active: string; inactive: string }> = {
   home: { active: '🏠', inactive: '🏠' },
   browse: { active: '🔍', inactive: '🔍' },
   stats: { active: '📊', inactive: '📊' },
+  calendar: { active: '📅', inactive: '📅' },
   shop: { active: '🛍️', inactive: '🛍️' },
   profile: { active: '👤', inactive: '👤' },
 };
+
+// The Shop tab is only a "coming soon" placeholder, so its slot in the tab bar is lent to the
+// Calendar tab until the shop is actually built. The route file stays in place; flipping this to
+// true shows Shop again, at which point it needs a slot of its own (six tabs is one too many).
+const SHOP_TAB_ENABLED = false;
 
 const HOME_ICON_SIZE = 34;
 const ICON_SIZE = 27;
@@ -18,9 +24,10 @@ const LABEL_SIZE = 13;
 
 /**
  * Defines the five-tab navigator for logged-in users. Tab order (left to right) is
- * Stats, Shop, Home, Find, Profile: Stats/Shop sit on the least thumb-reachable left
+ * Stats, Calendar, Home, Find, Profile: Stats/Calendar sit on the least thumb-reachable left
  * side, Home is centered and rendered larger as the primary landing tab, and Find/
- * Profile take the two rightmost slots that are easiest to reach one-handed.
+ * Profile take the two rightmost slots that are easiest to reach one-handed. The Shop screen
+ * still exists as a route but is hidden from the bar while SHOP_TAB_ENABLED is false.
  * Redirects to sign-in if there's no Supabase session, or to profile creation if the session
  * exists but no profiles row does yet.
  * Parameters: none.
@@ -79,7 +86,8 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="stats" options={{ tabBarLabel: 'Stats' }} />
-      <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop' }} />
+      <Tabs.Screen name="calendar" options={{ tabBarLabel: 'Calendar' }} />
+      <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop', href: SHOP_TAB_ENABLED ? undefined : null }} />
       <Tabs.Screen name="home" options={{ tabBarLabel: 'Home' }} />
       <Tabs.Screen name="browse" options={{ tabBarLabel: 'Find' }} />
       <Tabs.Screen name="profile" options={{ tabBarLabel: 'Profile' }} />

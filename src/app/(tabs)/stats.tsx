@@ -3,7 +3,7 @@ import { Dimensions, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollV
 import { useRouter } from 'expo-router';
 import { useQueries } from '@tanstack/react-query';
 import { useApp } from '../../context/AppContext';
-import { GAME_COLOR, GAME_EMOJI, GAME_LABELS, GameType, UserProfile } from '../../data/types';
+import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, GameType, UserProfile, visibleGames } from '../../data/types';
 import { useThemeColors } from '../../utils/theme-utils';
 import { fetchLeaderboard } from '../../lib/profile-api';
 
@@ -59,7 +59,7 @@ export default function StatsScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [activeGameIndex, setActiveGameIndex] = useState(0);
 
-  const games: GameType[] = currentUser?.games ?? [];
+  const games: GameType[] = visibleGames(currentUser?.games ?? []);
 
   const leaderboardQueries = useQueries({
     queries: games.map((game) => ({
@@ -128,8 +128,8 @@ export default function StatsScreen() {
         </View>
       </View>
 
-      {/* Games */}
-      <View style={styles.section}>
+      {/* Games: hidden while the app is Commander-only, since there is only the one */}
+      {!COMMANDER_ONLY && <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Games You Play</Text>
         {currentUser.games.map((g) => (
           <View key={g} style={[styles.gameRow, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: GAME_COLOR[g] }]}>
@@ -142,7 +142,7 @@ export default function StatsScreen() {
             </View>
           </View>
         ))}
-      </View>
+      </View>}
 
       {/* Milestones */}
       <View style={styles.section}>

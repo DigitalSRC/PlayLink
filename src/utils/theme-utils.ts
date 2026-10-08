@@ -12,6 +12,12 @@ export interface ThemeColors {
   bg: string;
   card: string;
   cardAlt: string;
+  /** A surface one step lighter than `card`, for content that must stand out from the page. */
+  cardRaised: string;
+  /** Body text for dense detail lines: quieter than textPrimary, clearer than textSecondary. */
+  textBody: string;
+  /** Accent blue tuned for small text: brighter on dark surfaces, deeper on light ones. */
+  accentText: string;
   border: string;
   textPrimary: string;
   textSecondary: string;
@@ -26,6 +32,9 @@ const THEME_COLORS: Record<AppTheme, ThemeColors> = {
     bg: '#0F0F14',
     card: '#1C1C24',
     cardAlt: '#0F0F14',
+    cardRaised: '#2B2B38',
+    textBody: '#D2D2DC',
+    accentText: '#6CB6FF',
     border: '#2C2C38',
     textPrimary: '#FFFFFF',
     textSecondary: '#999999',
@@ -38,6 +47,9 @@ const THEME_COLORS: Record<AppTheme, ThemeColors> = {
     bg: '#F2F2F7',
     card: '#FFFFFF',
     cardAlt: '#F2F2F7',
+    cardRaised: '#FFFFFF',
+    textBody: '#3A3A44',
+    accentText: '#0062CC',
     border: '#E0E0E8',
     textPrimary: '#000000',
     textSecondary: '#666666',

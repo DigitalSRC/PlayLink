@@ -34,6 +34,7 @@ interface GroupRow {
   format: string;
   no_go: string[];
   confirmed: boolean;
+  local_event_id?: string | null;
   group_players: GroupPlayerRow[];
 }
 
@@ -65,6 +66,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   format: row.format,
   noGo: row.no_go as NoGoRule[],
   confirmed: row.confirmed,
+  localEventId: row.local_event_id ?? undefined,
 });
 
 /**
@@ -111,6 +113,8 @@ export interface CreateGroupDraft {
   format: string;
   noGo: NoGoRule[];
   hostBracket: number;
+  /** The store event the group is playing at, chosen from the calendar; omit for none. */
+  localEventId?: string;
 }
 
 /**
@@ -137,6 +141,7 @@ export const createGroup = async (hostId: string, draft: CreateGroupDraft): Prom
       game_type: draft.gameType,
       format: draft.format,
       no_go: draft.noGo,
+      local_event_id: draft.localEventId ?? null,
     })
     .select()
     .single();
@@ -274,7 +279,11 @@ export interface GroupResultPlacement {
   playerId: string;
   placement: number;
   outcome: GameOutcome;
+  /** Total points for the round, including venueBonus. */
   pointsAwarded: number;
+  /** How much of pointsAwarded is the store-event bonus (0 or VENUE_EVENT_BONUS). Absent on
+   * rounds recorded before the bonus existed. */
+  venueBonus?: number;
 }
 
 export interface GroupResult {
@@ -342,7 +351,9 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
 /**
  * Submits a round's results through the submit_group_result SQL function, which verifies the
  * caller is the group's host and that every placed player is a member, scores the raw placement
- * order server-side (so points can't be inflated from the client), and inserts a pending result
+ * order server-side (so points can't be inflated from the client), adds the one-time store-event
+ * bonus for a group linked to a store event if the round is reported inside that event's window
+ * (decided by the server's own clock in the venue's time zone), and inserts a pending result
  * with a fresh dispute window. The caller sends only the finish order, never computed points.
  * Parameters: groupId, roundNumber (1-indexed — the caller passes group.roundsPlayed + 1),
  * submittedBy (unused server-side, kept for call-site compatibility; the host is derived from the

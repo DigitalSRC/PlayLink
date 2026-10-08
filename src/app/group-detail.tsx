@@ -24,6 +24,7 @@ import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatBrackets } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
+import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { applyGroupResultPoints, finalizeGroupResultIfReady, GroupResult } from '../lib/group-api';
 import { profileKeys } from '../hooks/useProfileQueries';
 import {
@@ -417,7 +418,7 @@ export default function GroupDetail() {
               <>
                 <Text style={styles.resultStatusTitle}>Round {activeResult.roundNumber} results submitted</Text>
                 <Text style={styles.resultStatusSub}>
-                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it.
+                  Finalizes in {dispusteWindowMinutesLeft} min unless someone disputes it. Points are added once it&apos;s final.
                 </Text>
                 <Pressable style={styles.disputeBtn} onPress={() => handleDispute(activeResult)}>
                   <Text style={styles.disputeBtnText}>⚠️ Something's wrong with this</Text>
@@ -453,7 +454,12 @@ export default function GroupDetail() {
         <View style={styles.metaCard}>
           {editing ? (
             <>
-              <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+              {/* A store-event group stays at its store: the link (and its bonus) is to that venue. */}
+              {group.localEventId ? (
+                <Text style={styles.metaRow}>📍 {group.location}</Text>
+              ) : (
+                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+              )}
 
               <Text style={styles.editLabel}>Day</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -531,6 +537,11 @@ export default function GroupDetail() {
           ) : (
             <>
               <Text style={styles.metaRow}>📍 {group.location}</Text>
+              {group.localEventId && (
+                <Text style={styles.storeEventRow}>
+                  🏪 For {group.location}&apos;s store event · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
+                </Text>
+              )}
               <Text style={styles.metaRow}>🕐 {group.time}</Text>
               <Text style={styles.metaRow}>👥 {group.players.length} / {group.targetPlayers} players</Text>
               {group.format === 'Commander' && (
@@ -548,6 +559,11 @@ export default function GroupDetail() {
                 <Text style={styles.joinCodeLabel}>JOIN CODE</Text>
                 <Text style={styles.joinCodeValue}>{group.joinCode}</Text>
               </View>
+              {isHost && (
+                <Text style={styles.hostHelpNote}>
+                  Share this code with friends — they enter it under Find → Join a Group.
+                </Text>
+              )}
             </>
           )}
         </View>
@@ -598,6 +614,11 @@ export default function GroupDetail() {
                       timeLocked ? `⏳ ${minutesRemaining} min wait` : null,
                       headcountLocked ? `👥 Need ${minPlayers - group.players.length} more player${minPlayers - group.players.length > 1 ? 's' : ''}` : null,
                     ].filter(Boolean).join('  ·  ')}
+                  </Text>
+                )}
+                {!group.confirmed && (
+                  <Text style={styles.hostHelpNote}>
+                    Confirm Game locks in who&apos;s playing so you can report results. It opens {CONFIRM_LOCK_MS / 60000} minutes after you post — time for players to join — once at least {minPlayers} are in.
                   </Text>
                 )}
               </>
@@ -848,6 +869,18 @@ function DraggablePlacementRow({
 }
 
 const styles = StyleSheet.create({
+  hostHelpNote: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#888',
+    marginTop: 8,
+  },
+  storeEventRow: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#34C759',
+    marginBottom: 6,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0F0F14',
