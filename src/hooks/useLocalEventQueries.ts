@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EventAreaResolution } from '../data/local-events';
 import { EventAreaError, resolveEventArea } from '../lib/event-area-api';
 import { fetchLocalEvents } from '../lib/local-event-api';
+import { calendarLocation } from '../utils/calendar-utils';
 
 /**
  * Query key factory for local event data, so every call site shares the same cache keys.
@@ -50,6 +51,26 @@ export const useEventAreaQuery = (location: string) =>
     staleTime: 60 * 60 * 1000,
     retry: (failureCount, error) => error.code === 'unavailable' && failureCount < 1,
   });
+
+/**
+ * Loads the Calendar tab's data ahead of time, in the background, so opening the tab shows the
+ * month straight away instead of "Finding events near...". It runs the very same two queries
+ * the Calendar runs - which area the player's location belongs to, then that area's events -
+ * so the answers land in the shared cache under the keys the Calendar reads.
+ * It is mounted in the tab layout, which exists for as long as the player is signed in, so the
+ * load starts on whichever tab they land on and also follows a change of location made anywhere.
+ * Parameters: savedLocation (the profile's location, or nothing while the profile loads).
+ * Returns: nothing; it exists only for its effect on the cache.
+ * Edge cases: does nothing with no usable location (blank, or the old "Nearby" placeholder);
+ * a failed lookup is left for the Calendar to report and retry, and shows nothing here; if the
+ * data is already cached and fresh, no request is made; it never claims the Calendar starter
+ * reward, which still requires actually opening the tab.
+ */
+export const usePreloadCalendar = (savedLocation: string | null | undefined): void => {
+  const location = calendarLocation(savedLocation);
+  const areaQuery = useEventAreaQuery(location);
+  useLocalEventsQuery(areaQuery.data?.area.id ?? '');
+};
 
 /**
  * Asks the server to refresh an area's events now (the "Update events" button), then reloads

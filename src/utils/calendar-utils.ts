@@ -269,3 +269,20 @@ export const formatAgo = (iso: string | null | undefined, nowMs: number): string
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? '' : 's'} ago`;
 };
+
+// "Nearby" is what onboarding used to save when the city was left blank. It isn't a place.
+const LEGACY_BLANK_LOCATION = 'nearby';
+
+/**
+ * Turns a profile's saved location into the text the Calendar looks events up by.
+ * The Calendar tab and the background preload both go through this, so they always ask for the
+ * same area and share one cached answer instead of looking it up twice.
+ * Parameters: saved (the profile's free-text location, or nothing while it loads).
+ * Returns: the trimmed location, or an empty string when there is no usable one.
+ * Edge cases: null, undefined, and whitespace give an empty string; so does the placeholder
+ * "Nearby" in any capitalisation, which older profiles carry instead of a real city.
+ */
+export const calendarLocation = (saved: string | null | undefined): string => {
+  const trimmed = saved?.trim() ?? '';
+  return trimmed.toLowerCase() === LEGACY_BLANK_LOCATION ? '' : trimmed;
+};
