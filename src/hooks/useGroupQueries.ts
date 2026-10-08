@@ -219,14 +219,12 @@ export const useSubmitGroupResultMutation = () => {
       roundNumber,
       submittedBy,
       placements,
-      nowMs,
     }: {
       groupId: string;
       roundNumber: number;
       submittedBy: string;
       placements: PlacementInput[];
-      nowMs?: number;
-    }) => submitGroupResult(groupId, roundNumber, submittedBy, placements, nowMs),
+    }) => submitGroupResult(groupId, roundNumber, submittedBy, placements),
     onSuccess: (_data, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.results(groupId) });
     },

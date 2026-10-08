@@ -15,6 +15,7 @@ const makeProfile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   draws: 0,
   points: 100,
   monthlyPoints: 0,
+  pointBalance: 0,
   rivalIds: [],
   ...overrides,
 });

@@ -16,6 +16,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 8000,
     monthlyPoints: 0,
+    pointBalance: 0,
     rivalIds: ['109', '113'],
   },
   {
@@ -33,6 +34,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 420,
     monthlyPoints: 320,
+    pointBalance: 0,
     rivalIds: ['111', '105'],
   },
   {
@@ -50,6 +52,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 210,
     monthlyPoints: 140,
+    pointBalance: 0,
     rivalIds: ['101', '108'],
   },
   {
@@ -67,6 +70,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 160,
     monthlyPoints: 110,
+    pointBalance: 0,
     rivalIds: ['112'],
   },
   {
@@ -84,6 +88,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 680,
     monthlyPoints: 520,
+    pointBalance: 0,
     rivalIds: ['116', '111'],
   },
   {
@@ -101,6 +106,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 60,
     monthlyPoints: 30,
+    pointBalance: 0,
     rivalIds: ['114'],
   },
   {
@@ -118,6 +124,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 300,
     monthlyPoints: 200,
+    pointBalance: 0,
     rivalIds: ['102'],
   },
   {
@@ -135,6 +142,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 190,
     monthlyPoints: 120,
+    pointBalance: 0,
     rivalIds: ['103', '110'],
   },
   {
@@ -157,6 +165,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 130,
     monthlyPoints: 80,
+    pointBalance: 0,
     rivalIds: ['118', '113'],
   },
   {
@@ -174,6 +183,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 260,
     monthlyPoints: 180,
+    pointBalance: 0,
     rivalIds: ['108', '118'],
   },
   {
@@ -191,6 +201,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 370,
     monthlyPoints: 260,
+    pointBalance: 0,
     rivalIds: ['105', '102'],
   },
   {
@@ -208,6 +219,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 40,
     monthlyPoints: 20,
+    pointBalance: 0,
     rivalIds: ['115', '104'],
   },
   {
@@ -225,6 +237,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 190,
     monthlyPoints: 600,
+    pointBalance: 0,
     rivalIds: ['105', '116'],
   },
   {
@@ -242,6 +255,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 340,
     monthlyPoints: 240,
+    pointBalance: 0,
     rivalIds: ['106', '117'],
   },
   {
@@ -259,6 +273,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 70,
     monthlyPoints: 40,
+    pointBalance: 0,
     rivalIds: ['112'],
   },
   {
@@ -276,6 +291,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 610,
     monthlyPoints: 440,
+    pointBalance: 0,
     rivalIds: ['105', '118'],
   },
   {
@@ -293,6 +309,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 165,
     monthlyPoints: 100,
+    pointBalance: 0,
     rivalIds: ['114'],
   },
   {
@@ -310,6 +327,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 450,
     monthlyPoints: 360,
+    pointBalance: 0,
     rivalIds: ['116', '110'],
   },
   {
@@ -327,6 +345,7 @@ export const SEED_PROFILES: UserProfile[] = [
     draws: 0,
     points: 850,
     monthlyPoints: 500,
+    pointBalance: 0,
     rivalIds: ['103'],
   },
 ];

@@ -48,6 +48,7 @@ const mockCreatedProfile: UserProfile = {
   draws: 0,
   points: 0,
   monthlyPoints: 0,
+  pointBalance: 0,
 };
 
 const mockMutateAsync = jest.fn<

@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import WeekCalendar from '../../components/WeekCalendar';
+import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, visibleGames } from '../../data/types';
 import { PARTICIPATION_POINTS } from '../../utils/scoring-utils';
@@ -12,6 +13,8 @@ import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
  * Shows the player's Points balance, win/loss record, a weekly calendar of every group the
  * player has joined (now that a player can hold a different group on each day of the week
  * instead of just one "active" group at a time), and rival hierarchy.
+ * Shows the player's spendable Points (a button into the Shop), win/loss record, active group, and rival hierarchy.
+ * Their own name is drawn the way they've dressed it in the Shop (name color and title).
  * Rival section distinguishes between one chosen Rival (red), up to two Contenders (gold), and an optional Familiar Foe slot for the most-played-against player.
  * A Pickup Game button launches an ad-hoc life counter session without creating a formal group.
  * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
@@ -22,7 +25,7 @@ import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
  */
 export default function HomeScreen() {
   const router = useRouter();
-  const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst, awardPoints } = useApp();
+  const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst } = useApp();
   const colors = useThemeColors();
 
   if (!currentUser) return null;
@@ -41,13 +44,23 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={[styles.greeting, { color: colors.textSecondary }]}>{isNewPlayer ? 'Welcome,' : 'Welcome back,'}</Text>
-          <Text style={[styles.username, { color: colors.textPrimary }]}>{currentUser.displayName ?? currentUser.username}</Text>
+          <PlayerName
+            name={currentUser.displayName ?? currentUser.username}
+            cosmetics={{ title: currentUser.title, nameColor: currentUser.nameColor }}
+            style={[styles.username, { color: colors.textPrimary }]}
+          />
           <Text style={[styles.location, { color: colors.textSecondary }]}>{currentUser.location}</Text>
         </View>
-        <View style={[styles.xpBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.xpLabel}>PTS</Text>
-          <Text style={[styles.xpValue, { color: colors.textPrimary }]}>{currentUser.points}</Text>
-        </View>
+        <Pressable
+          style={[styles.xpBadge, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => router.push('/(tabs)/shop')}
+          accessibilityRole="button"
+          accessibilityLabel={`${currentUser.pointBalance} points. Open the shop`}
+        >
+          <Text style={styles.xpLabel}>POINTS</Text>
+          <Text style={[styles.xpValue, { color: colors.textPrimary }]}>{currentUser.pointBalance}</Text>
+          <Text style={styles.xpShop}>Shop →</Text>
+        </Pressable>
       </View>
 
       {isNewPlayer && (
@@ -60,7 +73,7 @@ export default function HomeScreen() {
             2. Play. You can be in one group at a time. The host reports how each round finished.
           </Text>
           <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
-            3. Earn points. Everyone gets {PARTICIPATION_POINTS} points a round just for playing, more the higher you finish, and +{VENUE_EVENT_BONUS} once for a group made from a store&apos;s calendar event. Points decide the monthly leaderboard on the Stats tab.
+            3. Earn points. Everyone gets {PARTICIPATION_POINTS} points a round just for playing, more the higher you finish, and +{VENUE_EVENT_BONUS} once for a group made from a store&apos;s calendar event. Spend them in the Shop (tap your points, top right) on titles, name colors, and card borders. What you earn each month is also your Score, which ranks the leaderboard on the Stats tab - spending never lowers it.
           </Text>
           <Pressable
             style={styles.howItWorksButton}
@@ -281,6 +294,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
+  },
+  xpShop: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#007AFF',
+    marginTop: 2,
   },
   xpLabel: {
     fontSize: 10,
