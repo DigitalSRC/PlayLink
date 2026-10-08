@@ -295,9 +295,12 @@ export default function ProfileCreation() {
       rivalCardAnims.forEach((anim) => anim.setValue(0));
       rivals.forEach((_, i) => {
         setTimeout(() => {
+          // Driven from JS on purpose. With the native driver, picking a rival re-rendered the
+          // cards and reset their opacity to the last value JS knew about - 0 - so every rival
+          // vanished the moment one was tapped.
           Animated.spring(rivalCardAnims[i], {
             toValue: 1,
-            useNativeDriver: true,
+            useNativeDriver: false,
             bounciness: 12,
           }).start();
         }, 300 + i * 200);
@@ -542,13 +545,13 @@ export default function ProfileCreation() {
   );
 
   const renderRivalReveal = () => (
-    <View style={styles.rivalContainer}>
+    <ScrollView style={styles.rivalContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.stepTitle}>Choose Your Rival</Text>
       <Text style={styles.stepSubtitle}>
         One rival to chase. The others lurk as Contenders.
       </Text>
       <Text style={styles.rivalExplainer}>
-        Rivals are players who play the same games as you and are closest to you in points this month. Your Rival sits on your Home tab so you can keep an eye on their record, and groups they&apos;re in get flagged when you look for a game. The list refreshes as points change, and nothing is at stake in who you pick.
+        These players are closest to you in points this month. Pick the one you refuse to lose to. Honor and bragging rights are on the line.
       </Text>
 
       {computedRivals.map((rival, i) => {
@@ -614,7 +617,7 @@ export default function ProfileCreation() {
           No rivals matched yet — play some games to find them!
         </Text>
       )}
-    </View>
+    </ScrollView>
   );
 
   const canProceed =

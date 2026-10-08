@@ -24,6 +24,7 @@ interface GroupRow {
   created_at: string;
   scheduled_at: string | null;
   play_date?: string | null;
+  area?: string | null;
   rounds_played: number;
   target_players: number;
   brackets: number[];
@@ -62,6 +63,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   createdAt: new Date(row.created_at).getTime(),
   scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).getTime() : undefined,
   playDate: row.play_date ?? undefined,
+  area: row.area ?? undefined,
   roundsPlayed: row.rounds_played,
   players: row.group_players.map(mapPlayerRow),
   targetPlayers: row.target_players,
@@ -118,6 +120,8 @@ export interface CreateGroupDraft {
   /** The calendar day the host picked, "YYYY-MM-DD" on their phone. The one-group-per-day rule
    * counts this day, not the UTC date of scheduledAt. */
   playDate?: string;
+  /** The host's event area (an event_areas id), so the posting is listed for their neighbours. */
+  area?: string;
   targetPlayers: number;
   brackets: number[];
   location: string;
@@ -139,9 +143,11 @@ export interface CreateGroupDraft {
  * host's own group_players insert fails even though the group row was created — callers should
  * treat any error here as "creation failed," not attempt to reuse a partially-created group.
  * A host who already has a group that day is refused at the seat insert (the per-day rule lives
- * on group_players), which is that second case. If the database does not have the play_date
- * column yet (20261008120000 not applied), the group is created without it and the server falls
- * back to bucketing by UTC date, rather than every create failing.
+ * on group_players), which is that second case. The server also refuses an eighth posting by
+ * the same player, with a message meant for them. If the database does not have the play_date
+ * or area column yet (20261008120000 / 20261008140000 not applied), the group is created without
+ * them - the server then buckets by UTC date and the posting is listed in every area - rather
+ * than every create failing.
  */
 export const createGroup = async (hostId: string, draft: CreateGroupDraft): Promise<Group> => {
   const row: Record<string, unknown> = {
@@ -158,13 +164,19 @@ export const createGroup = async (hostId: string, draft: CreateGroupDraft): Prom
     no_go: draft.noGo,
     local_event_id: draft.localEventId ?? null,
   };
+  // Columns added after the first release of groups. A server that hasn't had their migration
+  // applied rejects the whole insert, so they are kept apart from the columns every server has.
+  const newer: Record<string, unknown> = {};
+  if (draft.playDate) newer.play_date = draft.playDate;
+  if (draft.area) newer.area = draft.area;
+  const hasNewer = Object.keys(newer).length > 0;
   let { data, error } = await supabase
     .from('groups')
-    .insert(draft.playDate ? { ...row, play_date: draft.playDate } : row)
+    .insert(hasNewer ? { ...row, ...newer } : row)
     .select()
     .single();
-  // PGRST204: the API doesn't know the column. Only then is it safe to retry without it.
-  if (error && error.code === 'PGRST204' && draft.playDate) {
+  // PGRST204: the API doesn't know a column. Only then is it safe to retry without the newer ones.
+  if (error && error.code === 'PGRST204' && hasNewer) {
     ({ data, error } = await supabase.from('groups').insert(row).select().single());
   }
   if (error) throw error;

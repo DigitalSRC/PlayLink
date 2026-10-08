@@ -131,6 +131,43 @@ describe("createGroup and the day a group is played", () => {
     expect(group.id).toBe("group-1");
   });
 
+  it("sends the host's area so the posting is listed for their neighbours", async () => {
+    await createGroup("host-1", draft({ area: "reno-sparks" }));
+
+    expect(mockGroupInserts[0].area).toBe("reno-sparks");
+  });
+
+  it("leaves area out entirely when it isn't known, and reads it back when stored", async () => {
+    mockFetchedRow = storedRow({ area: "reno-sparks" });
+
+    const group = await createGroup("host-1", draft());
+
+    expect("area" in mockGroupInserts[0]).toBe(false);
+    expect(group.area).toBe("reno-sparks");
+  });
+
+  it("drops both newer columns on the retry when the server lacks one of them", async () => {
+    mockGroupInsertResults = [
+      { data: null, error: { code: "PGRST204", message: "Could not find the 'area' column" } },
+      { data: { id: "group-1" }, error: null },
+    ];
+
+    await createGroup("host-1", draft({ area: "reno-sparks" }));
+
+    expect(mockGroupInserts).toHaveLength(2);
+    expect("area" in mockGroupInserts[1]).toBe(false);
+    expect("play_date" in mockGroupInserts[1]).toBe(false);
+    expect(mockGroupInserts[1].scheduled_at).toBe("2026-10-10T02:00:00.000Z");
+  });
+
+  it("passes on the server's message when the posting limit is reached", async () => {
+    const error = { code: "P0001", message: "You already have 7 postings up, which is the most allowed at once. Delete one, or wait for one to finish." };
+    mockGroupInsertResults = [{ data: null, error }];
+
+    await expect(createGroup("host-1", draft())).rejects.toBe(error);
+    expect(mockSeatInserts).toHaveLength(0);
+  });
+
   it("does not retry for any other refusal", async () => {
     const error = { code: "23505", message: 'duplicate key value violates unique constraint "groups_join_code_idx"' };
     mockGroupInsertResults = [{ data: null, error }];

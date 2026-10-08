@@ -3,6 +3,7 @@ import { Group } from "../data/groups";
 import {
   buildNewPlayer,
   canJoinGroup,
+  countPostingsBy,
   findGroupByUsername,
   findGroupOnDay,
   findGroupsForPlayer,
@@ -11,6 +12,9 @@ import {
   groupDayKey,
   groupErrorMessage,
   isGroupFull,
+  isGroupInArea,
+  MAX_POSTINGS,
+  sortGroupsBySchedule,
   isHostForUser,
   normalizePositiveInt,
   removePlayerFromGroup,
@@ -387,5 +391,68 @@ describe("group-utils", () => {
     const code = generateJoinCode([]);
     expect(typeof code).toBe("string");
     expect(code).toHaveLength(6);
+  });
+
+  // ── Find list: order, area, and the posting limit ────────────────────────
+
+  it("sortGroupsBySchedule puts the soonest game first", () => {
+    const later = makeGroup({ id: 'later', scheduledAt: 3000, createdAt: 1 });
+    const soon = makeGroup({ id: 'soon', scheduledAt: 1000, createdAt: 2 });
+    const middle = makeGroup({ id: 'middle', scheduledAt: 2000, createdAt: 3 });
+
+    expect(sortGroupsBySchedule([later, soon, middle]).map((g) => g.id)).toEqual(['soon', 'middle', 'later']);
+  });
+
+  it("sortGroupsBySchedule lists games at the same time in the order they were posted", () => {
+    const third = makeGroup({ id: 'third', scheduledAt: 1000, createdAt: 30 });
+    const first = makeGroup({ id: 'first', scheduledAt: 1000, createdAt: 10 });
+    const second = makeGroup({ id: 'second', scheduledAt: 1000, createdAt: 20 });
+
+    expect(sortGroupsBySchedule([third, first, second]).map((g) => g.id)).toEqual(['first', 'second', 'third']);
+  });
+
+  it("sortGroupsBySchedule puts unscheduled groups last, oldest posting first", () => {
+    const newerUnscheduled = makeGroup({ id: 'u2', createdAt: 2 });
+    const olderUnscheduled = makeGroup({ id: 'u1', createdAt: 1 });
+    const scheduled = makeGroup({ id: 's', scheduledAt: 9999999999999, createdAt: 99 });
+
+    expect(sortGroupsBySchedule([newerUnscheduled, scheduled, olderUnscheduled]).map((g) => g.id)).toEqual(['s', 'u1', 'u2']);
+  });
+
+  it("sortGroupsBySchedule returns a new list and leaves its input alone", () => {
+    const input = [makeGroup({ id: 'b', scheduledAt: 2 }), makeGroup({ id: 'a', scheduledAt: 1 })];
+    const sorted = sortGroupsBySchedule(input);
+
+    expect(sorted).not.toBe(input);
+    expect(input.map((g) => g.id)).toEqual(['b', 'a']);
+    expect(sortGroupsBySchedule([])).toEqual([]);
+  });
+
+  it("isGroupInArea lists a posting from the player's own area and hides one from elsewhere", () => {
+    expect(isGroupInArea(makeGroup({ area: 'reno-sparks' }), 'reno-sparks')).toBe(true);
+    expect(isGroupInArea(makeGroup({ area: 'sacramento-california-us' }), 'reno-sparks')).toBe(false);
+  });
+
+  it("isGroupInArea lists everything when the player's area isn't known or the filter is off", () => {
+    expect(isGroupInArea(makeGroup({ area: 'sacramento-california-us' }), undefined)).toBe(true);
+    expect(isGroupInArea(makeGroup(), undefined)).toBe(true);
+  });
+
+  it("isGroupInArea lists a posting with no recorded area everywhere", () => {
+    expect(isGroupInArea(makeGroup(), 'reno-sparks')).toBe(true);
+  });
+
+  it("countPostingsBy counts the groups a player created, whoever hosts them now", () => {
+    const handedOff = makeGroup({ id: 'a', createdBy: '1', players: [buildNewPlayer('2', "Bob", 2, "Riverside", "Host")] });
+    const mine = makeGroup({ id: 'b', createdBy: '1' });
+    const theirs = makeGroup({ id: 'c', createdBy: '2', players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Member")] });
+
+    expect(countPostingsBy([handedOff, mine, theirs], '1')).toBe(2);
+    expect(countPostingsBy([handedOff, mine, theirs], 'nobody')).toBe(0);
+    expect(countPostingsBy([], '1')).toBe(0);
+  });
+
+  it("the posting limit is 7", () => {
+    expect(MAX_POSTINGS).toBe(7);
   });
 });
