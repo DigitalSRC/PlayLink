@@ -31,6 +31,7 @@ import {
   upcomingAgenda,
   venueLabelsByDay,
 } from '../../utils/calendar-utils';
+import { findGroupOnDay } from '../../utils/group-utils';
 import { useThemeColors } from '../../utils/theme-utils';
 import { storeEventLinkParams } from '../../utils/venue-bonus-utils';
 
@@ -64,8 +65,8 @@ const MAX_LOCATION_LENGTH = 100;
  * the server declines (too soon) or that fails still leaves the last saved events on screen with
  * a note; the editor rejects text shorter than 2 or longer than 100 characters; the format
  * switcher is hidden when only one format exists; an event on a day that has already passed has
- * no "Create game" button; tapping it while already in a group explains why instead of opening
- * the form.
+ * no "Create game" button; tapping it on a day the player already has a group explains why
+ * instead of opening the form.
  */
 export default function CalendarScreen() {
   const router = useRouter();
@@ -133,13 +134,17 @@ export default function CalendarScreen() {
    * Parameters: event (the listing that was tapped), dateKey (the "YYYY-MM-DD" day it is listed
    * under, which pins a weekly event to one night).
    * Returns: void.
-   * Edge cases: a player who is already in a group gets an alert instead, since they can only
-   * be in one; if the groups list hasn't loaded yet the form opens and its own check (and the
-   * database's one-group rule) still applies.
+   * Edge cases: a player who already has a group on that day is told so instead, since they can
+   * be in one group per day; any other day opens the form. If the groups list hasn't loaded yet
+   * the form opens and its own check (and the database's one-per-day rule) still applies.
    */
   const createGameAt = (event: LocalEvent, dateKey: string) => {
-    if (groups.some((g) => g.players.some((p) => p.id === currentUser.id))) {
-      showDialog('Already in a group', 'Leave your current group before creating another.');
+    const sameDay = findGroupOnDay(groups, currentUser.id, dateKey);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${formatDayHeading(dateKey)}. You can be in one group per day - leave that one first, or pick an event on another day.`
+      );
       return;
     }
     router.push({ pathname: '/(tabs)/browse', params: storeEventLinkParams(event, dateKey) });

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, visibleGames } from '../../data/types';
+import { findGroupsForPlayer } from '../../utils/group-utils';
 import { PARTICIPATION_POINTS } from '../../utils/scoring-utils';
 import { useThemeColors } from '../../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
@@ -13,9 +14,10 @@ import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
  * Their own name is drawn the way they've dressed it in the Shop (name color and title).
  * Rival section distinguishes between one chosen Rival (red), up to two Contenders (gold), and an optional Familiar Foe slot for the most-played-against player.
  * A Pickup Game button launches an ad-hoc life counter session without creating a formal group.
+ * Lists every group the player is in, soonest first (they can hold one per day), with Find and Create always underneath.
  * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
  * Returns: a scrollable dashboard screen with a Pickup Game card and quick-action buttons for Find and Create Group.
- * Edge cases: hides the active group section when the user is in no group; hides the rivals section entirely when the rivals array is empty;
+ * Edge cases: shows "No Active Group" above the Find and Create buttons when the user is in no group; hides the rivals section entirely when the rivals array is empty;
  * a player with no recorded games yet is greeted with "Welcome," and a short "How PlayLink works" card (where to find a game, the one-group
  * rule, and how points are earned), which disappears for good once their first round is on record.
  */
@@ -26,9 +28,8 @@ export default function HomeScreen() {
 
   if (!currentUser) return null;
 
-  const activeGroup = groups.find((g) =>
-    g.players.some((p) => p.username === currentUser.username)
-  );
+  // A player can hold one group per day, so there may be several; soonest first.
+  const myGroups = findGroupsForPlayer(groups, currentUser.id);
 
   const totalGames = currentUser.wins + currentUser.losses;
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
@@ -66,7 +67,7 @@ export default function HomeScreen() {
             1. Find a game. The Calendar tab lists game nights at stores near you — tap “+ Create game” on one to start a group there. Or use Find to join a group someone else posted.
           </Text>
           <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
-            2. Play. You can be in one group at a time. The host reports how each round finished.
+            2. Play. You can be in one group per day. The host reports how each round finished.
           </Text>
           <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
             3. Earn points. Everyone gets {PARTICIPATION_POINTS} points a round just for playing, more the higher you finish, and +{VENUE_EVENT_BONUS} once for a group made from a store&apos;s calendar event. Spend them in the Shop (tap your points, top right) on titles, name colors, and card borders. What you earn each month is also your Score, which ranks the leaderboard on the Stats tab - spending never lowers it.
@@ -116,26 +117,29 @@ export default function HomeScreen() {
       </View>}
 
       {/* Active group */}
-      {activeGroup ? (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your Active Group</Text>
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+          {myGroups.length === 0 ? 'No Active Group' : myGroups.length === 1 ? 'Your Group' : 'Your Groups'}
+        </Text>
+        {myGroups.map((group) => (
           <Pressable
-            style={[styles.activeGroupCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: GAME_COLOR[activeGroup.gameType] }]}
-            onPress={() => router.push({ pathname: '/group-detail', params: { id: activeGroup.id } })}
+            key={group.id}
+            style={[styles.activeGroupCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: GAME_COLOR[group.gameType] }]}
+            onPress={() => router.push({ pathname: '/group-detail', params: { id: group.id } })}
           >
             <Text style={[styles.activeGroupGame, { color: colors.textSecondary }]}>
-              {GAME_EMOJI[activeGroup.gameType]} {activeGroup.format}
+              {GAME_EMOJI[group.gameType]} {group.format}
             </Text>
-            <Text style={[styles.activeGroupName, { color: colors.textPrimary }]}>{activeGroup.name}</Text>
+            <Text style={[styles.activeGroupName, { color: colors.textPrimary }]}>{group.name}</Text>
             <Text style={[styles.activeGroupMeta, { color: colors.textSecondary }]}>
-              {activeGroup.players.length}/{activeGroup.targetPlayers} players · {activeGroup.location}
+              {group.players.length}/{group.targetPlayers} players · {group.location}
             </Text>
-            <Text style={styles.activeGroupTime}>{activeGroup.time}</Text>
+            <Text style={styles.activeGroupTime}>{group.time}</Text>
           </Pressable>
-        </View>
-      ) : (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>No Active Group</Text>
+        ))}
+        {myGroups.length > 0 && (
+          <Text style={[styles.groupsHint, { color: colors.textMuted }]}>One group per day - add another for a different day.</Text>
+        )}
           <View style={styles.groupActionRow}>
             <Pressable style={[styles.groupActionBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push('/(tabs)/browse')}>
               <Text style={styles.groupActionEmoji}>🔍</Text>
@@ -149,8 +153,7 @@ export default function HomeScreen() {
               <Text style={[styles.groupActionLabel, { color: colors.textSecondary }]}>Create Group</Text>
             </Pressable>
           </View>
-        </View>
-      )}
+      </View>
 
       {/* Rivals */}
       {rivals.length > 0 && (
@@ -382,6 +385,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderLeftWidth: 4,
     borderWidth: 1,
+    marginBottom: 10,
+  },
+  groupsHint: {
+    fontSize: 12,
+    marginBottom: 10,
   },
   activeGroupGame: {
     fontSize: 12,

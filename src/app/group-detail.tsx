@@ -22,7 +22,8 @@ import Animated, {
 import PlayerName from '../components/PlayerName';
 import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
-import { formatBrackets } from '../utils/group-utils';
+import { formatDayHeading } from '../utils/calendar-utils';
+import { findGroupOnDay, formatBrackets, groupDayKey, groupErrorMessage } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
 import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { profileKeys } from '../hooks/useProfileQueries';
@@ -70,12 +71,13 @@ const ROW_HEIGHT = 64;                  // draggable placement row height, inclu
  * Returns: a scrollable detail screen or null when the group ID does not match any group, or
  * currentUser hasn't loaded yet.
  * Edge cases: renders null when the group is not found (e.g. it was just deleted by its last
- * player leaving).
+ * player leaving); joining is refused with an explanation when the player already has a group
+ * on the same day, since a player can be in one group per day.
  */
 export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentUser } = useApp();
+  const { currentUser, groups } = useApp();
   const queryClient = useQueryClient();
 
   const { data: group } = useGroupQuery(id);
@@ -158,6 +160,15 @@ export default function GroupDetail() {
       showDialog('Group full', 'No open spots in this group.');
       return;
     }
+    const dayKey = groupDayKey(group);
+    const sameDay = findGroupOnDay(groups, currentUser.id, dayKey);
+    if (sameDay && sameDay.id !== group.id) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${dayKey ? formatDayHeading(dayKey) : 'that day'}. You can be in one group per day - leave that one first, or join a group on another day.`
+      );
+      return;
+    }
     try {
       await joinMutation.mutateAsync({
         groupId: group.id,
@@ -167,7 +178,7 @@ export default function GroupDetail() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showDialog('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
     } catch (err) {
-      showDialog('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
   };
 

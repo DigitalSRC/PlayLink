@@ -1,8 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -29,7 +28,7 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
-import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
+import { findGroupOnDay, formatBrackets, generateJoinCode, groupDayKey, groupErrorMessage } from '../../utils/group-utils';
 import { useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
 import { dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
@@ -63,7 +62,8 @@ const CLEARED_CREATE_PARAMS = {
  * and the group it posts is linked to it for the store-event bonus. The form has no way to add that link itself.
  * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load, plus the storeEvent* params written by storeEventLinkParams.
  * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
- * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
+ * A player can be in one group per day. Creating or joining a second group on a day they already have one explains that and names the group in the way; a different day is always allowed. Every create and join ends with a pop-up saying it worked.
+ * Edge cases: join by code explains when the code is the wrong length, not found, for a group the player is already in (with a shortcut to open it), for a day they already have a group, or for a full group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
  */
 export default function BrowseScreen() {
   const router = useRouter();
@@ -93,9 +93,6 @@ export default function BrowseScreen() {
   const [newBrackets, setNewBrackets] = useState<number[]>([2]);
   const [newNoGo, setNewNoGo] = useState<NoGoRule[]>([]);
 
-  const [feedbackMsg, setFeedbackMsg] = useState('');
-  const feedbackOpacity = useRef(new Animated.Value(0)).current;
-  const feedbackScale = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
     if (params.openCreate !== '1') return;
@@ -137,26 +134,42 @@ export default function BrowseScreen() {
     }
   }, [showCreate, storeEvent]);
 
-  const showFeedback = (msg: string) => {
-    setFeedbackMsg(msg);
-    feedbackOpacity.setValue(0);
-    feedbackScale.setValue(0.8);
-    Animated.parallel([
-      Animated.spring(feedbackScale, { toValue: 1, useNativeDriver: true, bounciness: 10 }),
-      Animated.timing(feedbackOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      setTimeout(() => {
-        Animated.timing(feedbackOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
-      }, 2000);
-    });
-  };
-
-  const displayUser = currentUser?.username ?? 'Player';
   // Groups the app currently shows and lets a player join (see COMMANDER_ONLY).
   const listedGroups = groups.filter((g) => isGroupInScope(g.gameType, g.format));
-  const currentUserGroup = groups.find((g) =>
-    g.players.some((p) => p.id === currentUser?.id)
-  );
+
+  /**
+   * Explains why a player can't join a group, or returns false when nothing is in the way.
+   * Shared by the Join button on a card and by join-by-code, so both give the same answers.
+   * Parameters: group (the group being joined).
+   * Returns: true if a pop-up was shown and the join must stop; false if it may go ahead.
+   * Edge cases: a player already in this very group is offered a shortcut to open it; the day
+   * check finds nothing while the groups list is still loading, and the database's own
+   * one-per-day rule then refuses the join instead.
+   */
+  const explainJoinBlock = (group: Group): boolean => {
+    if (!currentUser) return true;
+    if (group.players.some((p) => p.id === currentUser.id)) {
+      showDialog('You’re already in this group', `You already have a seat in “${group.name}”.`, [
+        { text: 'OK', style: 'cancel' },
+        { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
+      ]);
+      return true;
+    }
+    const dayKey = groupDayKey(group);
+    const sameDay = findGroupOnDay(groups, currentUser.id, dayKey);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${dayKey ? formatDayHeading(dayKey) : 'that day'}. You can be in one group per day - leave that one first, or join a group on another day.`
+      );
+      return true;
+    }
+    if (group.players.length >= group.targetPlayers) {
+      showDialog('Group full', 'This group has no open spots.');
+      return true;
+    }
+    return false;
+  };
 
   // While the app is Commander-only the game filter is hidden and the list is simply every
   // Commander group; otherwise the chosen filter narrows it.
@@ -181,14 +194,7 @@ export default function BrowseScreen() {
       showDialog('Code not found', 'No group matches that join code. Double-check with the host.');
       return;
     }
-    if (currentUserGroup) {
-      showDialog('Already in a group', 'Leave your current group before joining another.');
-      return;
-    }
-    if (group.players.length >= group.targetPlayers) {
-      showDialog('Group full', 'This group has no open spots.');
-      return;
-    }
+    if (explainJoinBlock(group)) return;
     setCodeValue('');
     setShowJoinModal(false);
     handleJoin(group);
@@ -197,14 +203,7 @@ export default function BrowseScreen() {
   const handleJoin = async (group: Group) => {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
-    if (currentUserGroup) {
-      showDialog('Already in a group', 'Leave your current group before joining another.');
-      return;
-    }
-    if (group.players.length >= group.targetPlayers) {
-      showDialog('Group full', 'This group has no open spots.');
-      return;
-    }
+    if (explainJoinBlock(group)) return;
 
     try {
       await joinGroupMutation.mutateAsync({
@@ -213,9 +212,12 @@ export default function BrowseScreen() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showFeedback(`Joined ${group.name}!`);
+      showDialog('You’re in!', `You joined “${group.name}” - ${group.location}, ${group.time}. It’s on your Home tab.`, [
+        { text: 'OK', style: 'cancel' },
+        { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
+      ]);
     } catch (err) {
-      showDialog('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -270,12 +272,24 @@ export default function BrowseScreen() {
   const handleCreate = async () => {
     if (!currentUser) return;
     if (groupsLoading || createGroupMutation.isPending) return;
-    if (currentUserGroup) {
-      showDialog('Already in a group', 'Leave your current group first.');
-      return;
-    }
     if (!newName.trim() || !newLocation.trim()) {
       showDialog('Missing info', 'Group name and location are required.');
+      return;
+    }
+
+    const scheduledAt = (() => {
+      const d = new Date(); d.setDate(d.getDate() + newDateOffset);
+      d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
+      return d.getTime();
+    })();
+    // The day as it reads on this phone: the one-group-per-day rule counts this, not the UTC date.
+    const playDate = dateKeyFromMs(scheduledAt);
+    const sameDay = findGroupOnDay(groups, currentUser.id, playDate);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${formatDayHeading(playDate)}. You can be in one group per day - pick another day for this one, or leave that group first.`
+      );
       return;
     }
 
@@ -288,11 +302,8 @@ export default function BrowseScreen() {
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
       localEventId: storeEvent?.eventId,
-      scheduledAt: (() => {
-        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
-        d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
-        return d.getTime();
-      })(),
+      scheduledAt,
+      playDate,
       time: (() => {
         const d = new Date(); d.setDate(d.getDate() + newDateOffset);
         const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -304,12 +315,19 @@ export default function BrowseScreen() {
     };
 
     try {
-      await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
+      const created = await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeCreateForm();
-      showFeedback('Group posted! Other players can now find and join it.');
+      showDialog(
+        'Group posted!',
+        `“${created.name}” is live for ${formatDayHeading(playDate)}. Other players can find it here, or join with the code ${created.joinCode}.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: created.id } }) },
+        ]
+      );
     } catch (err) {
-      showDialog('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t post group', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -332,14 +350,6 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Feedback banner */}
-      <Animated.View
-        style={[styles.feedbackBanner, { opacity: feedbackOpacity, transform: [{ scale: feedbackScale }] }]}
-        pointerEvents="none"
-      >
-        <Text style={styles.feedbackText}>{feedbackMsg}</Text>
-      </Animated.View>
-
       <View style={styles.topBar}>
         <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Find a Game</Text>
         <View style={styles.topBarActions}>
@@ -387,7 +397,7 @@ export default function BrowseScreen() {
           <Text style={[styles.emptyText, { color: colors.textMuted }]}>{COMMANDER_ONLY ? 'No Commander groups posted yet. Be the first — tap + Create.' : 'No groups found for this game type.'}</Text>
         )}
         {filtered.map((group) => {
-          const inThisGroup = group.players.some((p) => p.username === displayUser);
+          const inThisGroup = group.players.some((p) => p.id === currentUser?.id);
           const isFull = group.players.length >= group.targetPlayers;
           const rivalInGroup = rivals.some((r) =>
             group.players.some((p) => p.username === r.username)
@@ -506,7 +516,7 @@ export default function BrowseScreen() {
               </View>
               <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
                 Nothing here is saved until you tap "Post Group" below — closing this
-                without posting won't create anything. You can be in one group at a time.
+                without posting won't create anything. You can be in one group per day.
               </Text>
 
               {storeEvent ? (
@@ -684,21 +694,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-  },
-  feedbackBanner: {
-    position: 'absolute',
-    top: 80,
-    alignSelf: 'center',
-    backgroundColor: '#34C759',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    zIndex: 99,
-  },
-  feedbackText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
   },
   topBar: {
     flexDirection: 'row',
