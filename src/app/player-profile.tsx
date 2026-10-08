@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -19,6 +20,7 @@ import {
   visibleGames,
 } from '../data/types';
 import { fetchProfileByUsername, fetchProfilesByIds } from '../lib/profile-api';
+import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 
 /**
  * Read-only public profile view for any player.
@@ -35,6 +37,8 @@ export default function PlayerProfileScreen() {
   const router = useRouter();
   const { username } = useLocalSearchParams<{ username: string }>();
   const { rivals, chosenRivalId, setChosenRivalId } = useApp();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const rivalMatch = rivals.find((r) => r.username === username) ?? null;
 
@@ -257,10 +261,12 @@ export default function PlayerProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
   },
   content: {
     paddingTop: 56,
@@ -280,15 +286,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   homeBtn: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 10,
     paddingVertical: 6,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   homeBtnText: {
-    color: '#AAA',
+    color: c.textBody,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -316,18 +322,18 @@ const styles = StyleSheet.create({
   displayName: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 2,
   },
   usernameTag: {
     fontSize: 13,
-    color: '#666',
+    color: c.textMuted,
     fontWeight: '600',
     marginBottom: 6,
   },
   location: {
     fontSize: 14,
-    color: '#666',
+    color: c.textMuted,
     marginBottom: 8,
   },
   rivalBannerPill: {
@@ -368,11 +374,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   statsCard: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   statRow: {
     flexDirection: 'row',
@@ -385,23 +391,23 @@ const styles = StyleSheet.create({
   statNum: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
   },
   pointsColor: {
     color: '#007AFF',
   },
   statLabel: {
     fontSize: 11,
-    color: '#555',
+    color: c.textMuted,
     marginTop: 2,
   },
   statDivider: {
     width: 1,
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.border,
   },
   progressTrack: {
     height: 4,
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.border,
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -416,7 +422,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#555',
+    color: c.textMuted,
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
@@ -431,11 +437,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1.5,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
   },
   gamePillText: {
     fontSize: 13,
-    color: '#CCC',
+    color: c.textBody,
     fontWeight: '600',
   },
   gameFormatBlock: {
@@ -451,13 +457,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#2C2C38',
-    backgroundColor: '#1C1C24',
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#AAA',
+    color: c.textBody,
   },
   bracketRow: {
     flexDirection: 'row',
@@ -471,7 +477,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#007AFF',
-    backgroundColor: '#001A3D',
+    backgroundColor: c.accentBg,
   },
   bracketNum: {
     fontSize: 20,
@@ -480,55 +486,55 @@ const styles = StyleSheet.create({
   },
   bracketLabel: {
     fontSize: 9,
-    color: '#555',
+    color: c.textMuted,
     marginTop: 2,
   },
   noGoChip: {
     paddingVertical: 7,
     paddingHorizontal: 14,
     borderRadius: 16,
-    backgroundColor: '#3D1215',
+    backgroundColor: c.dangerBg,
     borderWidth: 1.5,
     borderColor: '#C0392B',
   },
   noGoText: {
     fontSize: 12,
-    color: '#FFF',
+    color: c.dangerOnBg,
     fontWeight: '600',
   },
   notFoundBox: {
     alignItems: 'center',
     marginTop: 40,
     padding: 24,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   notFoundText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#888',
+    color: c.textSecondary,
     marginBottom: 8,
   },
   notFoundSub: {
     fontSize: 13,
-    color: '#555',
+    color: c.textMuted,
     textAlign: 'center',
   },
   rivalMiniCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   rivalMiniCardMain: {
     borderColor: '#FF3B30',
-    backgroundColor: '#1F1012',
+    backgroundColor: c.rivalMainBg,
     borderWidth: 1.5,
   },
   rivalMiniAvatar: {
@@ -554,12 +560,12 @@ const styles = StyleSheet.create({
   rivalMiniName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 2,
   },
   rivalMiniMeta: {
     fontSize: 12,
-    color: '#666',
+    color: c.textMuted,
   },
   rivalMiniBadge: {
     paddingVertical: 3,
@@ -582,7 +588,7 @@ const styles = StyleSheet.create({
     color: '#C9952A',
   },
   rivalBtn: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
@@ -591,7 +597,7 @@ const styles = StyleSheet.create({
     borderColor: '#FF3B30',
   },
   rivalBtnActive: {
-    backgroundColor: '#1F1012',
+    backgroundColor: c.rivalMainBg,
   },
   rivalBtnText: {
     color: '#FF3B30',

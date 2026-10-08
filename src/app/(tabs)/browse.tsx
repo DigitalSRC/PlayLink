@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -29,7 +29,7 @@ import {
   NoGoRule,
 } from '../../data/types';
 import { findGroupOnDay, formatBrackets, generateJoinCode, groupDayKey, groupErrorMessage } from '../../utils/group-utils';
-import { useThemeColors } from '../../utils/theme-utils';
+import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
 import { dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
 import { parseStoreEventLink, StoreEventLink, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
@@ -70,6 +70,7 @@ export default function BrowseScreen() {
   const params = useLocalSearchParams();
   const { currentUser, groups, groupsLoading, rivals, getNow } = useApp();
   const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
 
@@ -476,7 +477,7 @@ export default function BrowseScreen() {
                 value={codeValue}
                 onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
                 placeholder="XXXXXX"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.placeholder}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 maxLength={6}
@@ -557,12 +558,12 @@ export default function BrowseScreen() {
               )}
 
               <Text style={styles.fieldLabel}>Group Name</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor={colors.placeholder} />
 
               {!storeEvent && (
               <>
               <Text style={styles.fieldLabel}>Location</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor={colors.placeholder} />
 
               <Text style={styles.fieldLabel}>Date</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
@@ -576,7 +577,7 @@ export default function BrowseScreen() {
                       style={[styles.chip, { backgroundColor: colors.bg }, newDateOffset === i && styles.chipTimeActive]}
                       onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
                     >
-                      <Text style={[styles.chipText, newDateOffset === i && styles.chipTextActive]}>{label}</Text>
+                      <Text style={[styles.chipText, newDateOffset === i && { color: colors.accentOnBg }]}>{label}</Text>
                     </Pressable>
                   );
                 })}
@@ -617,7 +618,7 @@ export default function BrowseScreen() {
 
               <View style={styles.halfField}>
                 <Text style={styles.fieldLabel}>Players Needed</Text>
-                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
+                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor={colors.placeholder} />
               </View>
 
               {newGame !== 'mtg' && (
@@ -643,7 +644,7 @@ export default function BrowseScreen() {
                           style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipBracketActive]}
                           onPress={() => toggleBracket(b)}
                         >
-                          <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                          <Text style={[styles.chipText, active && { color: colors.accentOnBg }]}>
                             {BRACKET_INFO[b].label}
                           </Text>
                         </Pressable>
@@ -663,7 +664,7 @@ export default function BrowseScreen() {
                       style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipNoGo]}
                       onPress={() => toggleNoGo(rule)}
                     >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{rule}</Text>
+                      <Text style={[styles.chipText, active && { color: colors.dangerOnBg }]}>{rule}</Text>
                     </Pressable>
                   );
                 })}
@@ -685,12 +686,14 @@ export default function BrowseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   storeEventNote: {
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 19,
-    color: '#34C759',
+    color: c.successText,
   },
   container: {
     flex: 1,
@@ -716,7 +719,7 @@ const styles = StyleSheet.create({
     borderColor: '#34C759',
   },
   joinToggleText: {
-    color: '#34C759',
+    color: c.successText,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -816,7 +819,7 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   codeInput: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.bg,
     borderWidth: 1.5,
     borderColor: '#34C759',
     borderRadius: 10,
@@ -824,7 +827,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 22,
     fontWeight: '800',
-    color: '#34C759',
+    color: c.successText,
     letterSpacing: 6,
     textAlign: 'center',
   },
@@ -874,7 +877,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 12,
@@ -899,7 +902,7 @@ const styles = StyleSheet.create({
   },
   gamePickerLabel: {
     fontSize: 10,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -913,26 +916,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#333',
+    borderColor: c.border,
   },
   chipText: {
     fontSize: 12,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
   },
   chipTextActive: {
     color: '#FFF',
   },
   chipNoGo: {
-    backgroundColor: '#3D1215',
+    backgroundColor: c.dangerBg,
     borderColor: '#C0392B',
   },
   chipBracketActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   chipTimeActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   timePickerContent: {
@@ -972,7 +975,7 @@ const styles = StyleSheet.create({
   timeSeparator: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#555',
+    color: c.textMuted,
     marginBottom: 2,
   },
   timePeriod: {
@@ -986,20 +989,20 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   periodBtnActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   periodText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
   },
   periodTextActive: {
     color: '#007AFF',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     borderRadius: 10,
     paddingVertical: 11,
     paddingHorizontal: 14,
@@ -1014,7 +1017,7 @@ const styles = StyleSheet.create({
   },
   comingSoonNote: {
     fontSize: 11,
-    color: '#555',
+    color: c.textMuted,
     fontStyle: 'italic',
     marginTop: 10,
     marginBottom: 4,
@@ -1046,7 +1049,7 @@ const styles = StyleSheet.create({
   groupCardRival: {
     borderColor: '#FF3B30',
     borderWidth: 2,
-    backgroundColor: '#1E1214',
+    backgroundColor: c.rivalMainBg,
   },
   rivalGroupBadge: {
     paddingVertical: 3,
@@ -1080,12 +1083,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: '#333',
+    backgroundColor: c.border,
   },
   fullBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#888',
+    color: c.textSecondary,
     letterSpacing: 0.5,
   },
   groupName: {
@@ -1113,7 +1116,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   joinBtnDisabled: {
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.disabledBg,
   },
   joinBtnText: {
     color: '#FFF',
@@ -1124,12 +1127,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderWidth: 1,
     borderColor: '#34C759',
   },
   inGroupText: {
-    color: '#34C759',
+    color: c.successText,
     fontSize: 12,
     fontWeight: '700',
   },

@@ -44,14 +44,18 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+// Where the light/dark choice is remembered on this device. It is a setting of the phone, not
+// of the account, so it survives signing out and is the same for whoever signs in next.
+const THEME_STORAGE_KEY = 'app-theme';
+
 // Where the player's picked Rival is remembered on this device, one entry per account.
 const chosenRivalStorageKey = (userId: string) => `chosen-rival:${userId}`;
 
 /**
  * Provides global app state to all child screens.
  * Holds the Supabase auth session, the signed-in user's profile (fetched and cached via React
- * Query, see useProfileQueries.ts), the group list, computed rivals, app theme, and a
- * dev-date offset for testing. currentUser and its mutators (awardPoints/addWin/addLoss/
+ * Query, see useProfileQueries.ts), the group list, computed rivals, app theme (remembered on
+ * the device), and a dev-date offset for testing. currentUser and its mutators (awardPoints/addWin/addLoss/
  * addDraw/resetMonthlyPoints) are backed by Supabase rather than plain local state — reads
  * come from the cached profile query, writes go through profile mutations with optimistic
  * cache updates so they still feel instant.
@@ -71,12 +75,39 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [rivals, setRivals] = useState<UserProfile[]>([]);
   const [chosenRivalId, setChosenRivalIdState] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
-  const [theme, setTheme] = useState<AppTheme>('dark');
+  const [theme, setThemeState] = useState<AppTheme>('dark');
   const [devDateOffset, setDevDateOffset] = useState(0);
 
   useEffect(() => {
     registerSupabaseAutoRefresh();
   }, []);
+
+  // Restores the saved light/dark choice. Until it has been read the app shows dark, its default.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(THEME_STORAGE_KEY)
+      .then((saved) => {
+        if (!cancelled && (saved === 'light' || saved === 'dark')) setThemeState(saved);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Switches the app between light and dark, and remembers the choice on this device so it is
+   * still in effect the next time the app opens. Before this was saved, the app went back to
+   * dark on every launch.
+   * Parameters: t ('light' or 'dark').
+   * Returns: void.
+   * Edge cases: a failed save is ignored - the choice still holds for this session; the setting
+   * is per device, not synced to the account.
+   */
+  const setTheme = (t: AppTheme) => {
+    setThemeState(t);
+    AsyncStorage.setItem(THEME_STORAGE_KEY, t).catch(() => {});
+  };
 
   // Rehydrates the rivals list from the profile's stored rival_ids whenever it loads or
   // changes — without this, a returning user (or one whose rivals were just updated by the

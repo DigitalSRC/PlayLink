@@ -1,6 +1,7 @@
 import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { Cosmetics } from '../data/shop';
 import { borderStyleFor, safeNameColor } from '../utils/shop-utils';
+import { useThemeColors } from '../utils/theme-utils';
 
 interface PlayerNameProps {
   /** The name to show (display name or username - the caller decides which). */
@@ -20,17 +21,19 @@ interface PlayerNameProps {
  * color, with their title on a line underneath. Every screen that shows another player's name
  * should use this, so a purchase shows up everywhere at once.
  * Parameters: name, cosmetics, style, titleStyle, showTitle (see PlayerNameProps).
- * Returns: the name, and the title beneath it when there is one.
+ * Returns: the name, and the title beneath it when there is one. The two are siblings, so put
+ * them in a column (a plain View) wherever the parent lays its children out in a row.
  * Edge cases: with no cosmetics, or a color that isn't a valid "#RRGGBB", the name renders in
  * the screen's own style exactly as plain text would; an empty title is not shown.
  */
 export default function PlayerName({ name, cosmetics, style, titleStyle, showTitle = true }: PlayerNameProps) {
+  const colors = useThemeColors();
   const color = safeNameColor(cosmetics?.nameColor);
   const title = cosmetics?.title?.trim();
   return (
     <>
       <Text style={[style, color !== undefined && { color }]}>{name}</Text>
-      {showTitle && !!title && <Text style={[styles.title, titleStyle]}>{title}</Text>}
+      {showTitle && !!title && <Text style={[styles.title, { color: colors.textSecondary }, titleStyle]}>{title}</Text>}
     </>
   );
 }
@@ -75,7 +78,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     fontStyle: 'italic',
-    color: '#8A8A99',
     marginTop: 1,
   },
 });

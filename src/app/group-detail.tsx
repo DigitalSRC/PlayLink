@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Pressable,
@@ -25,6 +25,7 @@ import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from 
 import { formatDayHeading } from '../utils/calendar-utils';
 import { findGroupOnDay, formatBrackets, groupDayKey, groupErrorMessage } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
+import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { profileKeys } from '../hooks/useProfileQueries';
 import {
@@ -78,6 +79,8 @@ export default function GroupDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { currentUser, groups } = useApp();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const queryClient = useQueryClient();
 
   const { data: group } = useGroupQuery(id);
@@ -470,7 +473,7 @@ export default function GroupDetail() {
               {group.localEventId ? (
                 <Text style={styles.metaRow}>📍 {group.location}</Text>
               ) : (
-                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor="#555" />
+                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor={colors.placeholder} />
               )}
 
               <Text style={styles.editLabel}>Day</Text>
@@ -792,6 +795,8 @@ function DraggablePlacementRow({
   'use no memo'; // React Compiler can't see that mutating a SharedValue's .value is the sanctioned
   // Reanimated update pattern, not an actual prop mutation — opt this component out rather than
   // have the compiler bail on (or the linter flag) every drag gesture callback below.
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const dragY = useSharedValue(0);
   const startY = useSharedValue(0);
   const isDragging = useSharedValue(false);
@@ -857,22 +862,24 @@ function DraggablePlacementRow({
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   hostHelpNote: {
     fontSize: 12,
     lineHeight: 17,
-    color: '#888',
+    color: c.textSecondary,
     marginTop: 8,
   },
   storeEventRow: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#34C759',
+    color: c.successText,
     marginBottom: 6,
   },
   container: {
     flex: 1,
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
   },
   content: {
     paddingTop: 56,
@@ -893,7 +900,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1.5,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     marginBottom: 12,
   },
   gameBadgeText: {
@@ -903,13 +910,13 @@ const styles = StyleSheet.create({
   groupName: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 10,
   },
   editTitleInput: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     borderBottomWidth: 1,
     borderBottomColor: '#007AFF',
     marginBottom: 10,
@@ -917,7 +924,7 @@ const styles = StyleSheet.create({
   },
   confirmedBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderRadius: 8,
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -926,13 +933,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   confirmedText: {
-    color: '#34C759',
+    color: c.successText,
     fontSize: 12,
     fontWeight: '700',
   },
   roundInProgressBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#001A3D',
+    backgroundColor: c.accentBg,
     borderRadius: 8,
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -946,7 +953,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   resultStatusCard: {
-    backgroundColor: '#001A3D',
+    backgroundColor: c.accentBg,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
@@ -960,27 +967,27 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   resultStatusSub: {
-    color: '#AAA',
+    color: c.textBody,
     fontSize: 12,
     marginTop: 8,
   },
   resultRow: {
-    color: '#FFF',
+    color: c.textPrimary,
     fontSize: 13,
     lineHeight: 20,
   },
   metaCard: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     gap: 8,
   },
   metaRow: {
     fontSize: 14,
-    color: '#AAA',
+    color: c.textBody,
   },
   noGoRow: {
     color: '#C0392B',
@@ -994,31 +1001,31 @@ const styles = StyleSheet.create({
   joinCodeLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#555',
+    color: c.textMuted,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
   joinCodeValue: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#E6A817',
+    color: c.warnText,
     letterSpacing: 3,
     fontVariant: ['tabular-nums'],
   },
   editInput: {
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
     fontSize: 14,
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 8,
   },
   editLabel: {
     fontSize: 11,
-    color: '#555',
+    color: c.textMuted,
     marginBottom: 4,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -1032,12 +1039,12 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     flex: 1,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   editBtnText: {
     color: '#007AFF',
@@ -1046,7 +1053,7 @@ const styles = StyleSheet.create({
   },
   confirmBtn: {
     flex: 1,
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
@@ -1054,20 +1061,20 @@ const styles = StyleSheet.create({
     borderColor: '#34C759',
   },
   confirmBtnLocked: {
-    backgroundColor: '#1C1C24',
-    borderColor: '#333',
+    backgroundColor: c.card,
+    borderColor: c.border,
   },
   confirmBtnText: {
-    color: '#34C759',
+    color: c.successText,
     fontWeight: '700',
     fontSize: 14,
   },
   confirmBtnTextLocked: {
-    color: '#555',
+    color: c.textMuted,
   },
   confirmLockNote: {
     fontSize: 12,
-    color: '#666',
+    color: c.textMuted,
     marginTop: 8,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -1086,22 +1093,22 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   cancelBtnText: {
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '700',
     fontSize: 14,
   },
   rosterTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#555',
+    color: c.textMuted,
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
@@ -1109,18 +1116,18 @@ const styles = StyleSheet.create({
   playerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   playerAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -1128,7 +1135,7 @@ const styles = StyleSheet.create({
   playerInitial: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
   },
   playerInfo: {
     flex: 1,
@@ -1136,18 +1143,18 @@ const styles = StyleSheet.create({
   playerName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 2,
   },
   playerMeta: {
     fontSize: 12,
-    color: '#666',
+    color: c.textMuted,
   },
   makeHostBtn: {
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 7,
-    backgroundColor: '#2C1A00',
+    backgroundColor: c.warnBg,
     borderWidth: 1,
     borderColor: '#E6A817',
     marginLeft: 8,
@@ -1155,7 +1162,7 @@ const styles = StyleSheet.create({
   makeHostText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#E6A817',
+    color: c.warnText,
   },
   hostBadge: {
     paddingVertical: 3,
@@ -1180,7 +1187,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   joinBtnDisabled: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.disabledBg,
   },
   joinBtnText: {
     color: '#FFF',
@@ -1188,7 +1195,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   leaveBtn: {
-    backgroundColor: '#3D1215',
+    backgroundColor: c.dangerBg,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
@@ -1208,15 +1215,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   deletePostingBtn: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#555',
+    borderColor: c.border,
   },
   deletePostingBtnText: {
-    color: '#AAA',
+    color: c.textBody,
     fontWeight: '700',
     fontSize: 16,
   },
@@ -1235,28 +1242,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#333',
-    backgroundColor: '#0F0F14',
+    borderColor: c.border,
+    backgroundColor: c.bg,
   },
   editChipActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   editChipText: {
     fontSize: 12,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
   },
   editChipTextActive: {
-    color: '#FFF',
+    color: c.accentOnBg,
   },
   timePicker: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     paddingVertical: 8,
     paddingHorizontal: 12,
     gap: 10,
@@ -1279,14 +1286,14 @@ const styles = StyleSheet.create({
   timeValue: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     minWidth: 38,
     textAlign: 'center',
   },
   timeSeparator: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#555',
+    color: c.textMuted,
     marginBottom: 2,
   },
   timePeriod: {
@@ -1298,17 +1305,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 7,
     borderWidth: 1.5,
-    borderColor: '#333',
-    backgroundColor: '#1C1C24',
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   periodBtnActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   periodText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
   },
   periodTextActive: {
     color: '#007AFF',
@@ -1320,24 +1327,24 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   reportSheet: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: 40,
     maxHeight: '80%',
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   reportTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFF',
+    color: c.textPrimary,
     marginBottom: 6,
   },
   reportSubtitle: {
     fontSize: 13,
-    color: '#AAA',
+    color: c.textBody,
     lineHeight: 18,
     marginBottom: 16,
   },
@@ -1352,11 +1359,11 @@ const styles = StyleSheet.create({
     height: ROW_HEIGHT - 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F0F14',
+    backgroundColor: c.bg,
     borderRadius: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
   },
   dragHandle: {
     paddingHorizontal: 6,
@@ -1364,7 +1371,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   dragHandleText: {
-    color: '#666',
+    color: c.textMuted,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -1372,24 +1379,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.textPrimary,
   },
   tieChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#333',
-    backgroundColor: '#1C1C24',
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   tieChipActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   tieChipText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
   },
   tieChipTextActive: {
     color: '#007AFF',

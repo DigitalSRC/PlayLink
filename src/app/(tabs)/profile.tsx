@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -27,7 +27,7 @@ import {
 } from '../../data/types';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { updatePassword } from '../../lib/auth-api';
-import { useThemeColors } from '../../utils/theme-utils';
+import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
 
@@ -65,7 +65,9 @@ export default function ProfileScreen() {
     clearCurrentUser, setChosenRivalId,
     theme, setTheme,
   } = useApp();
-  const { bg, card, border, textPrimary, textSecondary: textSec } = useThemeColors();
+  const colors = useThemeColors();
+  const { bg, card, border, textPrimary, textSecondary: textSec } = colors;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const updateProfileMutation = useUpdateProfileMutation();
 
   if (!currentUser) return null;
@@ -178,7 +180,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: bg }]} contentContainerStyle={styles.content}>
       {dirty && (
-        <View style={[styles.unsavedBanner, { backgroundColor: isDark ? '#2A1F00' : '#FFF8E0' }]}>
+        <View style={[styles.unsavedBanner, { backgroundColor: colors.unsavedBanner }]}>
           <Text style={styles.unsavedBannerText}>⚠️ You have unsaved changes</Text>
         </View>
       )}
@@ -236,7 +238,7 @@ export default function ProfileScreen() {
       {/* ── Add Game modal ── */}
       {showGameModal && (
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? '#1C1C24' : '#FFF', borderColor: border }]}>
+          <View style={[styles.modalCard, { backgroundColor: card, borderColor: border }]}>
             <Text style={[styles.modalTitle, { color: textPrimary }]}>Games I Play</Text>
             <Text style={[styles.modalSub, { color: textSec }]}>Tap to select or deselect</Text>
             {ALL_GAMES.map((g) => {
@@ -264,7 +266,7 @@ export default function ProfileScreen() {
             })}
             <View style={styles.modalBtns}>
               <Pressable
-                style={[styles.modalCancelBtn, { backgroundColor: isDark ? '#2C2C38' : '#EEE' }]}
+                style={[styles.modalCancelBtn, { backgroundColor: border }]}
                 onPress={() => { setModalGames(editGames); setShowGameModal(false); }}
               >
                 <Text style={[styles.modalCancelText, { color: textSec }]}>Cancel</Text>
@@ -373,7 +375,7 @@ export default function ProfileScreen() {
                 style={[styles.chip, { borderColor: border, backgroundColor: card }, active && styles.chipNoGo]}
                 onPress={() => toggleNoGo(rule)}
               >
-                <Text style={[styles.chipText, { color: textSec }, active && styles.chipTextActive]}>{rule}</Text>
+                <Text style={[styles.chipText, { color: textSec }, active && { color: colors.dangerOnBg }]}>{rule}</Text>
               </Pressable>
             );
           })}
@@ -535,14 +537,16 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1 },
   content: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 50 },
   unsavedBanner: {
     borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
     marginBottom: 16, borderWidth: 1, borderColor: '#E6A817', alignItems: 'center',
   },
-  unsavedBannerText: { fontSize: 13, fontWeight: '700', color: '#E6A817' },
+  unsavedBannerText: { fontSize: 13, fontWeight: '700', color: c.warnText },
 
   /* Profile header */
   profileHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28, gap: 18 },
@@ -561,10 +565,10 @@ const styles = StyleSheet.create({
   },
   locationInput: { fontSize: 14, borderBottomWidth: 1, paddingVertical: 4, paddingHorizontal: 0 },
   devBadge: {
-    backgroundColor: '#0A2A0A', borderRadius: 6, paddingHorizontal: 8,
+    backgroundColor: c.successBg, borderRadius: 6, paddingHorizontal: 8,
     paddingVertical: 3, alignSelf: 'flex-start',
   },
-  devBadgeText: { fontSize: 10, fontWeight: '800', color: '#34C759', letterSpacing: 1 },
+  devBadgeText: { fontSize: 10, fontWeight: '800', color: c.successText, letterSpacing: 1 },
 
   /* Sections */
   section: { marginBottom: 24 },
@@ -629,18 +633,18 @@ const styles = StyleSheet.create({
   chip: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1.5 },
   chipText: { fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: '#FFF' },
-  chipNoGo: { backgroundColor: '#3D1215', borderColor: '#C0392B' },
+  chipNoGo: { backgroundColor: c.dangerBg, borderColor: '#C0392B' },
   bracketRow: { flexDirection: 'row', gap: 8 },
   bracketBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5 },
-  bracketBtnActive: { borderColor: '#007AFF', backgroundColor: '#001A3D' },
+  bracketBtnActive: { borderColor: '#007AFF', backgroundColor: c.accentBg },
   bracketNum: { fontSize: 20, fontWeight: '800' },
   bracketNumActive: { color: '#007AFF' },
   bracketLabel: { fontSize: 9, marginTop: 2 },
 
   /* Rivals */
   rivalCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1.5 },
-  rivalCardChosen: { borderColor: '#FF3B30', backgroundColor: '#1F1012' },
-  rivalCardFoe: { borderColor: '#5B3FCF', backgroundColor: '#12101F' },
+  rivalCardChosen: { borderColor: '#FF3B30', backgroundColor: c.rivalMainBg },
+  rivalCardFoe: { borderColor: '#5B3FCF', backgroundColor: c.rivalFamiliarFoeBg },
   rivalAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#444', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rivalAvatarChosen: { backgroundColor: '#FF3B30' },
   rivalInitial: { fontSize: 18, fontWeight: '800', color: '#FFF' },
@@ -661,11 +665,11 @@ const styles = StyleSheet.create({
   themeRow: { flexDirection: 'row', gap: 10 },
   themeBtn: {
     flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#2C2C38', backgroundColor: 'transparent',
+    borderWidth: 1.5, borderColor: c.border, backgroundColor: 'transparent',
   },
-  themeBtnActive: { backgroundColor: '#0A1030', borderColor: '#007AFF' },
+  themeBtnActive: { backgroundColor: c.accentBg, borderColor: '#007AFF' },
   themeBtnActiveLight: { backgroundColor: '#FFF8E0', borderColor: '#E6A817' },
-  themeBtnText: { fontSize: 14, fontWeight: '700', color: '#888' },
+  themeBtnText: { fontSize: 14, fontWeight: '700', color: c.textSecondary },
   passwordToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   passwordToggleArrow: { fontSize: 18, fontWeight: '700' },
   passwordForm: { marginTop: 14, gap: 10 },
@@ -673,7 +677,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, fontSize: 14,
   },
   passwordErrorText: { fontSize: 12, color: '#C0392B', fontWeight: '600' },
-  passwordSuccessText: { fontSize: 12, color: '#34C759', fontWeight: '600' },
+  passwordSuccessText: { fontSize: 12, color: c.successText, fontWeight: '600' },
   passwordSubmitBtn: {
     backgroundColor: '#007AFF', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
   },
@@ -685,8 +689,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', borderRadius: 14,
     padding: 16, borderWidth: 1,
   },
-  devToolsBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#34C759' },
-  devToolsArrow: { fontSize: 18, color: '#34C759' },
+  devToolsBtnText: { flex: 1, fontSize: 15, fontWeight: '700', color: c.successText },
+  devToolsArrow: { fontSize: 18, color: c.successText },
 
   /* Actions */
   editActions: { gap: 10, marginTop: 8 },
@@ -696,7 +700,7 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontWeight: '700', fontSize: 15 },
   logoutBtn: {
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
-    borderWidth: 1, borderColor: '#3D1215', backgroundColor: 'transparent', marginTop: 8,
+    borderWidth: 1, borderColor: '#C0392B', backgroundColor: 'transparent', marginTop: 8,
   },
   logoutBtnText: { color: '#C0392B', fontWeight: '800', fontSize: 13, letterSpacing: 1.5 },
 });

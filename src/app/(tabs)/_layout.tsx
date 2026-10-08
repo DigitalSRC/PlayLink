@@ -43,7 +43,7 @@ export default function TabLayout() {
 
   if (status === 'loading') {
     return (
-      <View style={styles.loading}>
+      <View style={[styles.loading, { backgroundColor: colors.bg }]}>
         <ActivityIndicator color="#007AFF" />
       </View>
     );
@@ -99,7 +99,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: '#0F0F14',
     alignItems: 'center',
     justifyContent: 'center',
   },
