@@ -25,8 +25,8 @@ const welcomeSeenStorageKey = (userId: string) => `welcome-seen:${userId}`;
  * Returns: a scrollable dashboard screen with a Pickup Game card and quick-action buttons for Find and Create Group.
  * Edge cases: shows "No Active Group" above the Find and Create buttons when the user is in no group; hides the rivals section entirely when the rivals array is empty;
  * a player with no recorded games yet is greeted with "Welcome,". The "How PlayLink works" button opens the guide at any time, and the guide
- * opens by itself once, with a welcome, the first time a new player arrives from onboarding. The "Getting started" card lists the four
- * one-time starter rewards and ticks them off; it is hidden once all four are claimed, and whenever the server has no starter rewards.
+ * opens by itself once, with a welcome, the first time a new player arrives from onboarding. The "Getting started" card lists the three
+ * one-time starter rewards and ticks them off; it is hidden once all three are claimed, and whenever the server has no starter rewards.
  */
 export default function HomeScreen() {
   const router = useRouter();
@@ -95,8 +95,7 @@ export default function HomeScreen() {
 
   const openReward = (key: StarterRewardKey) => {
     if (key === 'view_calendar') router.push('/(tabs)/calendar');
-    else if (key === 'create_group') router.push({ pathname: '/(tabs)/browse', params: { openCreate: '1' } });
-    else if (key === 'join_group') router.push('/(tabs)/browse');
+    else if (key === 'first_group') router.push('/(tabs)/browse');
     else router.push('/(tabs)/profile');
   };
 

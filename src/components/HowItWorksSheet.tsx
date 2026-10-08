@@ -65,7 +65,7 @@ export default function HowItWorksSheet({
             {welcome && (
               <Text style={[styles.lede, { color: colors.textBody }]}>
                 Make a new game or join one, and look through the events in the Calendar.
-                {showRewards ? ` Each of those earns you ${STARTER_REWARD_POINTS} points the first time, and so does picking your Rival.` : ''}
+                {showRewards ? ` Your first game, your first look at the Calendar, and picking your Rival each earn ${STARTER_REWARD_POINTS} points to spend, once.` : ''}
               </Text>
             )}
 

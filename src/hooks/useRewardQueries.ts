@@ -60,7 +60,7 @@ export const useClaimStarterReward = (userId: string | undefined) => {
         if (paid > 0) {
           queryClient.invalidateQueries({ queryKey: profileKeys.detail(userId) });
           const task = STARTER_REWARDS.find((r) => r.key === key)?.label ?? 'Getting started';
-          showDialog(`+${paid} points`, `${task}: done. The points are yours to spend in the Shop, and they count toward your Score.`);
+          showDialog(`+${paid} points`, `${task}: done. The points are yours to spend in the Shop. Starter points don’t count toward your Score.`);
         }
       } catch (err) {
         console.warn(`Starter reward ${key} not claimed:`, err);

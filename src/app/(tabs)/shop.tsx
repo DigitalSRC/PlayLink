@@ -21,7 +21,7 @@ import { useThemeColors } from '../../utils/theme-utils';
  * cosmetic and drawn from text and color, so nothing here needs artwork.
  * The top shows their points and a live preview of their current look. Below are the three
  * sections; each item shows its price, or "Wear" / "Wearing" once owned. Buying asks first,
- * then puts the item on straight away. Points spent here never lower a player's Score or their
+ * and once the item is bought a second pop-up offers to wear it now or leave things as they are. Points spent here never lower a player's Score or their
  * all-time total - only the spendable balance.
  * The catalog, prices, balance, and what each player owns all live on the server; this screen
  * only asks for a purchase and shows the answer. It is reached from the points badge on Home
@@ -88,13 +88,14 @@ export default function ShopScreen() {
   };
 
   /**
-   * Buys an item and puts it on. The server takes the points and records the purchase in one
-   * step; wearing it afterwards is a second, separate request.
+   * Buys an item. The server takes the points and records the purchase in one step. Nothing is
+   * put on: the confirmation that follows asks whether to wear it now, and saying no leaves the
+   * player's look exactly as it was, with the new item waiting in the list as "Wear".
    * Parameters: item (the item to buy).
    * Returns: a promise that resolves once the purchase has gone through or been refused.
    * Edge cases: does nothing while another purchase or change is in flight; if the purchase is
-   * refused nothing is spent and the server's reason is shown; if the purchase succeeds but
-   * putting it on fails, the item is still owned and can be worn from the list.
+   * refused nothing is spent and the server's reason is shown; choosing "Wear it now" goes
+   * through toggleWear, so a failure there is reported and the item is still owned.
    */
   const buy = async (item: ShopItem) => {
     if (busy) return;
@@ -102,18 +103,13 @@ export default function ShopScreen() {
     try {
       await purchaseMutation.mutateAsync({ userId, itemId: item.id });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      let wearing = true;
-      try {
-        await equipMutation.mutateAsync({ userId, kind: item.kind, itemId: item.id });
-      } catch {
-        // Bought but not worn: it now shows as "Wear" in the list, which is recoverable by tapping.
-        wearing = false;
-      }
       showDialog(
         `“${item.name}” is yours`,
-        wearing
-          ? 'You’re wearing it now. You can change what you wear here or on your Profile tab.'
-          : 'It’s in your collection. Tap Wear to put it on.'
+        'Want to wear it now? You can change what you wear any time, here or on your Profile tab.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Wear It Now', onPress: () => toggleWear(item, false) },
+        ]
       );
     } catch (err) {
       showDialog('Couldn’t buy that', err instanceof Error ? err.message : 'Please try again.');
