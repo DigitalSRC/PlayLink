@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { showDialog } from '../../components/AppDialog';
 import { useApp } from '../../context/AppContext';
 import {
   BRACKET_INFO,
@@ -115,6 +115,7 @@ export default function ProfileScreen() {
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDirty(false);
+    showDialog('Profile saved', 'Your changes are live.');
   };
 
   const discardChanges = () => {
@@ -518,7 +519,7 @@ export default function ProfileScreen() {
         )}
         <Pressable
           style={styles.logoutBtn}
-          onPress={() => Alert.alert(
+          onPress={() => showDialog(
             'Log Out',
             'Are you sure you want to log out?',
             [

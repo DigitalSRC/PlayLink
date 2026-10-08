@@ -3,8 +3,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { showDialog } from '../components/AppDialog';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -156,7 +155,7 @@ export default function GroupDetail() {
 
   const handleJoin = async () => {
     if (isFull) {
-      Alert.alert('Group full', 'No open spots in this group.');
+      showDialog('Group full', 'No open spots in this group.');
       return;
     }
     try {
@@ -166,14 +165,13 @@ export default function GroupDetail() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showDialog('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
     } catch (err) {
-      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
-  const handleLeave = async () => {
-    if (!group.players.some((p) => p.id === currentUser.id)) return;
-
+  const leaveGroupNow = async () => {
     try {
       // One server call: it removes this user, deletes the group if they were the last member,
       // and appoints a new host if they were the host. Doing those as separate requests from
@@ -181,14 +179,36 @@ export default function GroupDetail() {
       await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
+      showDialog('You left the group', `You’re no longer in “${group.name}”.`);
     } catch (err) {
-      Alert.alert('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
     }
+  };
+
+  /**
+   * Asks before leaving, since leaving gives up the seat (and, for a host, the host role).
+   * Parameters: none.
+   * Returns: void; leaves only if the player confirms.
+   * Edge cases: does nothing if the player isn't in the group; a host leaving with others still
+   * in the group is told the host role will pass on.
+   */
+  const handleLeave = () => {
+    if (!group.players.some((p) => p.id === currentUser.id)) return;
+    showDialog(
+      'Leave this group?',
+      isHost && group.players.length > 1
+        ? 'You’ll give up your seat, and another player becomes the host.'
+        : 'You’ll give up your seat. You can join again if there is still room.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        { text: 'Leave', style: 'destructive', onPress: leaveGroupNow },
+      ]
+    );
   };
 
   const handleDeletePosting = () => {
     const otherPlayers = group.players.filter((p) => p.id !== currentUser.id).length;
-    Alert.alert(
+    showDialog(
       'Delete this posting?',
       otherPlayers > 0
         ? `This removes the group for everyone, including the other ${otherPlayers} player${otherPlayers > 1 ? 's' : ''} in it. This can't be undone.`
@@ -203,8 +223,9 @@ export default function GroupDetail() {
               await deleteMutation.mutateAsync({ groupId: group.id });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               router.back();
+              showDialog('Posting deleted', `“${group.name}” has been removed.`);
             } catch (err) {
-              Alert.alert('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
+              showDialog('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
             }
           },
         },
@@ -212,14 +233,29 @@ export default function GroupDetail() {
     );
   };
 
-  const handleMakeHost = async (playerId: string) => {
+  const handleMakeHost = (playerId: string) => {
     if (!isHost) return;
     Haptics.selectionAsync();
-    try {
-      await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
-    } catch (err) {
-      Alert.alert('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
-    }
+    const target = group.players.find((p) => p.id === playerId);
+    const targetName = target?.displayName ?? target?.username ?? 'this player';
+    showDialog(
+      `Make ${targetName} the host?`,
+      'They’ll confirm the game and report rounds from now on. You stay in the group as a player.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Make Host',
+          onPress: async () => {
+            try {
+              await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
+              showDialog('Host changed', `${targetName} is now the host.`);
+            } catch (err) {
+              showDialog('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleConfirmGame = async () => {
@@ -227,8 +263,9 @@ export default function GroupDetail() {
     try {
       await confirmMutation.mutateAsync({ groupId: group.id, confirmed: true });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showDialog('Game confirmed', 'When a round ends, tap Report Results to record how it finished.');
     } catch (err) {
-      Alert.alert('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -302,8 +339,9 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowReportModal(false);
+      showDialog(`Round ${group.roundsPlayed + 1} recorded`, 'Points have been paid to every player. The standings are at the top of this page.');
     } catch (err) {
-      Alert.alert('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -324,7 +362,7 @@ export default function GroupDetail() {
         return `${ordinal(p.placement)} - ${player?.displayName ?? player?.username ?? 'Player'}`;
       })
       .join('\n');
-    Alert.alert(
+    showDialog(
       `Submit round ${group.roundsPlayed + 1}?`,
       `${summary}\n\nThis is final. Points are paid right away and the round can’t be changed afterwards.`,
       [
@@ -336,7 +374,7 @@ export default function GroupDetail() {
 
   const handleSaveEdit = async () => {
     if (!editName.trim() || !editLocation.trim()) {
-      Alert.alert('Missing info', 'Name and location are required.');
+      showDialog('Missing info', 'Name and location are required.');
       return;
     }
     try {
@@ -352,8 +390,9 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditing(false);
+      showDialog('Changes saved', 'Everyone in the group sees the update.');
     } catch (err) {
-      Alert.alert('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -660,7 +699,8 @@ export default function GroupDetail() {
       </ScrollView>
 
       {/* Report Results modal */}
-      <Modal visible={showReportModal} animationType="slide" transparent onRequestClose={() => setShowReportModal(false)}>
+      {/* An overlay rather than a native Modal, so the confirm pop-up can open on top of it. */}
+      {showReportModal && (
         <View style={styles.modalBackdrop}>
           <View style={styles.reportSheet}>
             <Text style={styles.reportTitle}>Report Round {group.roundsPlayed + 1}</Text>
@@ -696,7 +736,7 @@ export default function GroupDetail() {
             </View>
           </View>
         </View>
-      </Modal>
+      )}
 
     </View>
   );
@@ -1263,7 +1303,8 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
   modalBackdrop: {
-    flex: 1,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },

@@ -2,7 +2,6 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { showDialog } from '../../components/AppDialog';
 import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
@@ -105,7 +105,7 @@ export default function BrowseScreen() {
     }
     const link = parseStoreEventLink(params, dateKeyFromMs(getNow()));
     if (!link || !isGroupInScope(link.gameType, link.format)) {
-      Alert.alert('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
+      showDialog('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
       router.setParams(CLEARED_CREATE_PARAMS);
       return;
     }
@@ -173,20 +173,20 @@ export default function BrowseScreen() {
     if (groupsLoading || joinGroupMutation.isPending) return;
     const code = codeValue.toUpperCase().trim();
     if (code.length !== 6) {
-      Alert.alert('Invalid code', 'Join codes are 6 characters long.');
+      showDialog('Invalid code', 'Join codes are 6 characters long.');
       return;
     }
     const group = listedGroups.find((g) => g.joinCode === code);
     if (!group) {
-      Alert.alert('Code not found', 'No group matches that join code. Double-check with the host.');
+      showDialog('Code not found', 'No group matches that join code. Double-check with the host.');
       return;
     }
     if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
+      showDialog('Already in a group', 'Leave your current group before joining another.');
       return;
     }
     if (group.players.length >= group.targetPlayers) {
-      Alert.alert('Group full', 'This group has no open spots.');
+      showDialog('Group full', 'This group has no open spots.');
       return;
     }
     setCodeValue('');
@@ -198,11 +198,11 @@ export default function BrowseScreen() {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
     if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
+      showDialog('Already in a group', 'Leave your current group before joining another.');
       return;
     }
     if (group.players.length >= group.targetPlayers) {
-      Alert.alert('Group full', 'This group has no open spots.');
+      showDialog('Group full', 'This group has no open spots.');
       return;
     }
 
@@ -215,7 +215,7 @@ export default function BrowseScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showFeedback(`Joined ${group.name}!`);
     } catch (err) {
-      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -253,7 +253,7 @@ export default function BrowseScreen() {
    */
   const requestCloseCreate = () => {
     if (newName.trim().length > 0) {
-      Alert.alert(
+      showDialog(
         'Discard this group?',
         "You haven't posted this group yet — closing now won't create it. You'll need to post it from this tab before anyone else can see or join it.",
         [
@@ -271,11 +271,11 @@ export default function BrowseScreen() {
     if (!currentUser) return;
     if (groupsLoading || createGroupMutation.isPending) return;
     if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group first.');
+      showDialog('Already in a group', 'Leave your current group first.');
       return;
     }
     if (!newName.trim() || !newLocation.trim()) {
-      Alert.alert('Missing info', 'Group name and location are required.');
+      showDialog('Missing info', 'Group name and location are required.');
       return;
     }
 
@@ -309,7 +309,7 @@ export default function BrowseScreen() {
       closeCreateForm();
       showFeedback('Group posted! Other players can now find and join it.');
     } catch (err) {
-      Alert.alert('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 

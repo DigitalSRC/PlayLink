@@ -1,6 +1,7 @@
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { DialogHost } from '../components/AppDialog';
 import { AppProvider } from '../context/AppContext';
 import { persister, queryClient } from '../lib/query-client';
 
@@ -11,6 +12,8 @@ import { persister, queryClient } from '../lib/query-client';
  * GestureHandlerRootView must wrap the whole tree (not just the screen that needs it) for any
  * react-native-gesture-handler gesture — e.g. group-detail.tsx's drag-and-drop placement
  * reordering — to receive touches correctly, especially on Android.
+ * DialogHost sits beside the Stack, inside AppProvider (it reads the theme), and draws every
+ * pop-up requested through showDialog above whichever screen is open.
  * Parameters: none.
  * Returns: a Stack navigator with headers hidden globally; each screen manages its own header.
  * Edge cases: none — the provider always initialises with default null user state, and the
@@ -22,6 +25,7 @@ export default function RootLayout() {
       <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
         <AppProvider>
           <Stack screenOptions={{ headerShown: false }} />
+          <DialogHost />
         </AppProvider>
       </PersistQueryClientProvider>
     </GestureHandlerRootView>

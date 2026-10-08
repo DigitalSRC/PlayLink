@@ -2,7 +2,6 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { showDialog } from '../../components/AppDialog';
 import MonthCalendar from '../../components/MonthCalendar';
 import { useApp } from '../../context/AppContext';
 import { LocalEvent } from '../../data/local-events';
@@ -139,7 +139,7 @@ export default function CalendarScreen() {
    */
   const createGameAt = (event: LocalEvent, dateKey: string) => {
     if (groups.some((g) => g.players.some((p) => p.id === currentUser.id))) {
-      Alert.alert('Already in a group', 'Leave your current group before creating another.');
+      showDialog('Already in a group', 'Leave your current group before creating another.');
       return;
     }
     router.push({ pathname: '/(tabs)/browse', params: storeEventLinkParams(event, dateKey) });
