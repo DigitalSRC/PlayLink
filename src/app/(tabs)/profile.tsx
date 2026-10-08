@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../../components/AppDialog';
+import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
 import {
   BRACKET_INFO,
@@ -24,8 +25,12 @@ import {
   GameType,
   NO_GO_OPTIONS,
   NoGoRule,
+  UserProfile,
 } from '../../data/types';
+import { ShopItem } from '../../data/shop';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
+import { useClaimStarterReward } from '../../hooks/useRewardQueries';
+import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
 import { updatePassword } from '../../lib/auth-api';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
@@ -49,6 +54,9 @@ const DEV_TOOLS_ENABLED = false;
  * Header row shows an avatar circle on the left and display name / username / location on the right.
  * Settings section includes a dark/light mode toggle, a change-password form, and a Dev Tools
  * shortcut for developer accounts.
+ * "Your Title" shows the player's name as others see it and lists the titles they own; tapping
+ * one wears it, and "No title" takes it off. Buying happens in the Shop, which the row above
+ * opens. Tapping a contender's badge makes them the player's Rival and confirms it.
  * Edits save via useUpdateProfileMutation directly (an optimistic Supabase update keyed to the
  * session id), not through AppContext's currentUser setter; logging out ends the Supabase
  * session and redirects to /sign-in rather than /profile-creation.
@@ -56,7 +64,9 @@ const DEV_TOOLS_ENABLED = false;
  * Returns: a scrollable profile page; null when no user is logged in.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
  * non-developer profiles; the password form validates a 6-character minimum and that both
- * fields match before ever calling Supabase, and shows an inline error or success message.
+ * fields match before ever calling Supabase, and shows an inline error or success message; a
+ * player who owns no titles sees a pointer to the Shop instead of a picker; a title they own
+ * that has since been taken off sale is not listed, though they keep wearing it if it is on.
  */
 export default function ProfileScreen() {
   const router = useRouter();
@@ -69,8 +79,53 @@ export default function ProfileScreen() {
   const { bg, card, border, textPrimary, textSecondary: textSec } = colors;
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const updateProfileMutation = useUpdateProfileMutation();
+  const userId = session?.user.id;
+  const shopItemsQuery = useShopItemsQuery();
+  const ownedItemsQuery = useOwnedShopItemsQuery(userId);
+  const equipMutation = useEquipShopItemMutation();
+  const claimReward = useClaimStarterReward(userId);
 
   if (!currentUser) return null;
+
+  const ownedItemIds = new Set(ownedItemsQuery.data ?? []);
+  const ownedTitles = (shopItemsQuery.data ?? []).filter(
+    (item) => item.kind === 'title' && ownedItemIds.has(item.id)
+  );
+
+  /**
+   * Puts on one of the player's own titles, or takes the title off.
+   * Parameters: item (an owned title, or null for no title).
+   * Returns: a promise that resolves once the change is saved or refused.
+   * Edge cases: does nothing when signed out, while another change is in flight, or when the
+   * choice is what is already worn; a refusal from the server is shown and nothing changes.
+   */
+  const changeTitle = async (item: ShopItem | null) => {
+    if (!userId || equipMutation.isPending) return;
+    if ((item?.value ?? undefined) === (currentUser.title ?? undefined)) return;
+    try {
+      await equipMutation.mutateAsync({ userId, kind: 'title', itemId: item?.id ?? null });
+      Haptics.selectionAsync();
+      showDialog(
+        item ? 'Title changed' : 'Title removed',
+        item ? `You’re now “${item.value}”. It shows under your name everywhere.` : 'Your name now shows without a title.'
+      );
+    } catch (err) {
+      showDialog('Couldn’t change your title', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  /**
+   * Makes one of the player's rivals their main Rival and says so.
+   * Parameters: rival (the contender or familiar foe whose badge was tapped).
+   * Returns: void.
+   * Edge cases: the pick is remembered on this device only; the first pick also earns the
+   * one-time starter reward, which the server pays at most once.
+   */
+  const chooseRival = (rival: UserProfile) => {
+    setChosenRivalId(rival.id);
+    showDialog('Rival set', `${rival.displayName ?? rival.username} is now your Rival.`);
+    claimReward('choose_rival');
+  };
 
   const [editDisplayName, setEditDisplayNameState] = useState(currentUser.displayName ?? '');
   const [editLocation, setEditLocationState] = useState(currentUser.location);
@@ -234,6 +289,48 @@ export default function ProfileScreen() {
         </View>
         <Text style={styles.shopRowPoints}>{currentUser.pointBalance} pts →</Text>
       </Pressable>
+
+      {/* ── Title: see what is worn and switch between owned titles ── */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: textSec }]}>Your Title</Text>
+        <View style={[styles.titlePreview, { backgroundColor: card, borderColor: border }]}>
+          <PlayerName
+            name={currentUser.displayName ?? currentUser.username}
+            cosmetics={{ title: currentUser.title, nameColor: currentUser.nameColor }}
+            style={[styles.titlePreviewName, { color: textPrimary }]}
+            titleStyle={styles.titlePreviewTitle}
+          />
+          {!currentUser.title && (
+            <Text style={[styles.titlePreviewEmpty, { color: textSec }]}>No title on</Text>
+          )}
+        </View>
+        {ownedTitles.length === 0 ? (
+          <Text style={[styles.titleHint, { color: textSec }]}>
+            You don’t own a title yet. Pick one up in the Shop and it will appear here to wear.
+          </Text>
+        ) : (
+          <View style={styles.chipRow}>
+            {[null, ...ownedTitles].map((item) => {
+              const active = (item?.value ?? undefined) === (currentUser.title ?? undefined);
+              return (
+                <Pressable
+                  key={item?.id ?? 'none'}
+                  style={[styles.chip, { borderColor: border, backgroundColor: card }, active && styles.titleChipActive]}
+                  onPress={() => changeTitle(item)}
+                  disabled={equipMutation.isPending}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={item ? `Wear the title ${item.value}` : 'Wear no title'}
+                >
+                  <Text style={[styles.chipText, { color: textSec }, active && { color: colors.accentOnBg }]}>
+                    {item ? item.value : 'No title'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
 
       {/* ── Add Game modal ── */}
       {showGameModal && (
@@ -411,12 +508,12 @@ export default function ProfileScreen() {
                   <View style={styles.rivalBadge}><Text style={styles.rivalBadgeText}>RIVAL</Text></View>
                 ) : isFoe ? (
                   <Pressable style={[styles.rivalBadge, styles.foeBadge]}
-                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); setChosenRivalId(rival.id); }}>
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
                     <Text style={[styles.rivalBadgeText, styles.foeBadgeText]}>FAMILIAR FOE</Text>
                   </Pressable>
                 ) : (
                   <Pressable style={[styles.rivalBadge, styles.contenderBadge]}
-                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); setChosenRivalId(rival.id); }}>
+                    onPress={(e) => { e.stopPropagation(); Haptics.selectionAsync(); chooseRival(rival); }}>
                     <Text style={[styles.rivalBadgeText, styles.contenderBadgeText]}>CONTENDER</Text>
                   </Pressable>
                 )}
@@ -604,6 +701,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: '#007AFF',
   },
+
+  titlePreview: { borderRadius: 14, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12 },
+  titlePreviewName: { fontSize: 18, fontWeight: '800' },
+  titlePreviewTitle: { fontSize: 13, marginTop: 2 },
+  titlePreviewEmpty: { fontSize: 12, marginTop: 2 },
+  titleHint: { fontSize: 12, lineHeight: 17 },
+  titleChipActive: { backgroundColor: c.accentBg, borderColor: '#007AFF' },
 
   /* Add Game modal */
   modalOverlay: {

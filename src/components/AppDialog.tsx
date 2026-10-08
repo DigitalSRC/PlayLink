@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useThemeColors } from '../utils/theme-utils';
 
@@ -16,11 +16,25 @@ interface DialogRequest {
   buttons: DialogButton[];
 }
 
-// Dialogs waiting to be shown, oldest first, and the mounted DialogHost that draws them. Kept at
-// module level so any screen can ask for a dialog without threading a context through.
+// Dialogs waiting to be shown, oldest first, and whoever is drawing them (the mounted
+// DialogHost). Kept at module level, as a small store, so any screen can ask for a dialog
+// without threading a context through.
 let queue: DialogRequest[] = [];
-let notifyHost: ((next: DialogRequest[]) => void) | null = null;
+const listeners = new Set<() => void>();
 let nextId = 1;
+
+const setQueue = (next: DialogRequest[]) => {
+  queue = next;
+  listeners.forEach((listener) => listener());
+};
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+const getQueue = () => queue;
+const removeDialog = (id: number) => setQueue(queue.filter((d) => d.id !== id));
 
 /**
  * Shows a pop-up with a title, a message, and one or more buttons, on every platform.
@@ -35,12 +49,14 @@ let nextId = 1;
  * Alert.alert so the request is never dropped.
  */
 export const showDialog = (title: string, message?: string, buttons?: DialogButton[]): void => {
-  if (!notifyHost) {
+  if (listeners.size === 0) {
     Alert.alert(title, message, buttons);
     return;
   }
-  queue = [...queue, { id: nextId++, title, message, buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'OK' }] }];
-  notifyHost(queue);
+  setQueue([
+    ...queue,
+    { id: nextId++, title, message, buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'OK' }] },
+  ]);
 };
 
 /**
@@ -53,26 +69,17 @@ export const showDialog = (title: string, message?: string, buttons?: DialogButt
  * Returns: a transparent modal holding the oldest waiting dialog, or nothing when none is waiting.
  * Edge cases: a button's onPress runs after the dialog has been removed from the queue, so an
  * onPress that opens another dialog shows it next instead of being swallowed; only one host is
- * expected, and a second one would take over from the first.
+ * expected, and a second one would draw the same dialog twice.
  */
 export function DialogHost() {
   const colors = useThemeColors();
-  const [pending, setPending] = useState<DialogRequest[]>(queue);
-
-  useEffect(() => {
-    notifyHost = setPending;
-    setPending(queue);
-    return () => {
-      if (notifyHost === setPending) notifyHost = null;
-    };
-  }, []);
+  const pending = useSyncExternalStore(subscribe, getQueue, getQueue);
 
   const current = pending[0];
   if (!current) return null;
 
   const choose = (button: DialogButton | undefined) => {
-    queue = queue.filter((d) => d.id !== current.id);
-    setPending(queue);
+    removeDialog(current.id);
     button?.onPress?.();
   };
 

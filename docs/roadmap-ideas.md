@@ -34,3 +34,21 @@ styling) on both Home and Profile screens, but the underlying stat is never actu
 anywhere in the codebase except being reset to `null` on logout. Either finish the computation
 (most-played-against opponent) or remove the UI until it's real — currently it's a dead tier that
 will just never show up for any user.
+
+## Cosmetics beyond titles: banners and earned badges
+
+**Source:** the developer, after play-testing the Shop on 2026-10-08.
+
+Titles should feel like Overwatch's: a short line under the player's name on their card, picked
+from a collection. That part exists (the Shop sells them; the Profile tab's "Your Title" section
+switches between the ones a player owns). Wanted next, not built:
+
+- **Banners** - a background for the player's card, alongside the title, name color, and border.
+- **Badges you earn** - awarded for doing things rather than bought. The milestone tiles on the
+  Stats tab (First Win, 10 Wins, 100 Points, ...) are the obvious starting set; today they are
+  computed on the phone and shown only to the player themselves.
+
+Earned badges would need a server-side record of what each player has earned, written by the same
+kind of function that pays points, so a badge can be shown on someone else's profile and can't be
+forged. A banner needs artwork or a generated pattern, which the text-and-color-only shop has
+avoided so far.

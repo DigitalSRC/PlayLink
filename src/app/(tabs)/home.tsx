@@ -1,12 +1,18 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import HowItWorksSheet from '../../components/HowItWorksSheet';
 import PlayerName from '../../components/PlayerName';
-import { useApp } from '../../context/AppContext';
+import { chosenRivalStorageKey, useApp } from '../../context/AppContext';
+import { STARTER_REWARD_POINTS, STARTER_REWARDS, StarterRewardKey } from '../../data/rewards';
+import { useClaimStarterReward, useStarterRewardsQuery } from '../../hooks/useRewardQueries';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, visibleGames } from '../../data/types';
 import { findGroupsForPlayer } from '../../utils/group-utils';
-import { PARTICIPATION_POINTS } from '../../utils/scoring-utils';
 import { useThemeColors } from '../../utils/theme-utils';
-import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
+
+// Remembers, per account on this device, that the welcome guide has been shown once.
+const welcomeSeenStorageKey = (userId: string) => `welcome-seen:${userId}`;
 
 /**
  * Home tab — the player's personal dashboard after logging in.
@@ -18,23 +24,87 @@ import { VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
  * Parameters: none; reads currentUser, groups, rivals, chosenRivalId, and mostPlayedAgainst from global context.
  * Returns: a scrollable dashboard screen with a Pickup Game card and quick-action buttons for Find and Create Group.
  * Edge cases: shows "No Active Group" above the Find and Create buttons when the user is in no group; hides the rivals section entirely when the rivals array is empty;
- * a player with no recorded games yet is greeted with "Welcome," and a short "How PlayLink works" card (where to find a game, the one-group
- * rule, and how points are earned), which disappears for good once their first round is on record.
+ * a player with no recorded games yet is greeted with "Welcome,". The "How PlayLink works" button opens the guide at any time, and the guide
+ * opens by itself once, with a welcome, the first time a new player arrives from onboarding. The "Getting started" card lists the four
+ * one-time starter rewards and ticks them off; it is hidden once all four are claimed, and whenever the server has no starter rewards.
  */
 export default function HomeScreen() {
   const router = useRouter();
   const { currentUser, groups, rivals, chosenRivalId, mostPlayedAgainst } = useApp();
   const colors = useThemeColors();
+  const userId = currentUser?.id;
+  const rewardsQuery = useStarterRewardsQuery(userId);
+  const claimReward = useClaimStarterReward(userId);
+  const [showGuide, setShowGuide] = useState(false);
+  const [welcome, setWelcome] = useState(false);
+
+  // Nothing on record yet: this is someone still finding their way around.
+  const isNewPlayer =
+    !!currentUser &&
+    currentUser.wins + currentUser.losses + currentUser.draws === 0 &&
+    currentUser.points === 0;
+
+  // The last step of onboarding: the first time a brand-new player lands here, the guide opens
+  // by itself with a welcome on top. Once per account on this device; an account that already
+  // has games on record is marked as having seen it without being shown anything.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    AsyncStorage.getItem(welcomeSeenStorageKey(userId))
+      .then((seen) => {
+        if (cancelled || seen) return;
+        AsyncStorage.setItem(welcomeSeenStorageKey(userId), '1').catch(() => {});
+        if (isNewPlayer) {
+          setWelcome(true);
+          setShowGuide(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   if (!currentUser) return null;
+
+  // Undefined data means the server has no starter rewards (or hasn't answered): show none.
+  const rewardsAvailable = rewardsQuery.data !== undefined;
+  const claimedRewards = rewardsQuery.data ?? [];
+
+  /**
+   * Closes the guide. When it was the welcome shown at the end of onboarding, this is also the
+   * moment to pay the "pick your Rival" reward to a player who picked one during sign-up: the
+   * pick was saved on the device then, and asking now keeps the points pop-up from opening on
+   * top of the guide.
+   * Parameters: none.
+   * Returns: void.
+   * Edge cases: a player who skipped the rival step has no saved pick and nothing is claimed; a
+   * failed read of the saved pick is ignored, and the reward can still be earned from the
+   * Profile tab.
+   */
+  const closeGuide = () => {
+    setShowGuide(false);
+    if (!welcome) return;
+    setWelcome(false);
+    AsyncStorage.getItem(chosenRivalStorageKey(currentUser.id))
+      .then((picked) => {
+        if (picked) claimReward('choose_rival');
+      })
+      .catch(() => {});
+  };
+
+  const openReward = (key: StarterRewardKey) => {
+    if (key === 'view_calendar') router.push('/(tabs)/calendar');
+    else if (key === 'create_group') router.push({ pathname: '/(tabs)/browse', params: { openCreate: '1' } });
+    else if (key === 'join_group') router.push('/(tabs)/browse');
+    else router.push('/(tabs)/profile');
+  };
 
   // A player can hold one group per day, so there may be several; soonest first.
   const myGroups = findGroupsForPlayer(groups, currentUser.id);
 
   const totalGames = currentUser.wins + currentUser.losses;
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
-  // Nothing on record yet: this is someone still finding their way around.
-  const isNewPlayer = totalGames + currentUser.draws === 0 && currentUser.points === 0;
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
@@ -60,25 +130,49 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      {isNewPlayer && (
+      <Pressable
+        style={[styles.guideButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => { setWelcome(false); setShowGuide(true); }}
+        accessibilityRole="button"
+      >
+        <Text style={[styles.guideButtonText, { color: colors.accentText }]}>How PlayLink works</Text>
+        <Text style={[styles.guideButtonArrow, { color: colors.textMuted }]}>→</Text>
+      </Pressable>
+
+      {rewardsAvailable && claimedRewards.length < STARTER_REWARDS.length && (
         <View style={[styles.howItWorksCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.howItWorksTitle, { color: colors.textPrimary }]}>How PlayLink works</Text>
-          <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
-            1. Find a game. The Calendar tab lists game nights at stores near you — tap “+ Create game” on one to start a group there. Or use Find to join a group someone else posted.
+          <Text style={[styles.howItWorksTitle, { color: colors.textPrimary }]}>Getting started</Text>
+          <Text style={[styles.rewardIntro, { color: colors.textSecondary }]}>
+            Earn {STARTER_REWARD_POINTS} points for each of these, once.
           </Text>
-          <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
-            2. Play. You can be in one group per day. The host reports how each round finished.
-          </Text>
-          <Text style={[styles.howItWorksStep, { color: colors.textSecondary }]}>
-            3. Earn points. Everyone gets {PARTICIPATION_POINTS} points a round just for playing, more the higher you finish, and +{VENUE_EVENT_BONUS} once for a group made from a store&apos;s calendar event. Spend them in the Shop (tap your points, top right) on titles, name colors, and card borders. What you earn each month is also your Score, which ranks the leaderboard on the Stats tab - spending never lowers it.
-          </Text>
-          <Pressable
-            style={styles.howItWorksButton}
-            onPress={() => router.push('/(tabs)/calendar')}
-            accessibilityRole="button"
-          >
-            <Text style={styles.howItWorksButtonText}>See what&apos;s on near you →</Text>
-          </Pressable>
+          {STARTER_REWARDS.map((reward) => {
+            const done = claimedRewards.includes(reward.key);
+            return (
+              <Pressable
+                key={reward.key}
+                style={[styles.rewardRow, { borderTopColor: colors.border }]}
+                onPress={() => openReward(reward.key)}
+                disabled={done}
+                accessibilityRole="button"
+                accessibilityLabel={`${reward.label}. ${done ? 'Done' : `Earn ${STARTER_REWARD_POINTS} points`}`}
+              >
+                <Text style={[styles.rewardCheck, { color: done ? colors.successText : colors.textMuted }]}>{done ? '✓' : '○'}</Text>
+                <View style={styles.rewardText}>
+                  <Text style={[styles.rewardLabel, { color: done ? colors.textMuted : colors.textPrimary }]}>{reward.label}</Text>
+                  {!done && (
+                    <Text style={[styles.rewardHint, { color: colors.textSecondary }]}>
+                      {reward.key === 'choose_rival' && rivals.length === 0
+                        ? 'Rivals appear once another player shares your game.'
+                        : reward.hint}
+                    </Text>
+                  )}
+                </View>
+                <Text style={[styles.rewardPoints, { color: done ? colors.successText : colors.accentText }]}>
+                  {done ? 'Done' : `+${STARTER_REWARD_POINTS}`}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       )}
 
@@ -224,6 +318,14 @@ export default function HomeScreen() {
         </View>
       )}
 
+      <HowItWorksSheet
+        visible={showGuide}
+        welcome={welcome}
+        showRewards={rewardsAvailable}
+        onClose={closeGuide}
+        onOpenCalendar={() => { closeGuide(); router.push('/(tabs)/calendar'); }}
+        onOpenFind={() => { closeGuide(); router.push('/(tabs)/browse'); }}
+      />
     </ScrollView>
   );
 }
@@ -252,24 +354,58 @@ const styles = StyleSheet.create({
   howItWorksTitle: {
     fontSize: 16,
     fontWeight: '800',
-    marginBottom: 8,
+    marginBottom: 2,
   },
-  howItWorksStep: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 8,
-  },
-  howItWorksButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 10,
-    paddingVertical: 11,
+  guideButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 14,
   },
-  howItWorksButtonText: {
-    color: '#FFF',
+  guideButtonText: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  guideButtonArrow: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  rewardIntro: {
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  rewardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  rewardCheck: {
+    width: 20,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  rewardText: {
+    flex: 1,
+  },
+  rewardLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  rewardHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 1,
+  },
+  rewardPoints: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   greeting: {
     fontSize: 14,

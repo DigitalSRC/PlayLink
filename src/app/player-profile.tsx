@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import PlayerName, { CosmeticBorder } from '../components/PlayerName';
+import { showDialog } from '../components/AppDialog';
 import { useApp } from '../context/AppContext';
+import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
   BRACKET_INFO,
   GAME_COLOR,
@@ -36,7 +38,8 @@ import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 export default function PlayerProfileScreen() {
   const router = useRouter();
   const { username } = useLocalSearchParams<{ username: string }>();
-  const { rivals, chosenRivalId, setChosenRivalId } = useApp();
+  const { rivals, chosenRivalId, setChosenRivalId, session } = useApp();
+  const claimReward = useClaimStarterReward(session?.user.id);
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -249,6 +252,10 @@ export default function PlayerProfileScreen() {
               Haptics.selectionAsync();
               setChosenRivalId(profile.id);
               router.back();
+              if (!isChosenRival) {
+                showDialog('Rival set', `${profile.displayName ?? profile.username} is now your Rival.`);
+                claimReward('choose_rival');
+              }
             }}
           >
             <Text style={styles.rivalBtnText}>

@@ -49,7 +49,7 @@ const AppContext = createContext<AppState | null>(null);
 const THEME_STORAGE_KEY = 'app-theme';
 
 // Where the player's picked Rival is remembered on this device, one entry per account.
-const chosenRivalStorageKey = (userId: string) => `chosen-rival:${userId}`;
+export const chosenRivalStorageKey = (userId: string) => `chosen-rival:${userId}`;
 
 /**
  * Provides global app state to all child screens.

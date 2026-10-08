@@ -28,6 +28,7 @@ import { PlacementInput } from '../utils/scoring-utils';
 import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { profileKeys } from '../hooks/useProfileQueries';
+import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
   useConfirmGroupMutation,
   useDeleteGroupMutation,
@@ -82,6 +83,7 @@ export default function GroupDetail() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const queryClient = useQueryClient();
+  const claimReward = useClaimStarterReward(currentUser?.id);
 
   const { data: group } = useGroupQuery(id);
   const { data: results = [] } = useGroupResultsQuery(id);
@@ -180,6 +182,7 @@ export default function GroupDetail() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showDialog('You’re in!', `You joined “${group.name}”. It’s on your Home tab, and the host will report each round.`);
+      claimReward('join_group');
     } catch (err) {
       showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }

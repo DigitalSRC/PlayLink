@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -20,6 +20,7 @@ import {
   useRefreshEventAreaMutation,
 } from '../../hooks/useLocalEventQueries';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
+import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import {
   dateKeyFromMs,
   eventsOnDate,
@@ -99,6 +100,14 @@ export default function CalendarScreen() {
     refetch: refetchEvents,
     isRefetching: eventsRefetching,
   } = useLocalEventsQuery(area?.id ?? '');
+
+  // Looking through the calendar is one of the starter rewards. It counts once this month's
+  // events for the player's area are actually on screen, not merely when the tab is opened.
+  const claimReward = useClaimStarterReward(currentUser?.id);
+  const calendarShown = !!area && !eventsLoading && !eventsError;
+  useEffect(() => {
+    if (calendarShown) claimReward('view_calendar');
+  }, [calendarShown, claimReward]);
 
   if (!currentUser) return null;
 

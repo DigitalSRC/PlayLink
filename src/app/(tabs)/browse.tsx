@@ -31,6 +31,7 @@ import {
 import { findGroupOnDay, formatBrackets, generateJoinCode, groupDayKey, groupErrorMessage } from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
+import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
 import { parseStoreEventLink, StoreEventLink, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
@@ -73,6 +74,7 @@ export default function BrowseScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
+  const claimReward = useClaimStarterReward(currentUser?.id);
 
   const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
@@ -217,6 +219,7 @@ export default function BrowseScreen() {
         { text: 'OK', style: 'cancel' },
         { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
       ]);
+      claimReward('join_group');
     } catch (err) {
       showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
@@ -327,6 +330,7 @@ export default function BrowseScreen() {
           { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: created.id } }) },
         ]
       );
+      claimReward('create_group');
     } catch (err) {
       showDialog('Couldn’t post group', groupErrorMessage(err, 'Please try again.'));
     }
