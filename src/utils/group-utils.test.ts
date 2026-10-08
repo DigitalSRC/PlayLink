@@ -442,14 +442,41 @@ describe("group-utils", () => {
     expect(isGroupInArea(makeGroup(), 'reno-sparks')).toBe(true);
   });
 
-  it("countPostingsBy counts the groups a player created, whoever hosts them now", () => {
-    const handedOff = makeGroup({ id: 'a', createdBy: '1', players: [buildNewPlayer('2', "Bob", 2, "Riverside", "Host")] });
+  it("countPostingsBy counts the groups a player is hosting now, not the ones they first posted", () => {
+    const handedOff = makeGroup({ id: 'a', createdBy: '1', players: [
+      buildNewPlayer('1', "Alice", 2, "Downtown", "Member"),
+      buildNewPlayer('2', "Bob", 2, "Riverside", "Host"),
+    ] });
     const mine = makeGroup({ id: 'b', createdBy: '1' });
-    const theirs = makeGroup({ id: 'c', createdBy: '2', players: [buildNewPlayer('1', "Alice", 2, "Downtown", "Member")] });
+    const takenOver = makeGroup({ id: 'c', createdBy: '2', players: [
+      buildNewPlayer('2', "Bob", 2, "Riverside", "Member"),
+      buildNewPlayer('1', "Alice", 2, "Downtown", "Host"),
+    ] });
+    const justPlaying = makeGroup({ id: 'd', createdBy: '2', players: [
+      buildNewPlayer('2', "Bob", 2, "Riverside", "Host"),
+      buildNewPlayer('1', "Alice", 2, "Downtown", "Member"),
+    ] });
+    const all = [handedOff, mine, takenOver, justPlaying];
 
-    expect(countPostingsBy([handedOff, mine, theirs], '1')).toBe(2);
-    expect(countPostingsBy([handedOff, mine, theirs], 'nobody')).toBe(0);
+    // Alice hosts the one she kept and the one she took over; the one she handed on is Bob's now.
+    expect(countPostingsBy(all, '1')).toBe(2);
+    expect(countPostingsBy(all, '2')).toBe(2);
+    expect(countPostingsBy(all, 'nobody')).toBe(0);
     expect(countPostingsBy([], '1')).toBe(0);
+  });
+
+  it("handing a posting to another host frees a slot", () => {
+    const hosted = Array.from({ length: MAX_POSTINGS }, (_, i) => makeGroup({ id: `g${i}` }));
+    expect(countPostingsBy(hosted, '1')).toBe(MAX_POSTINGS);
+
+    const afterHandoff = [
+      makeGroup({ id: 'g0', players: [
+        buildNewPlayer('1', "Alice", 2, "Downtown", "Member"),
+        buildNewPlayer('2', "Bob", 2, "Riverside", "Host"),
+      ] }),
+      ...hosted.slice(1),
+    ];
+    expect(countPostingsBy(afterHandoff, '1')).toBe(MAX_POSTINGS - 1);
   });
 
   it("the posting limit is 7", () => {

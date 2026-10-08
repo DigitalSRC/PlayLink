@@ -138,21 +138,25 @@ export const sortGroupsBySchedule = (groups: Group[]): Group[] =>
 export const isGroupInArea = (group: Group, areaId: string | undefined): boolean =>
   areaId === undefined || group.area === undefined || group.area === areaId;
 
-/** The most postings one player can have up at once. The server enforces the same number
- * (groups_enforce_posting_limit in 20261008140000); change both together. */
+/** The most postings one player can host at once. The server enforces the same number
+ * (max_postings in 20261008140000); change both together. */
 export const MAX_POSTINGS = 7;
 
 /**
- * Counts how many postings a player currently has up, for the posting limit.
- * A posting counts against whoever created it for as long as the group exists, even if they
- * have since handed the host role to someone else - the same way the server counts.
+ * Counts how many postings a player is hosting right now, for the posting limit.
+ * The slot belongs to whoever hosts the group, not whoever first posted it: handing the host
+ * role to someone else frees one of your slots and uses one of theirs - the same way the server
+ * counts.
  * Parameters: groups (every known group), playerId (the player to count for).
- * Returns: the number of groups that player created.
- * Edge cases: returns 0 for an unknown player or an empty list; if the list hasn't loaded yet
- * it undercounts, and the server's own limit is then what refuses the eighth.
+ * Returns: the number of groups in which that player holds the Host role.
+ * Edge cases: returns 0 for an unknown player or an empty list; a group the player posted and
+ * then handed on is not counted; if the list hasn't loaded yet it undercounts, and the server's
+ * own limit is then what refuses the eighth.
  */
 export const countPostingsBy = (groups: Group[], playerId: string): number =>
-  groups.filter((group) => group.createdBy === playerId).length;
+  groups.filter((group) =>
+    group.players.some((player) => player.id === playerId && player.role === 'Host')
+  ).length;
 
 /**
  * Turns an error from creating or joining a group into a sentence a player can act on.

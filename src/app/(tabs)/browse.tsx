@@ -75,7 +75,7 @@ const CLEARED_CREATE_PARAMS = {
  * and the group it posts is linked to it for the store-event bonus. The form has no way to add that link itself.
  * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load, plus the storeEvent* params written by storeEventLinkParams.
  * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
- * The list shows postings from the player's own area only (with a switch to see everywhere), soonest game first; two games at the same time are listed in the order they were posted. Join-by-code still finds a group in any area. A player can have at most 7 postings up at once. The "Create a Game" button sits at the bottom of the screen, just above the tab bar.
+ * The list shows postings from the player's own area only (with a switch to see everywhere), soonest game first; two games at the same time are listed in the order they were posted. Join-by-code still finds a group in any area. A player can host at most 7 postings at once; handing one to another host frees a slot. The "Create a Game" button sits at the bottom of the screen, just above the tab bar.
  * A player can be in one group per day. Creating or joining a second group on a day they already have one explains that and names the group in the way; a different day is always allowed. Every create and join ends with a short message saying it worked, which closes by itself.
  * Edge cases: join by code explains when the code is the wrong length, not found, for a group the player is already in (with a shortcut to open it), for a day they already have a group, or for a full group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
  */
@@ -302,7 +302,7 @@ export default function BrowseScreen() {
     if (countPostingsBy(groups, currentUser.id) >= MAX_POSTINGS) {
       showDialog(
         'Posting limit reached',
-        `You already have ${MAX_POSTINGS} postings up, which is the most allowed at once. Delete one, or wait for one to finish.`
+        `You already have ${MAX_POSTINGS} postings up, which is the most allowed at once. Delete one, hand one to another host, or wait for one to finish.`
       );
       return;
     }
