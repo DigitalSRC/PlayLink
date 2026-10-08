@@ -50,7 +50,10 @@ const removeDialog = (id: number) => setQueue(queue.filter((d) => d.id !== id));
  */
 export const showDialog = (title: string, message?: string, buttons?: DialogButton[]): void => {
   if (listeners.size === 0) {
-    Alert.alert(title, message, buttons);
+    // Pass on only what the caller gave, so the fallback is the same call Alert.alert always got.
+    if (buttons) Alert.alert(title, message, buttons);
+    else if (message !== undefined) Alert.alert(title, message);
+    else Alert.alert(title);
     return;
   }
   setQueue([
