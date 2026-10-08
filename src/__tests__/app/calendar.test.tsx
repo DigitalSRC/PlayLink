@@ -8,7 +8,7 @@ import { LocalEvent } from "../../data/local-events";
 const mockNow = new Date(2026, 9, 6, 12, 0).getTime();
 
 let mockCurrentUser: { id?: string; location: string } | null = { id: "user-1", location: "Reno, NV" };
-let mockGroups: { players: { id: string }[] }[] = [];
+let mockGroups: { name?: string; playDate?: string; players: { id: string }[] }[] = [];
 jest.mock("../../context/AppContext", () => ({
   useApp: () => ({
     currentUser: mockCurrentUser,
@@ -22,6 +22,12 @@ jest.mock("../../context/AppContext", () => ({
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush }),
+}));
+
+// The real hook needs a query client; the screen only needs the function it returns.
+const mockClaimReward = jest.fn();
+jest.mock("../../hooks/useRewardQueries", () => ({
+  useClaimStarterReward: () => mockClaimReward,
 }));
 
 const mockUpdateProfile = jest.fn();
@@ -332,16 +338,31 @@ describe("CalendarScreen", () => {
     expect(queryByLabelText(/^Create a game at Past Place/)).toBeNull();
   });
 
-  it("explains instead of opening the form when the player is already in a group", async () => {
+  it("explains instead of opening the form when the player already has a group that day", async () => {
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
-    mockGroups = [{ players: [{ id: "someone-else" }, { id: "user-1" }] }];
+    mockGroups = [{ name: "Midweek Pod", playDate: "2026-10-07", players: [{ id: "someone-else" }, { id: "user-1" }] }];
     const { getByLabelText } = await render(<CalendarScreen />);
 
     await fireEvent.press(getByLabelText("Create a game at Wednesday Card Shop on Wednesday, October 7"));
 
     expect(mockPush).not.toHaveBeenCalled();
-    expect(alertSpy).toHaveBeenCalledWith("Already in a group", expect.any(String));
+    expect(alertSpy).toHaveBeenCalledWith("One group per day", expect.stringContaining("Midweek Pod"));
     alertSpy.mockRestore();
+  });
+
+  it("opens the form when the player's only group is on a different day", async () => {
+    mockGroups = [{ name: "Tuesday Pod", playDate: "2026-10-06", players: [{ id: "user-1" }] }];
+    const { getByLabelText } = await render(<CalendarScreen />);
+
+    await fireEvent.press(getByLabelText("Create a game at Wednesday Card Shop on Wednesday, October 7"));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims the calendar starter reward once the events are on screen", async () => {
+    await render(<CalendarScreen />);
+
+    expect(mockClaimReward).toHaveBeenCalledWith("view_calendar");
   });
 
   it("still opens the form when the player is only in nobody's group but others exist", async () => {
@@ -389,6 +410,13 @@ describe("CalendarScreen", () => {
     await fireEvent.press(getByText("Try again"));
 
     expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim the calendar reward while the events are still loading", async () => {
+    mockUseLocalEventsQuery.mockReturnValue({ data: undefined, isLoading: true, isError: false, isRefetching: false });
+    await render(<CalendarScreen />);
+
+    expect(mockClaimReward).not.toHaveBeenCalled();
   });
 
   it("still renders the month grid while the events are loading", async () => {
