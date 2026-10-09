@@ -1,7 +1,8 @@
-﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ThemeColors, useThemeColors } from "../utils/theme-utils";
 import {
   ActivityIndicator,
   Animated,
@@ -15,7 +16,12 @@ import {
 import { useApp } from "../context/AppContext";
 import {
   BRACKET_INFO,
-  FORMAT_OPTIONS,
+  COMMANDER_FORMAT,
+  COMMANDER_GAME,
+  COMMANDER_ONLY,
+  SELECTABLE_GAMES,
+  selectableFormats,
+  visibleGames,
   GAME_COLOR,
   GAME_EMOJI,
   GAME_LABELS,
@@ -32,6 +38,8 @@ import { findRivals } from "../utils/rival-utils";
 // Index corresponds to the currentStep state value; length determines total step count for the progress bar.
 // Changing this array requires updating all step-index comparisons throughout ProfileCreation.
 const STEPS = ["Identity", "Games", "Preferences", "Your Rivals"];
+// Index of the "Games" step, which is skipped entirely while the app is Commander-only.
+const GAMES_STEP = 1;
 
 // A user who signs up, fills in part of this form, then closes the app (or the app crashes,
 // or they just get pulled away) comes back to a blank step 0 on remount — there's nowhere else
@@ -58,7 +66,10 @@ interface ProfileCreationDraft {
  * (fetchRivalCandidates) to run findRivals against, then advances to the reveal step.
  * Parameters: none; reads the Supabase session from useApp() to attribute the new profile row.
  * Returns: a React Native screen with animated step transitions and haptic feedback on progression.
- * Edge cases: blocks progression if required fields are missing; shows a field-level error and
+ * Edge cases: the first step needs both a username and a city (at least 2 characters), because
+ * the Calendar tab looks up stores from it; steps 1 and 2 have a Back link, and the rival step
+ * has "Skip for now", which enters the app with the first listed rival standing in as the pick;
+ * blocks progression if required fields are missing; shows a field-level error and
  * returns to step 0 if the chosen username is already taken (Postgres unique violation), or a
  * generic inline error for any other save failure; the submit button shows a spinner and can't
  * be pressed again while a save is in flight. If no rivals are found (e.g. this is the very
@@ -82,14 +93,20 @@ export default function ProfileCreation() {
   const router = useRouter();
   const { session, currentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
   const createProfileMutation = useCreateProfileMutation();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [location, setLocation] = useState("");
-  const [selectedGames, setSelectedGames] = useState<GameType[]>([]);
-  const [selectedFormats, setSelectedFormats] = useState<Partial<Record<GameType, string[]>>>({});
+  // While the app is Commander-only the game and format are fixed, and the step that asks for
+  // them is skipped (see nextStep and the Back link).
+  const [selectedGames, setSelectedGames] = useState<GameType[]>(COMMANDER_ONLY ? [COMMANDER_GAME] : []);
+  const [selectedFormats, setSelectedFormats] = useState<Partial<Record<GameType, string[]>>>(
+    COMMANDER_ONLY ? { [COMMANDER_GAME]: [COMMANDER_FORMAT] } : {}
+  );
   const [selectedBrackets, setSelectedBrackets] = useState<number[]>([2]);
   const [selectedNoGo, setSelectedNoGo] = useState<NoGoRule[]>([]);
   const [computedRivals, setComputedRivals] = useState<UserProfile[]>([]);
@@ -128,12 +145,15 @@ export default function ProfileCreation() {
       if (raw) {
         try {
           const draft: ProfileCreationDraft = JSON.parse(raw);
-          setStep(draft.step);
+          // A draft saved on the game step has nowhere to land while that step is skipped.
+          setStep(COMMANDER_ONLY && draft.step === GAMES_STEP ? GAMES_STEP + 1 : draft.step);
           setUsername(draft.username);
           setDisplayName(draft.displayName);
           setLocation(draft.location);
-          setSelectedGames(draft.selectedGames);
-          setSelectedFormats(draft.selectedFormats);
+          if (!COMMANDER_ONLY) {
+            setSelectedGames(draft.selectedGames);
+            setSelectedFormats(draft.selectedFormats);
+          }
           setSelectedBrackets(draft.selectedBrackets);
           setSelectedNoGo(draft.selectedNoGo);
 
@@ -177,6 +197,11 @@ export default function ProfileCreation() {
 
   const USERNAME_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
+  // A real city is needed up front: the Calendar tab looks up stores and events from it, and a
+  // blank used to be saved as "Nearby", which no lookup can find.
+  const MIN_LOCATION_LENGTH = 2;
+  const locationValid = location.trim().length >= MIN_LOCATION_LENGTH;
+
   const validateUsername = (value: string) => {
     if (!value.trim()) { setUsernameError("Username is required."); return false; }
     if (!USERNAME_RE.test(value.trim())) {
@@ -189,7 +214,7 @@ export default function ProfileCreation() {
 
   const nextStep = async () => {
     if (step === 0) {
-      if (!validateUsername(username)) return;
+      if (!validateUsername(username) || !locationValid) return;
     }
     if (step === 1 && selectedGames.length === 0) return;
 
@@ -200,7 +225,7 @@ export default function ProfileCreation() {
         id: session.user.id,
         username: username.trim(),
         displayName: displayName.trim() || undefined,
-        location: location.trim() || "Nearby",
+        location: location.trim(),
         games: selectedGames,
         preferredFormats: selectedFormats,
         brackets: selectedBrackets.length > 0 ? selectedBrackets : [2],
@@ -210,6 +235,7 @@ export default function ProfileCreation() {
         draws: 0,
         points: 0,
         monthlyPoints: 0,
+        pointBalance: 0,
       };
 
       setSubmitError("");
@@ -271,9 +297,12 @@ export default function ProfileCreation() {
       rivalCardAnims.forEach((anim) => anim.setValue(0));
       rivals.forEach((_, i) => {
         setTimeout(() => {
+          // Driven from JS on purpose. With the native driver, picking a rival re-rendered the
+          // cards and reset their opacity to the last value JS knew about - 0 - so every rival
+          // vanished the moment one was tapped.
           Animated.spring(rivalCardAnims[i], {
             toValue: 1,
-            useNativeDriver: true,
+            useNativeDriver: false,
             bounciness: 12,
           }).start();
         }, 300 + i * 200);
@@ -282,7 +311,7 @@ export default function ProfileCreation() {
     }
 
     Haptics.selectionAsync();
-    setStep((s) => s + 1);
+    setStep((s) => (COMMANDER_ONLY && s + 1 === GAMES_STEP ? s + 2 : s + 1));
     animateIn();
   };
 
@@ -331,9 +360,11 @@ export default function ProfileCreation() {
 
   const renderStepDots = () => (
     <View style={styles.dots}>
-      {STEPS.map((_, i) => (
-        <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
-      ))}
+      {STEPS.map((_, i) =>
+        COMMANDER_ONLY && i === GAMES_STEP ? null : (
+          <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
+        )
+      )}
     </View>
   );
 
@@ -348,7 +379,7 @@ export default function ProfileCreation() {
         testID="profile-creation-username-input"
         style={[styles.input, !!usernameError && styles.inputError]}
         placeholder="e.g. DarkRitualDave"
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.placeholder}
         value={username}
         onChangeText={(v) => { setUsername(v); if (usernameError) validateUsername(v); }}
         autoFocus
@@ -363,19 +394,24 @@ export default function ProfileCreation() {
       <TextInput
         style={styles.input}
         placeholder="e.g. Dark Ritual Dave"
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.placeholder}
         value={displayName}
         onChangeText={setDisplayName}
         maxLength={32}
       />
 
-      <Text style={styles.label}>Your Area</Text>
+      <Text style={styles.label}>Your City</Text>
+      <Text style={styles.labelHint}>Used to find game stores and events near you — you can change it later</Text>
       <TextInput
+        testID="profile-creation-location-input"
         style={styles.input}
-        placeholder="e.g. Downtown Seattle"
-        placeholderTextColor="#999"
+        placeholder="City, State — e.g. Reno, NV"
+        placeholderTextColor={colors.placeholder}
         value={location}
         onChangeText={setLocation}
+        autoCapitalize="words"
+        autoCorrect={false}
+        maxLength={100}
       />
     </View>
   );
@@ -385,7 +421,7 @@ export default function ProfileCreation() {
       <Text style={styles.stepTitle}>What Do You Play?</Text>
       <Text style={styles.stepSubtitle}>Select all that apply</Text>
 
-      {(["mtg", "pokemon", "lorcana", "onepiece"] as GameType[]).map((game) => {
+      {SELECTABLE_GAMES.map((game) => {
         const selected = selectedGames.includes(game);
         return (
           <Pressable
@@ -423,13 +459,13 @@ export default function ProfileCreation() {
       <Text style={styles.stepTitle}>Your Preferences</Text>
       <Text style={styles.stepSubtitle}>Help others know what to expect</Text>
 
-      {selectedGames.map((game) => (
+      {!COMMANDER_ONLY && selectedGames.map((game) => (
         <View key={game} style={styles.section}>
           <Text style={[styles.sectionTitle, { color: GAME_COLOR[game] }]}>
             {GAME_EMOJI[game]} {GAME_LABELS[game]} Formats
           </Text>
           <View style={styles.chipRow}>
-            {FORMAT_OPTIONS[game].map((fmt) => {
+            {selectableFormats(game).map((fmt) => {
               const active = (selectedFormats[game] ?? []).includes(fmt);
               return (
                 <Pressable
@@ -466,7 +502,9 @@ export default function ProfileCreation() {
       {selectedGames.includes("mtg") && (selectedFormats["mtg"] ?? []).includes("Commander") && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>⚔️ Commander Bracket</Text>
-          <Text style={styles.sectionHint}>Wizards 1–5 power scale — select all you play</Text>
+          <Text style={styles.sectionHint}>
+            How strong your decks are, on Wizards&apos; 1–5 scale. Select all you play. Not sure? Leave it on 2 (Casual) — that covers precons and lightly upgraded decks.
+          </Text>
           <View style={styles.bracketRow}>
             {[1, 2, 3, 4, 5].map((b) => {
               const active = selectedBrackets.includes(b);
@@ -489,6 +527,9 @@ export default function ProfileCreation() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🚫 Won't Play Against</Text>
+        <Text style={styles.sectionHint}>
+          Optional. Deck styles you&apos;d rather not sit across from. Skip this if you&apos;re not sure — you can set it later in Profile.
+        </Text>
         <View style={styles.chipRow}>
           {NO_GO_OPTIONS.map((rule) => {
             const active = selectedNoGo.includes(rule);
@@ -498,7 +539,7 @@ export default function ProfileCreation() {
                 style={[styles.chip, active && styles.chipNoGo]}
                 onPress={() => toggleNoGo(rule)}
               >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                <Text style={[styles.chipText, active && { color: colors.dangerOnBg }]}>
                   {rule}
                 </Text>
               </Pressable>
@@ -512,10 +553,13 @@ export default function ProfileCreation() {
   );
 
   const renderRivalReveal = () => (
-    <View style={styles.rivalContainer}>
+    <ScrollView style={styles.rivalContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.stepTitle}>Choose Your Rival</Text>
       <Text style={styles.stepSubtitle}>
         One rival to chase. The others lurk as Contenders.
+      </Text>
+      <Text style={styles.rivalExplainer}>
+        These players are closest to you in points this month. Pick the one you refuse to lose to. Honor and bragging rights are on the line.
       </Text>
 
       {computedRivals.map((rival, i) => {
@@ -556,7 +600,7 @@ export default function ProfileCreation() {
                 <Text style={styles.rivalName}>{rival.username}</Text>
                 <Text style={styles.rivalMeta}>
                   {rival.wins}W – {rival.losses}L ·{" "}
-                  {rival.games.map((g) => GAME_EMOJI[g]).join(" ")}
+                  {visibleGames(rival.games).map((g) => GAME_EMOJI[g]).join(" ")}
                 </Text>
                 <Text style={styles.rivalLocation}>{rival.location}</Text>
               </View>
@@ -581,12 +625,12 @@ export default function ProfileCreation() {
           No rivals matched yet — play some games to find them!
         </Text>
       )}
-    </View>
+    </ScrollView>
   );
 
   const canProceed =
     !isSubmitting && (
-      (step === 0 && username.trim().length > 0) ||
+      (step === 0 && username.trim().length > 0 && locationValid) ||
       (step === 1 && selectedGames.length > 0) ||
       step === 2 ||
       (step === 3 && pickedRivalId !== null)
@@ -650,15 +694,42 @@ export default function ProfileCreation() {
             </Text>
           </Pressable>
         )}
+        {step === 3 && pickedRivalId === null && (
+          <Pressable
+            testID="profile-creation-skip-rival"
+            style={styles.footerLink}
+            onPress={() => setAwaitingHomeEntry(true)}
+            hitSlop={8}
+          >
+            <Text style={styles.footerLinkText}>Skip for now</Text>
+          </Pressable>
+        )}
+        {(step === 1 || step === 2) && !isSubmitting && (
+          <Pressable
+            testID="profile-creation-back-button"
+            style={styles.footerLink}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setSubmitError("");
+              setStep((s) => (COMMANDER_ONLY && s - 1 === GAMES_STEP ? s - 2 : s - 1));
+              animateIn();
+            }}
+            hitSlop={8}
+          >
+            <Text style={styles.footerLinkText}>← Back</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme, like the signed-in screens: every neutral and tinted color comes from
+// ThemeColors, so this screen follows the light/dark setting too.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F0F14",
+    backgroundColor: c.bg,
     paddingTop: 56,
   },
   header: {
@@ -674,23 +745,23 @@ const styles = StyleSheet.create({
   signOutLink: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#888",
+    color: c.textSecondary,
     textDecorationLine: "underline",
   },
   welcomeBackBanner: {
     marginHorizontal: 24,
     marginBottom: 16,
-    backgroundColor: "#0A2A0A",
+    backgroundColor: c.successBg,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: "#1C5A1C",
+    borderColor: c.successText,
   },
   welcomeBackText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#34C759",
+    color: c.successText,
     textAlign: "center",
   },
   brand: {
@@ -708,7 +779,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#333",
+    backgroundColor: c.border,
   },
   dotActive: {
     width: 20,
@@ -721,18 +792,18 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: c.textPrimary,
     marginBottom: 6,
   },
   stepSubtitle: {
     fontSize: 15,
-    color: "#888",
+    color: c.textSecondary,
     marginBottom: 28,
   },
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#AAA",
+    color: c.textBody,
     marginBottom: 4,
     marginTop: 16,
     textTransform: "uppercase",
@@ -740,12 +811,12 @@ const styles = StyleSheet.create({
   },
   labelHint: {
     fontSize: 11,
-    color: "#666",
+    color: c.textMuted,
     marginBottom: 8,
   },
   labelOptional: {
     fontSize: 11,
-    color: "#666",
+    color: c.textMuted,
     fontWeight: "400",
     textTransform: "none",
     letterSpacing: 0,
@@ -760,21 +831,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: "#FFF",
+    color: c.textPrimary,
   },
   gameOption: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderWidth: 2,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
     borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 18,
@@ -787,7 +858,7 @@ const styles = StyleSheet.create({
   gameLabel: {
     flex: 1,
     fontSize: 16,
-    color: "#DDD",
+    color: c.textBody,
     fontWeight: "600",
   },
   gameCheck: {
@@ -800,17 +871,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#CCC",
+    color: c.textBody,
     marginBottom: 4,
   },
   sectionHint: {
     fontSize: 12,
-    color: "#666",
+    color: c.textMuted,
     marginBottom: 10,
   },
   comingSoonNote: {
     fontSize: 11,
-    color: "#555",
+    color: c.textMuted,
     marginTop: 10,
     fontStyle: 'italic',
     lineHeight: 16,
@@ -826,19 +897,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#333",
-    backgroundColor: "#1C1C24",
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   chipText: {
     fontSize: 13,
-    color: "#AAA",
+    color: c.textBody,
     fontWeight: "600",
   },
   chipTextActive: {
     color: "#FFF",
   },
   chipNoGo: {
-    backgroundColor: "#3D1215",
+    backgroundColor: c.dangerBg,
     borderColor: "#C0392B",
   },
   bracketRow: {
@@ -852,24 +923,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#333",
-    backgroundColor: "#1C1C24",
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   bracketBtnActive: {
     borderColor: "#007AFF",
-    backgroundColor: "#001A3D",
+    backgroundColor: c.accentBg,
   },
   bracketLabel: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#666",
+    color: c.textMuted,
   },
   bracketLabelActive: {
     color: "#007AFF",
   },
   bracketDesc: {
     fontSize: 10,
-    color: "#555",
+    color: c.textMuted,
     marginTop: 2,
   },
   rivalContainer: {
@@ -878,16 +949,16 @@ const styles = StyleSheet.create({
   rivalCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1.5,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
   },
   rivalCardPicked: {
     borderColor: "#FF3B30",
-    backgroundColor: "#1F1012",
+    backgroundColor: c.rivalMainBg,
   },
   rivalCardContender: {
     opacity: 0.65,
@@ -915,17 +986,17 @@ const styles = StyleSheet.create({
   rivalName: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#FFF",
+    color: c.textPrimary,
     marginBottom: 2,
   },
   rivalMeta: {
     fontSize: 13,
-    color: "#888",
+    color: c.textSecondary,
     marginBottom: 2,
   },
   rivalLocation: {
     fontSize: 12,
-    color: "#555",
+    color: c.textMuted,
   },
   rivalBadge: {
     paddingVertical: 4,
@@ -948,7 +1019,7 @@ const styles = StyleSheet.create({
     color: "#C9952A",
   },
   noRivals: {
-    color: "#666",
+    color: c.textMuted,
     textAlign: "center",
     marginTop: 40,
     fontSize: 15,
@@ -964,8 +1035,24 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
   },
+  footerLink: {
+    alignSelf: "center",
+    marginTop: 14,
+  },
+  footerLinkText: {
+    color: c.textSecondary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  rivalExplainer: {
+    fontSize: 13,
+    color: c.textBody,
+    lineHeight: 19,
+    marginTop: -14,
+    marginBottom: 18,
+  },
   nextBtnDisabled: {
-    backgroundColor: "#1C2940",
+    backgroundColor: c.disabledBg,
   },
   nextBtnText: {
     color: "#FFF",

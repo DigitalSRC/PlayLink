@@ -1,4 +1,6 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { useColorScheme } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
@@ -43,11 +45,20 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+// Where the light/dark choice is remembered on this device while someone is signed in. It is
+// removed at sign-out, so the sign-in and profile-creation screens - and whoever signs in next -
+// start from the device's own setting.
+const THEME_STORAGE_KEY = 'app-theme';
+
+// Where the player's picked Rival is remembered on this device, one entry per account.
+export const chosenRivalStorageKey = (userId: string) => `chosen-rival:${userId}`;
+
 /**
  * Provides global app state to all child screens.
  * Holds the Supabase auth session, the signed-in user's profile (fetched and cached via React
- * Query, see useProfileQueries.ts), the group list, computed rivals, app theme, and a
- * dev-date offset for testing. currentUser and its mutators (awardPoints/addWin/addLoss/
+ * Query, see useProfileQueries.ts), the group list, computed rivals, app theme (the device's
+ * setting until a choice is saved; saved on sign-in and forgotten on sign-out), and a dev-date
+ * offset for testing. currentUser and its mutators (awardPoints/addWin/addLoss/
  * addDraw/resetMonthlyPoints) are backed by Supabase rather than plain local state — reads
  * come from the cached profile query, writes go through profile mutations with optimistic
  * cache updates so they still feel instant.
@@ -65,14 +76,74 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const { data: groups, isLoading: groupsLoading } = useGroupsQuery();
 
   const [rivals, setRivals] = useState<UserProfile[]>([]);
-  const [chosenRivalId, setChosenRivalId] = useState<string | null>(null);
+  const [chosenRivalId, setChosenRivalIdState] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
-  const [theme, setTheme] = useState<AppTheme>('dark');
+  // The saved light/dark choice, or null when there is none - before one has been saved, and
+  // after signing out. With none saved the app follows the device's own setting, live.
+  const [savedTheme, setSavedTheme] = useState<AppTheme | null>(null);
+  const [themeLoaded, setThemeLoaded] = useState(false);
+  const deviceTheme: AppTheme = useColorScheme() === 'light' ? 'light' : 'dark';
+  const theme: AppTheme = savedTheme ?? deviceTheme;
+  // The account that has just asked to sign out. Signing out is not instant, so for a moment
+  // there is still a signed-in user with no saved theme, which is exactly what the effect below
+  // looks for; without this it would save a theme again right after sign-out cleared it.
+  const signingOutUserRef = useRef<string | null>(null);
   const [devDateOffset, setDevDateOffset] = useState(0);
 
   useEffect(() => {
     registerSupabaseAutoRefresh();
   }, []);
+
+  // Restores the saved light/dark choice. Until it has been read the app follows the device.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(THEME_STORAGE_KEY)
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved === 'light' || saved === 'dark') setSavedTheme(saved);
+      })
+      .catch(() => {})
+      .then(() => {
+        if (!cancelled) setThemeLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Once someone is signed in and no choice is saved, the theme they arrived with - the device's
+  // setting, which is what sign-in and profile creation were shown in - becomes their saved
+  // choice, so the app keeps that look until they change it on the Profile tab.
+  useEffect(() => {
+    if (!userId) {
+      signingOutUserRef.current = null;
+      return;
+    }
+    if (!themeLoaded || savedTheme !== null || signingOutUserRef.current === userId) return;
+    let cancelled = false;
+    const adopted = deviceTheme;
+    AsyncStorage.setItem(THEME_STORAGE_KEY, adopted)
+      .catch(() => {})
+      .then(() => {
+        if (!cancelled) setSavedTheme(adopted);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [themeLoaded, userId, savedTheme, deviceTheme]);
+
+  /**
+   * Switches the app between light and dark, and remembers the choice on this device so it is
+   * still in effect the next time the app opens.
+   * Parameters: t ('light' or 'dark').
+   * Returns: void.
+   * Edge cases: a failed save is ignored - the choice still holds for this session; the setting
+   * is per device, not synced to the account, and is forgotten at sign-out.
+   */
+  const setTheme = (t: AppTheme) => {
+    setSavedTheme(t);
+    AsyncStorage.setItem(THEME_STORAGE_KEY, t).catch(() => {});
+  };
 
   // Rehydrates the rivals list from the profile's stored rival_ids whenever it loads or
   // changes — without this, a returning user (or one whose rivals were just updated by the
@@ -82,15 +153,37 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!rivalIdsKey) return;
     let cancelled = false;
-    fetchProfilesByIds(rivalIdsKey.split(',')).then((profiles) => {
+    Promise.all([
+      fetchProfilesByIds(rivalIdsKey.split(',')),
+      userId ? AsyncStorage.getItem(chosenRivalStorageKey(userId)).catch(() => null) : null,
+    ]).then(([profiles, savedId]) => {
       if (cancelled) return;
       setRivals(profiles);
-      setChosenRivalId((prev) => prev ?? profiles[0]?.id ?? null);
+      // Keep the rival the player picked, as long as they're still one of their rivals; the daily
+      // refresh can drop them, and then the first of the new list stands in.
+      const saved = profiles.some((p) => p.id === savedId) ? savedId : null;
+      setChosenRivalIdState((prev) =>
+        prev !== null && profiles.some((p) => p.id === prev) ? prev : saved ?? profiles[0]?.id ?? null
+      );
     });
     return () => {
       cancelled = true;
     };
-  }, [rivalIdsKey]);
+  }, [rivalIdsKey, userId]);
+
+  /**
+   * Records which of their rivals the player has picked as their main Rival, and remembers it
+   * on this device so it is still their Rival the next time the app opens. Before this was
+   * saved, the pick only lived in memory and quietly reset to the first rival on every restart.
+   * Parameters: id (the chosen rival's profile id).
+   * Returns: void.
+   * Edge cases: with no signed-in user the pick is kept in memory only; a failed save is
+   * ignored, since the pick still holds for this session; the pick is per device, not synced.
+   */
+  const setChosenRivalId = (id: string) => {
+    setChosenRivalIdState(id);
+    if (userId) AsyncStorage.setItem(chosenRivalStorageKey(userId), id).catch(() => {});
+  };
 
   const clearCurrentUser = () => {
     if (userId) {
@@ -99,8 +192,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // Fire-and-forget to keep this function's existing void signature; screens navigate away
     // immediately after calling this rather than awaiting sign-out completion.
     supabase.auth.signOut();
+    // Back to the device's own setting for the sign-in screen and for whoever signs in next.
+    signingOutUserRef.current = userId ?? null;
+    setSavedTheme(null);
+    AsyncStorage.removeItem(THEME_STORAGE_KEY).catch(() => {});
     setRivals([]);
-    setChosenRivalId(null);
+    setChosenRivalIdState(null);
     setMostPlayedAgainst(null);
   };
 

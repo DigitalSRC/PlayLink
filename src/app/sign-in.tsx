@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { ThemeColors, useThemeColors } from "../utils/theme-utils";
 import {
   ActivityIndicator,
   Animated,
@@ -30,6 +31,24 @@ const OAUTH_ENABLED = false;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * Turns a failed sign-in or sign-up into a message a first-time player can act on. Supabase
+ * answers a wrong password and an email with no account with the same "Invalid login
+ * credentials" text, which reads like a typo to someone who simply hasn't made an account yet,
+ * so that case is reworded to point at the Create an account button.
+ * Parameters: err (whatever the auth call threw), mode (which form was submitted).
+ * Returns: the text to show above the form.
+ * Edge cases: any other Error keeps its own message; a non-Error value gets a generic retry
+ * message; the rewording applies only to sign-in, never to sign-up.
+ */
+const describeAuthError = (err: unknown, mode: "signIn" | "signUp"): string => {
+  if (!(err instanceof Error)) return "Something went wrong. Please try again.";
+  if (mode === "signIn" && /invalid login credentials/i.test(err.message)) {
+    return "That email and password don't match an account. New to PlayLink? Tap “Create an account” below.";
+  }
+  return err.message;
+};
+
+/**
  * The unauthenticated landing screen: PlayLink branding plus an email/password form that can
  * either create a new account or sign in to an existing one. Reached from index.tsx whenever
  * there is no Supabase session. Does not navigate on success itself — the routing gate in
@@ -55,6 +74,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 export default function SignIn() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   // Defaults to signIn rather than signUp: this screen is reached both on a fresh install and
   // whenever an existing session ends (e.g. signing out), and the latter is the far more common
   // case in practice. Defaulting to signUp meant a returning user who typed their existing
@@ -120,7 +141,7 @@ export default function SignIn() {
       }
       router.replace("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setError(describeAuthError(err, mode));
     } finally {
       setIsSubmitting(false);
     }
@@ -166,8 +187,11 @@ export default function SignIn() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>{mode === "signIn" ? "Welcome Back to PlayLink" : "Welcome to PlayLink!"}</Text>
+          <Text style={styles.brand}>{mode === "signIn" ? "Sign In to PlayLink" : "Welcome to PlayLink!"}</Text>
           <Text style={styles.tagline}>Linking Players. Filling Tables.</Text>
+          <Text style={styles.pitch}>
+            Find game nights at stores near you, fill a table, and earn points for playing.
+          </Text>
         </View>
 
         <Animated.View
@@ -179,7 +203,7 @@ export default function SignIn() {
             testID="sign-in-email-input"
             style={[styles.input, !!emailError && styles.inputError]}
             placeholder="Email"
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.placeholder}
             value={email}
             onChangeText={(v) => { setEmail(v); if (emailError) setEmailError(""); }}
             autoCapitalize="none"
@@ -194,7 +218,7 @@ export default function SignIn() {
               testID="sign-in-password-input"
               style={[styles.input, styles.passwordInput, !!passwordError && styles.inputError]}
               placeholder="Password (min. 6 characters)"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.placeholder}
               value={password}
               onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
               secureTextEntry={!showPassword}
@@ -230,6 +254,7 @@ export default function SignIn() {
 
           <Pressable
             testID="sign-in-mode-toggle"
+            style={[styles.button, styles.toggleButton, isBusy && styles.buttonDisabled]}
             onPress={() => {
               setError("");
               setEmailError("");
@@ -282,10 +307,12 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme, like the signed-in screens: every neutral and tinted color comes from
+// ThemeColors, so this screen follows the light/dark setting too.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F0F14",
+    backgroundColor: c.bg,
   },
   scrollContent: {
     flexGrow: 1,
@@ -301,13 +328,13 @@ const styles = StyleSheet.create({
   brand: {
     fontSize: 30,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: c.textPrimary,
     letterSpacing: 0.5,
     textAlign: "center",
   },
   tagline: {
     fontSize: 15,
-    color: "#888",
+    color: c.textSecondary,
     marginTop: 10,
     textAlign: "center",
   },
@@ -322,14 +349,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   input: {
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: "#FFF",
+    color: c.textPrimary,
   },
   inputError: {
     borderColor: "#FF3B30",
@@ -358,12 +385,25 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: -6,
   },
+  pitch: {
+    fontSize: 14,
+    color: c.textBody,
+    marginTop: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  // The way to the other form is a full-width outlined button, not a text link: a first-time
+  // player lands on Sign In and has to be able to find Create an account at a glance.
+  toggleButton: {
+    borderWidth: 1.5,
+    borderColor: "#007AFF",
+    paddingVertical: 14,
+  },
   toggleText: {
-    fontSize: 13,
+    fontSize: 15,
     color: "#007AFF",
     textAlign: "center",
-    fontWeight: "600",
-    marginTop: 2,
+    fontWeight: "700",
   },
   button: {
     paddingVertical: 16,
@@ -394,7 +434,7 @@ const styles = StyleSheet.create({
   appleButton: {
     backgroundColor: "#000000",
     borderWidth: 1,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
   },
   appleButtonText: {
     color: "#FFFFFF",

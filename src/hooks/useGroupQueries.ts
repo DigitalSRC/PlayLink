@@ -1,15 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  cancelGroupResult,
   confirmGroup,
   createGroup,
   CreateGroupDraft,
   deleteGroup,
-  disputeGroupResult,
   fetchGroupById,
   fetchGroupResults,
   fetchGroups,
-  GroupResult,
   joinGroup,
   leaveGroup,
   setGroupHost,
@@ -118,16 +115,16 @@ export const useJoinGroupMutation = () => {
 };
 
 /**
- * Leaves a group, invalidating the same queries useJoinGroupMutation does.
- * Parameters: none — call sites pass `{ groupId, playerId }`.
- * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
+ * Leaves a group as the signed-in user, invalidating the same queries useJoinGroupMutation does.
+ * Parameters: none — call sites pass `{ groupId }`.
+ * Returns: a React Query mutation object; its result is 'left', 'deleted', or 'not_member'.
+ * Edge cases: the server deletes the group if the caller was its last member and appoints a new
+ * host if the caller was host, so call sites don't sequence those steps themselves.
  */
 export const useLeaveGroupMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ groupId, playerId }: { groupId: string; playerId: string }) =>
-      leaveGroup(groupId, playerId),
+    mutationFn: ({ groupId }: { groupId: string }) => leaveGroup(groupId),
     onSuccess: (_data, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.list() });
@@ -153,22 +150,15 @@ export const useDeleteGroupMutation = () => {
 
 /**
  * Reassigns a group's host, invalidating that group's detail query.
- * Parameters: none — call sites pass `{ groupId, newHostId, previousHostId }`.
+ * Parameters: none — call sites pass `{ groupId, newHostId }`.
  * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
+ * Edge cases: rejects if the caller isn't the host or the target isn't a member.
  */
 export const useSetGroupHostMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      groupId,
-      newHostId,
-      previousHostId,
-    }: {
-      groupId: string;
-      newHostId: string;
-      previousHostId: string;
-    }) => setGroupHost(groupId, newHostId, previousHostId),
+    mutationFn: ({ groupId, newHostId }: { groupId: string; newHostId: string }) =>
+      setGroupHost(groupId, newHostId),
     onSuccess: (_data, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
     },
@@ -212,11 +202,13 @@ export const useConfirmGroupMutation = () => {
 };
 
 /**
- * Submits a round's results, invalidating that group's results query so every viewer's next
- * read picks up the new pending result.
- * Parameters: none — call sites pass `{ groupId, roundNumber, submittedBy, placements }`.
+ * Reports a round. The server records it as final and pays every player in the same step, so on
+ * success this refreshes everything the round changed: the group's results, the group itself
+ * (its rounds-played count), the group list, and the submitter's own profile (their points).
+ * Other players' apps pick up their new points the next time they load the group or their profile.
+ * Parameters: none - call sites pass `{ groupId, roundNumber, submittedBy, placements }`.
  * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
+ * Edge cases: on failure nothing is invalidated, since nothing was recorded.
  */
 export const useSubmitGroupResultMutation = () => {
   const queryClient = useQueryClient();
@@ -232,49 +224,11 @@ export const useSubmitGroupResultMutation = () => {
       submittedBy: string;
       placements: PlacementInput[];
     }) => submitGroupResult(groupId, roundNumber, submittedBy, placements),
-    onSuccess: (_data, { groupId }) => {
+    onSuccess: (_data, { groupId, submittedBy }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.results(groupId) });
-    },
-  });
-};
-
-/**
- * Flags a pending result as disputed, invalidating that group's results query.
- * Parameters: none — call sites pass `{ result, playerId, reason }`.
- * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
- */
-export const useDisputeGroupResultMutation = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      result,
-      playerId,
-      reason,
-    }: {
-      result: GroupResult;
-      playerId: string;
-      reason: string;
-    }) => disputeGroupResult(result, playerId, reason),
-    onSuccess: (_data, { result }) => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.results(result.groupId) });
-    },
-  });
-};
-
-/**
- * Deletes a disputed result so the host can resubmit, invalidating that group's results query.
- * Parameters: none — call sites pass `{ resultId, groupId }` (groupId is only needed to know
- * which query to invalidate, since cancelGroupResult itself only takes the result's own id).
- * Returns: a React Query mutation object.
- * Edge cases: none beyond the standard mutation error path.
- */
-export const useCancelGroupResultMutation = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ resultId }: { resultId: string; groupId: string }) => cancelGroupResult(resultId),
-    onSuccess: (_data, { groupId }) => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.results(groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.list() });
+      queryClient.invalidateQueries({ queryKey: ['profile', submittedBy] });
     },
   });
 };

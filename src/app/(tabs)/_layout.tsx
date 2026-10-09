@@ -1,5 +1,7 @@
 import { Redirect, Tabs } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useApp } from '../../context/AppContext';
+import { usePreloadCalendar } from '../../hooks/useLocalEventQueries';
 import { useThemeColors } from '../../utils/theme-utils';
 import { useAuthStatus } from '../../utils/auth-status';
 
@@ -7,9 +9,16 @@ const TAB_ICON: Record<string, { active: string; inactive: string }> = {
   home: { active: '🏠', inactive: '🏠' },
   browse: { active: '🔍', inactive: '🔍' },
   stats: { active: '📊', inactive: '📊' },
+  calendar: { active: '📅', inactive: '📅' },
   shop: { active: '🛍️', inactive: '🛍️' },
   profile: { active: '👤', inactive: '👤' },
 };
+
+// The Shop is built and reachable, but not from the tab bar: its old slot is the Calendar's now,
+// and six tabs is one too many. Players open it from the points badge on Home and from the
+// Profile tab. The route stays registered here (hidden) so those pushes work and the tab bar
+// stays visible on it. Flip this to true only if the bar is redesigned to make room.
+const SHOP_TAB_ENABLED = false;
 
 const HOME_ICON_SIZE = 34;
 const ICON_SIZE = 27;
@@ -18,9 +27,12 @@ const LABEL_SIZE = 13;
 
 /**
  * Defines the five-tab navigator for logged-in users. Tab order (left to right) is
- * Stats, Shop, Home, Find, Profile: Stats/Shop sit on the least thumb-reachable left
+ * Stats, Calendar, Home, Find, Profile: Stats/Calendar sit on the least thumb-reachable left
  * side, Home is centered and rendered larger as the primary landing tab, and Find/
- * Profile take the two rightmost slots that are easiest to reach one-handed.
+ * Profile take the two rightmost slots that are easiest to reach one-handed. The Shop screen
+ * still exists as a route but is hidden from the bar while SHOP_TAB_ENABLED is false.
+ * It also preloads the Calendar tab's events in the background (usePreloadCalendar), so that
+ * tab opens without a wait.
  * Redirects to sign-in if there's no Supabase session, or to profile creation if the session
  * exists but no profiles row does yet.
  * Parameters: none.
@@ -32,10 +44,14 @@ const LABEL_SIZE = 13;
 export default function TabLayout() {
   const status = useAuthStatus();
   const colors = useThemeColors();
+  const { currentUser } = useApp();
+  // Starts loading the Calendar's events now, while the player is on Home, so the Calendar tab
+  // has them ready. Waits by itself until the profile (and so the location) has loaded.
+  usePreloadCalendar(currentUser?.location);
 
   if (status === 'loading') {
     return (
-      <View style={styles.loading}>
+      <View style={[styles.loading, { backgroundColor: colors.bg }]}>
         <ActivityIndicator color="#007AFF" />
       </View>
     );
@@ -79,7 +95,8 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="stats" options={{ tabBarLabel: 'Stats' }} />
-      <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop' }} />
+      <Tabs.Screen name="calendar" options={{ tabBarLabel: 'Calendar' }} />
+      <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop', href: SHOP_TAB_ENABLED ? undefined : null }} />
       <Tabs.Screen name="home" options={{ tabBarLabel: 'Home' }} />
       <Tabs.Screen name="browse" options={{ tabBarLabel: 'Find' }} />
       <Tabs.Screen name="profile" options={{ tabBarLabel: 'Profile' }} />
@@ -90,7 +107,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: '#0F0F14',
     alignItems: 'center',
     justifyContent: 'center',
   },

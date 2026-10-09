@@ -21,8 +21,20 @@ export interface UserProfile {
   wins: number;
   losses: number;
   draws: number;
+  /** Everything ever earned. Never goes down; milestones are measured against it. */
   points: number;
+  /** This month's total - shown as "Score", ranks the leaderboard, resets each month. */
   monthlyPoints: number;
+  /** Points available to spend in the shop - what the app calls "Points". Goes up by exactly
+   * what is earned and down only on a purchase. Written by the server only. */
+  pointBalance: number;
+  /** What the player is wearing, bought in the shop. Each is absent when nothing is equipped.
+   * Set only through the shop (equip_shop_item); a client cannot write them directly. */
+  title?: string;
+  nameColor?: string;
+  cardBorder?: string;
+  /** When the profile was created (epoch ms). Decides early-supporter shop items. */
+  createdAt?: number;
   rivalIds?: string[];
   lastRivalRefresh?: string;
 }
@@ -54,6 +66,60 @@ export const FORMAT_OPTIONS: Record<GameType, string[]> = {
   lorcana: ['Constructed', 'Draft'],
   onepiece: ['OP', 'Draft'],
 };
+
+// PlayLink is Commander-only for now. While this is true, every other game and every other Magic
+// format is hidden and can't be picked anywhere in the app: onboarding skips the game step, the
+// create-group form has no game or format pickers, the Find tab lists only Commander groups, and
+// profiles show no game or format lists. Nothing is deleted - the other games' labels, colors,
+// formats, and screens are all still here - so flipping this back to false restores them.
+// Data saved before this was turned on (a profile's other games, a non-Commander group) is left
+// alone in the database; it just isn't shown.
+export const COMMANDER_ONLY = true;
+
+export const COMMANDER_GAME: GameType = 'mtg';
+export const COMMANDER_FORMAT = 'Commander';
+
+const ALL_GAMES: GameType[] = ['mtg', 'pokemon', 'lorcana', 'onepiece'];
+
+/** The games a player can currently pick from, in display order. */
+export const SELECTABLE_GAMES: GameType[] = COMMANDER_ONLY ? [COMMANDER_GAME] : ALL_GAMES;
+
+/**
+ * Lists the formats a player can currently pick for a game. In Commander-only mode that is just
+ * Commander, and only under Magic; otherwise it is the game's full format list.
+ * Parameters: game (the game whose formats are wanted).
+ * Returns: the format names that may be shown and chosen.
+ * Edge cases: in Commander-only mode any game other than Magic returns an empty array.
+ */
+export const selectableFormats = (game: GameType): string[] => {
+  if (!COMMANDER_ONLY) return FORMAT_OPTIONS[game];
+  return game === COMMANDER_GAME ? [COMMANDER_FORMAT] : [];
+};
+
+/**
+ * Narrows a player's list of games to the ones the app currently shows. In Commander-only mode
+ * every player is treated as a Magic player whatever their profile says, so screens built around
+ * "the games you play" (leaderboards, rival lines) still have exactly one game to work with.
+ * Parameters: games (the games stored on a profile).
+ * Returns: the games to display or iterate over.
+ * Edge cases: in Commander-only mode returns ['mtg'] even for an empty list or a profile that
+ * never picked Magic; with the mode off, returns the list unchanged.
+ */
+export const visibleGames = (games: GameType[]): GameType[] =>
+  COMMANDER_ONLY ? [COMMANDER_GAME] : games;
+
+/**
+ * Decides whether a group belongs in what the app currently shows. In Commander-only mode that
+ * means Magic Commander groups only, so a group of another game or format posted earlier never
+ * appears in a list.
+ * Parameters: gameType and format (the group's own values).
+ * Returns: true if the group should be listed.
+ * Edge cases: format is compared ignoring case and surrounding spaces; with the mode off every
+ * group is in scope.
+ */
+export const isGroupInScope = (gameType: GameType, format: string): boolean =>
+  !COMMANDER_ONLY ||
+  (gameType === COMMANDER_GAME && format.trim().toLowerCase() === COMMANDER_FORMAT.toLowerCase());
 
 export const NO_GO_OPTIONS: NoGoRule[] = [
   'Infinites',

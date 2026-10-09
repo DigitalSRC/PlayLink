@@ -323,22 +323,46 @@ an **individual** owns one piece of it.
 ## 5. Current top-level feature branches
 
 This list records which features exist and roughly what state they're in; who is working on
-each one is tracked by GitHub issue assignment, not here. As of 2026-10-06, the top-level
+each one is tracked by GitHub issue assignment, not here. As of 2026-10-08, the top-level
 branches not yet merged into `development` — all of them shared on `origin` (§2.9) — are:
 
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
   `development`/`main` until finished; it has no entry points or feature flag there — see
   [CLAUDE.md](../CLAUDE.md).
-- **`shop`** — build-out of the shop tab, currently a placeholder screen on `development`.
 - **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
   Excluded from every other branch except `unitTests`/`test/<feature>`; see
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
-- **`security-hardening`** — server-authoritative scoring and RLS hardening. The migration is
-  written but not yet applied to Supabase; see `docs/security-backlog.md` (on that branch).
-- **`calendar-system`**, **`location-autocomplete`**, **`store-events`**, **`ui-polish`**,
-  **`onboarding-fixes`** — in-progress features with unmerged work.
+- **`npm-12`** — approves `unrs-resolver`'s install script in `package.json`, which npm 12
+  otherwise skips with a warning on every install. Touches only `package.json` and one line of
+  `CLAUDE.md`. Forked from `development` on 2026-10-08; waiting for a go-ahead to merge.
+- **`calendar-system`** — shelved (2026-10-06) in favor of the Calendar tab that shipped: a
+  weekly calendar of player groups plus an earlier one-group-per-day rule. Kept as a reference,
+  not planned to merge. Its `group_players_one_per_day` migration was applied to the live
+  database at the time; `20261008120000_group_play_date.sql` on `development` now builds on that
+  and is the definition to trust.
+- **`location-autocomplete`**, **`store-events`**, **`ui-polish`**, **`onboarding-fixes`** —
+  older branches with unmerged work. `ui-polish` and `onboarding-fixes` are a single commit each
+  and far behind `development`; check whether they are still wanted before building on them.
 - **`LandingPage`** — the marketing site; not an app feature and never merged into the app
   branches. Lives on `origin` because GitHub Pages deploys from it (§2.9).
+
+**Landed in `development` on 2026-10-08**, with the developer's go-ahead after play-testing them
+together, in this order (each was stacked on the one before): `event-calendar` (the Calendar
+tab, store-event groups and bonus), `commander-only` (the `COMMANDER_ONLY` flag),
+`security-hardening` (the server scores rounds; clients cannot write points), `shop` (spendable
+Points and cosmetics), `final-results` (a reported round is final), `readme-refresh` (README
+with diagrams), and `playtest-fixes` (pop-ups that work on web, self-closing confirmations, one
+group per day, the 7-posting limit and area filter on Find, light mode everywhere with the
+device's setting as the default, the reworked Profile tab, the how-it-works guide, and starter
+rewards). Their branches were removed from `origin`, along with `combined-preview`, which only
+existed to test the stack together. Every migration they carry is applied to the live database,
+so `development` and the live database match; `main` does not have any of this.
+
+One thing to know about the test lane: `unitTests` still carries app source from the shelved
+`calendar-system`, `store-events`, and `location-autocomplete` branches, so building
+`test/<feature>` conflicts in `browse.tsx`, `home.tsx`, `profile.tsx`, `group-detail.tsx`, and
+`group-utils.ts`. Resolve those in favor of the feature being tested and keep everything that
+exists only on `unitTests`.
 
 `rival-system` has fully merged into `development` and is no longer an open feature.
 

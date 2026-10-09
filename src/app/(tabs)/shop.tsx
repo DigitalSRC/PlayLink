@@ -1,208 +1,475 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { showDialog } from '../../components/AppDialog';
+import PlayerName, { CosmeticBorder } from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
+import { Cosmetics, SHOP_KIND_HINTS, SHOP_KIND_LABELS, ShopItem } from '../../data/shop';
+import {
+  useEquipShopItemMutation,
+  useOwnedShopItemsQuery,
+  usePurchaseShopItemMutation,
+  useShopItemsQuery,
+} from '../../hooks/useShopQueries';
+import { borderStyleFor, groupShopItems, pointsShort, safeNameColor, shopItemState } from '../../utils/shop-utils';
+import { useThemeColors } from '../../utils/theme-utils';
 
 /**
- * Shop tab — placeholder for the upcoming cosmetic rewards store.
- * Displays the player's current Points balance and a coming-soon notice.
- * Parameters: none; reads currentUser from global context.
- * Returns: a scrollable placeholder shop screen.
- * Edge cases: returns null if currentUser is not yet set (unauthenticated state).
+ * The shop: where a player spends the points they've earned on things to wear - a title under
+ * their name, a color for their name, and a border for their profile card. Everything is
+ * cosmetic and drawn from text and color, so nothing here needs artwork.
+ * The top shows their points and a live preview of their current look. Below are the three
+ * sections; each item shows its price, or "Wear" / "Wearing" once owned. Buying asks first,
+ * and once the item is bought a second pop-up offers to wear it now or leave things as they are. Points spent here never lower a player's Score or their
+ * all-time total - only the spendable balance.
+ * The catalog, prices, balance, and what each player owns all live on the server; this screen
+ * only asks for a purchase and shows the answer. It is reached from the points badge on Home
+ * and from the Profile tab (the tab-bar entry is still switched off - see (tabs)/_layout.tsx).
+ * Parameters: none; reads currentUser and session from global context.
+ * Returns: a scrollable shop screen; null when no user is logged in.
+ * Edge cases: shows a spinner while the catalog loads and a retry card if it can't be loaded;
+ * an item the player can't afford shows how many more points it needs and can't be tapped;
+ * early-supporter items the player joined too late for are not listed at all; a purchase the
+ * server refuses (not enough points, no longer for sale) shows the server's reason and changes
+ * nothing; only one purchase or change can be in flight at a time, so a double tap can't buy
+ * twice (and the server would charge nothing for a repeat anyway).
  */
 export default function ShopScreen() {
-  const { currentUser } = useApp();
+  const router = useRouter();
+  const { currentUser, session } = useApp();
+  const colors = useThemeColors();
+  const userId = session?.user.id;
 
-  if (!currentUser) return null;
+  const itemsQuery = useShopItemsQuery();
+  const ownedQuery = useOwnedShopItemsQuery(userId);
+  const purchaseMutation = usePurchaseShopItemMutation();
+  const equipMutation = useEquipShopItemMutation();
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
+
+  if (!currentUser || !userId) return null;
+
+  const cosmetics: Cosmetics = {
+    title: currentUser.title,
+    nameColor: currentUser.nameColor,
+    cardBorder: currentUser.cardBorder,
+  };
+  const ownedIds = new Set(ownedQuery.data ?? []);
+  const balance = currentUser.pointBalance;
+  const busy = busyItemId !== null;
+
+  const sections = groupShopItems(itemsQuery.data ?? [])
+    .map((section) => ({
+      ...section,
+      items: section.items
+        .map((item) => ({ item, state: shopItemState(item, ownedIds, balance, cosmetics, currentUser.createdAt) }))
+        .filter((entry) => entry.state !== 'unavailable'),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  /**
+   * Puts an owned item on, or takes it off if it is the one currently worn.
+   * Parameters: item (an item the player owns), wearing (whether it is on right now).
+   * Returns: a promise that resolves once the change is saved or refused.
+   * Edge cases: does nothing while another purchase or change is in flight; a refusal from the
+   * server is shown as an alert and the look stays as it was.
+   */
+  const toggleWear = async (item: ShopItem, wearing: boolean) => {
+    if (busy) return;
+    setBusyItemId(item.id);
+    try {
+      await equipMutation.mutateAsync({ userId, kind: item.kind, itemId: wearing ? null : item.id });
+      Haptics.selectionAsync();
+    } catch (err) {
+      showDialog('Couldn’t change your look', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setBusyItemId(null);
+    }
+  };
+
+  /**
+   * Buys an item. The server takes the points and records the purchase in one step. Nothing is
+   * put on: the confirmation that follows asks whether to wear it now, and saying no leaves the
+   * player's look exactly as it was, with the new item waiting in the list as "Wear".
+   * Parameters: item (the item to buy).
+   * Returns: a promise that resolves once the purchase has gone through or been refused.
+   * Edge cases: does nothing while another purchase or change is in flight; if the purchase is
+   * refused nothing is spent and the server's reason is shown; choosing "Wear it now" goes
+   * through toggleWear, so a failure there is reported and the item is still owned.
+   */
+  const buy = async (item: ShopItem) => {
+    if (busy) return;
+    setBusyItemId(item.id);
+    try {
+      await purchaseMutation.mutateAsync({ userId, itemId: item.id });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showDialog(
+        `“${item.name}” is yours`,
+        'Want to wear it now? You can change what you wear any time, here or on your Profile tab.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Wear It Now', onPress: () => toggleWear(item, false) },
+        ]
+      );
+    } catch (err) {
+      showDialog('Couldn’t buy that', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setBusyItemId(null);
+    }
+  };
+
+  const confirmBuy = (item: ShopItem) => {
+    if (busy) return;
+    showDialog(
+      item.price === 0 ? `Claim “${item.name}”?` : `Buy “${item.name}”?`,
+      item.price === 0
+        ? 'It’s free, and yours to keep.'
+        : `This costs ${item.price} points. You’ll have ${balance - item.price} left. Your Score and all-time total don’t change.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: item.price === 0 ? 'Claim' : 'Buy', onPress: () => buy(item) },
+      ]
+    );
+  };
+
+  const renderPreview = (item: ShopItem) => {
+    if (item.kind === 'title') {
+      return <Text style={[styles.previewTitle, { color: colors.textBody }]}>“{item.value}”</Text>;
+    }
+    if (item.kind === 'name_color') {
+      const color = safeNameColor(item.value);
+      return (
+        <View style={styles.previewRow}>
+          <View style={[styles.swatch, { backgroundColor: color ?? colors.border }]} />
+          <Text style={[styles.previewName, color !== undefined && { color }]}>
+            {currentUser.displayName ?? currentUser.username}
+          </Text>
+        </View>
+      );
+    }
+    const border = borderStyleFor(item.value);
+    return (
+      <View style={styles.previewRow}>
+        <View style={[styles.borderSwatch, { borderColor: border?.outer ?? colors.border, borderWidth: border?.width ?? 1 }]}>
+          <View style={[styles.borderSwatchInner, border?.inner !== undefined && { borderColor: border.inner, borderWidth: border.width }]} />
+        </View>
+      </View>
+    );
+  };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.heading}>Shop</Text>
+    <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
+      <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" hitSlop={8}>
+        <Text style={[styles.back, { color: colors.accentText }]}>← Back</Text>
+      </Pressable>
+      <Text style={[styles.heading, { color: colors.textPrimary }]}>Shop</Text>
 
-      {/* Points balance */}
-      <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>YOUR BALANCE</Text>
-        <Text style={styles.balanceValue}>{currentUser.points}</Text>
-        <Text style={styles.balanceUnit}>Points</Text>
-      </View>
-
-      {/* Coming soon banner */}
-      <View style={styles.comingSoonCard}>
-        <Text style={styles.comingSoonEmoji}>🛍️</Text>
-        <Text style={styles.comingSoonTitle}>Rewards Coming Soon!</Text>
-        <Text style={styles.comingSoonBody}>
-          Spend your Points on cosmetic rewards — profile borders, card sleeves,
-          avatars, and more. Keep earning Points in groups to be ready when the
-          shop opens.
+      <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={styles.balanceLabel}>YOUR POINTS</Text>
+        <Text style={[styles.balanceValue, { color: colors.textPrimary }]}>{balance}</Text>
+        <Text style={[styles.balanceHint, { color: colors.textSecondary }]}>
+          You earn points by playing rounds. Spending them here never lowers your Score on the leaderboard or your all-time total.
         </Text>
       </View>
 
-      {/* Placeholder item slots */}
-      <Text style={styles.sectionTitle}>Preview Items</Text>
-      {PREVIEW_ITEMS.map((item) => (
-        <View key={item.name} style={styles.itemCard}>
-          <View style={styles.itemIconBox}>
-            <Text style={styles.itemIcon}>{item.icon}</Text>
-          </View>
-          <View style={styles.itemInfo}>
-            <Text style={styles.itemName}>{item.name}</Text>
-            <Text style={styles.itemDesc}>{item.desc}</Text>
-          </View>
-          <View style={styles.itemCostBox}>
-            <Text style={styles.itemCost}>{item.cost}</Text>
-            <Text style={styles.itemCostLabel}>pts</Text>
-          </View>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Your look</Text>
+      <CosmeticBorder borderKey={cosmetics.cardBorder} radius={14} style={styles.lookWrap}>
+        <View style={[styles.lookCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <PlayerName
+            name={currentUser.displayName ?? currentUser.username}
+            cosmetics={cosmetics}
+            style={[styles.lookName, { color: colors.textPrimary }]}
+          />
+          {!cosmetics.title && !cosmetics.nameColor && !cosmetics.cardBorder && (
+            <Text style={[styles.lookEmpty, { color: colors.textMuted }]}>Nothing on yet - pick something below.</Text>
+          )}
         </View>
-      ))}
+      </CosmeticBorder>
 
-      <Text style={styles.footerNote}>
-        Prices and availability are subject to change before launch.
-      </Text>
+      {itemsQuery.isLoading || ownedQuery.isLoading ? (
+        <ActivityIndicator color="#007AFF" style={styles.spinner} />
+      ) : itemsQuery.isError || ownedQuery.isError ? (
+        <View style={[styles.messageCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.messageTitle, { color: colors.textPrimary }]}>Couldn’t load the shop</Text>
+          <Text style={[styles.messageBody, { color: colors.textBody }]}>Check your connection and try again.</Text>
+          <Pressable
+            style={styles.retryButton}
+            onPress={() => { itemsQuery.refetch(); ownedQuery.refetch(); }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.retryText}>Try again</Text>
+          </Pressable>
+        </View>
+      ) : sections.length === 0 ? (
+        <Text style={[styles.messageBody, { color: colors.textBody }]}>Nothing is for sale right now.</Text>
+      ) : (
+        sections.map((section) => (
+          <View key={section.kind} style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{SHOP_KIND_LABELS[section.kind]}</Text>
+            <Text style={[styles.sectionHint, { color: colors.textMuted }]}>{SHOP_KIND_HINTS[section.kind]}</Text>
+            {section.items.map(({ item, state }) => {
+              const owned = state === 'owned' || state === 'equipped';
+              const disabled = busy || state === 'too_expensive';
+              const priceLabel = item.price === 0 ? 'Free' : `${item.price} pts`;
+              return (
+                <View
+                  key={item.id}
+                  style={[
+                    styles.itemCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                    state === 'equipped' && styles.itemCardEquipped,
+                  ]}
+                >
+                  <View style={styles.itemInfo}>
+                    {renderPreview(item)}
+                    <Text style={[styles.itemName, { color: colors.textPrimary }]}>{item.name}</Text>
+                    {item.description !== '' && (
+                      <Text style={[styles.itemDesc, { color: colors.textSecondary }]}>{item.description}</Text>
+                    )}
+                    {item.joinedBefore !== undefined && <Text style={styles.earlyBadge}>EARLY SUPPORTER</Text>}
+                    {state === 'too_expensive' && (
+                      <Text style={[styles.itemShort, { color: colors.textMuted }]}>
+                        {pointsShort(item, balance)} more points to go
+                      </Text>
+                    )}
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.itemButton,
+                      owned ? styles.itemButtonOwned : styles.itemButtonBuy,
+                      state === 'equipped' && styles.itemButtonEquipped,
+                      disabled && styles.itemButtonDisabled,
+                    ]}
+                    onPress={() => (owned ? toggleWear(item, state === 'equipped') : confirmBuy(item))}
+                    disabled={disabled}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      state === 'equipped' ? `Take off ${item.name}`
+                        : state === 'owned' ? `Wear ${item.name}`
+                        : `${item.price === 0 ? 'Claim' : 'Buy'} ${item.name} for ${priceLabel}`
+                    }
+                    accessibilityState={{ disabled, selected: state === 'equipped' }}
+                  >
+                    {busyItemId === item.id ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={[styles.itemButtonText, state === 'owned' && styles.itemButtonTextOwned]}>
+                        {state === 'equipped' ? 'Wearing ✓' : state === 'owned' ? 'Wear' : priceLabel}
+                      </Text>
+                    )}
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        ))
+      )}
     </ScrollView>
   );
 }
 
-// Placeholder shop items shown in a greyed-out grid to illustrate what the rewards store will offer.
-// Each entry has an icon emoji, display name, short description, and point cost.
-// Prices and availability are not final; items are rendered at 0.6 opacity to signal coming-soon status.
-const PREVIEW_ITEMS = [
-  { icon: '🖼️', name: 'Foil Border', desc: 'Shimmering border for your profile card', cost: 500 },
-  { icon: '🏆', name: 'Gold Frame', desc: 'Golden frame unlocked by top performers', cost: 1200 },
-  { icon: '🎭', name: 'Custom Avatar', desc: 'Choose from exclusive avatar designs', cost: 800 },
-  { icon: '🃏', name: 'Sleeve Design', desc: 'Unique card sleeve shown in groups', cost: 350 },
-  { icon: '💬', name: 'Chat Badge', desc: 'Exclusive badge displayed in group chat', cost: 250 },
-];
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F14',
   },
   content: {
-    paddingTop: 60,
+    paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 50,
+  },
+  back: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
   },
   heading: {
     fontSize: 30,
     fontWeight: '800',
-    color: '#FFF',
-    marginBottom: 24,
+    marginBottom: 14,
   },
   balanceCard: {
-    backgroundColor: '#001A3D',
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
     alignItems: 'center',
     marginBottom: 20,
-    borderWidth: 1.5,
-    borderColor: '#007AFF',
   },
   balanceLabel: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 1.2,
     color: '#007AFF',
-    letterSpacing: 1.5,
-    marginBottom: 8,
   },
   balanceValue: {
-    fontSize: 52,
-    fontWeight: '900',
-    color: '#FFF',
-    lineHeight: 58,
+    fontSize: 44,
+    fontWeight: '800',
+    marginVertical: 2,
   },
-  balanceUnit: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
+  balanceHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
     marginTop: 4,
   },
-  comingSoonCard: {
-    backgroundColor: '#1C1C24',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: '#2C2C38',
-  },
-  comingSoonEmoji: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
-  comingSoonTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFF',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  comingSoonBody: {
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    lineHeight: 22,
+  section: {
+    marginTop: 22,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#555',
     letterSpacing: 1,
     textTransform: 'uppercase',
-    marginBottom: 14,
+    marginBottom: 6,
+  },
+  sectionHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
+  },
+  lookWrap: {
+    alignSelf: 'stretch',
+  },
+  lookCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  lookName: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  lookEmpty: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  spinner: {
+    marginTop: 30,
+  },
+  messageCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+    marginTop: 22,
+  },
+  messageTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  messageBody: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginTop: 14,
+  },
+  retryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C24',
     borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#2C2C38',
-    opacity: 0.6,
+    padding: 14,
+    marginBottom: 8,
+    gap: 12,
   },
-  itemIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#2C2C38',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  itemIcon: {
-    fontSize: 24,
+  itemCardEquipped: {
+    borderColor: '#34C759',
   },
   itemInfo: {
     flex: 1,
   },
-  itemName: {
+  previewTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#CCC',
-    marginBottom: 2,
+    fontStyle: 'italic',
+    marginBottom: 4,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  previewName: {
+    fontSize: 16,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  swatch: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+  },
+  borderSwatch: {
+    width: 46,
+    height: 30,
+    borderRadius: 8,
+  },
+  borderSwatchInner: {
+    flex: 1,
+    borderRadius: 6,
+  },
+  itemName: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   itemDesc: {
     fontSize: 12,
-    color: '#555',
+    lineHeight: 17,
+    marginTop: 2,
   },
-  itemCostBox: {
-    alignItems: 'center',
-  },
-  itemCost: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#666',
-  },
-  itemCostLabel: {
-    fontSize: 10,
-    color: '#444',
+  itemShort: {
+    fontSize: 11,
     fontWeight: '600',
+    marginTop: 4,
   },
-  footerNote: {
-    fontSize: 12,
-    color: '#444',
-    textAlign: 'center',
-    marginTop: 24,
-    fontStyle: 'italic',
+  earlyBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#D9A520',
+    marginTop: 4,
+  },
+  itemButton: {
+    minWidth: 92,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemButtonBuy: {
+    backgroundColor: '#007AFF',
+  },
+  itemButtonOwned: {
+    borderWidth: 1.5,
+    borderColor: '#34C759',
+  },
+  itemButtonEquipped: {
+    backgroundColor: '#34C759',
+  },
+  itemButtonDisabled: {
+    opacity: 0.4,
+  },
+  itemButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  itemButtonTextOwned: {
+    color: '#34C759',
   },
 });

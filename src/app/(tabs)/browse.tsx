@@ -1,9 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,10 +11,16 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { showDialog } from '../../components/AppDialog';
+import { showToast } from '../../components/AppToast';
 import { useApp } from '../../context/AppContext';
 import { Group } from '../../data/groups';
 import {
   BRACKET_INFO,
+  COMMANDER_FORMAT,
+  COMMANDER_GAME,
+  COMMANDER_ONLY,
+  isGroupInScope,
   FORMAT_OPTIONS,
   GAME_COLOR,
   GAME_EMOJI,
@@ -25,12 +29,38 @@ import {
   NO_GO_OPTIONS,
   NoGoRule,
 } from '../../data/types';
-import { formatBrackets, generateJoinCode } from '../../utils/group-utils';
-import { useThemeColors } from '../../utils/theme-utils';
+import {
+  countPostingsBy,
+  findGroupOnDay,
+  formatBrackets,
+  generateJoinCode,
+  groupDayKey,
+  groupErrorMessage,
+  isGroupInArea,
+  MAX_POSTINGS,
+  sortGroupsBySchedule,
+} from '../../utils/group-utils';
+import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { useCreateGroupMutation, useJoinGroupMutation } from '../../hooks/useGroupQueries';
+import { useEventAreaQuery } from '../../hooks/useLocalEventQueries';
+import { useClaimStarterReward } from '../../hooks/useRewardQueries';
+import { calendarLocation, dateKeyFromMs, formatDayHeading } from '../../utils/calendar-utils';
+import { parseStoreEventLink, StoreEventLink, VENUE_EVENT_BONUS } from '../../utils/venue-bonus-utils';
 
 type FilterType = GameType | 'all' | 'myGames';
 const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lorcana', 'onepiece'];
+
+// Passed to router.setParams once the create form closes, so the params that opened it (and any
+// store-event link they carried) can't reopen or re-link a later form.
+const CLEARED_CREATE_PARAMS = {
+  openCreate: undefined,
+  storeEventId: undefined,
+  storeEventVenue: undefined,
+  storeEventDate: undefined,
+  storeEventStart: undefined,
+  storeEventGame: undefined,
+  storeEventFormat: undefined,
+};
 
 /**
  * Browse tab showing open groups filterable by game type, defaulting to the user's preferred games.
@@ -40,17 +70,28 @@ const ALL_GAME_FILTERS: FilterType[] = ['myGames', 'all', 'mtg', 'pokemon', 'lor
  * since nothing is actually created — and therefore nothing is visible to other players — until "Post Group"
  * is tapped. The create form auto-fills game, format, bracket, no-go rules, and location from the current
  * user's preferences.
- * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load.
+ * A group can also be made for a store event, but only by tapping "Create game" on that event in the
+ * Calendar tab: the form then opens with the game, format, place, and night already fixed to the event,
+ * and the group it posts is linked to it for the store-event bonus. The form has no way to add that link itself.
+ * Parameters: none; reads groups, currentUser, and rivals from global context; accepts openCreate route param to open the form on load, plus the storeEvent* params written by storeEventLinkParams.
  * Returns: a scrollable list of group cards with filter chips, a create-group popup, and a join-by-code popup.
- * Edge cases: join by code alerts when the code is wrong length, not found, group is full, or user is already in a group; create is blocked if required fields are empty.
+ * The list shows postings from the player's own area only (with a switch to see everywhere), soonest game first; two games at the same time are listed in the order they were posted. Join-by-code still finds a group in any area. A player can host at most 7 postings at once; handing one to another host frees a slot. The "Create a Game" button sits at the bottom of the screen, just above the tab bar.
+ * A player can be in one group per day. Creating or joining a second group on a day they already have one explains that and names the group in the way; a different day is always allowed. Every create and join ends with a short message saying it worked, which closes by itself.
+ * Edge cases: join by code explains when the code is the wrong length, not found, for a group the player is already in (with a shortcut to open it), for a day they already have a group, or for a full group; create is blocked if required fields are empty; a store-event link that is malformed or for a past night shows an alert and opens nothing, rather than opening a form that would post a group without its bonus.
  */
 export default function BrowseScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { currentUser, groups, groupsLoading, rivals } = useApp();
+  const { currentUser, groups, groupsLoading, rivals, getNow } = useApp();
   const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const createGroupMutation = useCreateGroupMutation();
   const joinGroupMutation = useJoinGroupMutation();
+  const claimReward = useClaimStarterReward(currentUser?.id);
+  // The player's event area - the same lookup the Calendar uses, so it is normally already cached.
+  const areaQuery = useEventAreaQuery(calendarLocation(currentUser?.location));
+  const myArea = areaQuery.data?.area;
+  const [showAllAreas, setShowAllAreas] = useState(false);
 
   const [filter, setFilter] = useState<FilterType>('myGames');
   const [showCreate, setShowCreate] = useState(false);
@@ -61,6 +102,9 @@ export default function BrowseScreen() {
   const [newGame, setNewGame] = useState<GameType>('mtg');
   const [newFormat, setNewFormat] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  // The store event this group is being made for. Only ever set by arriving from the Calendar
+  // tab's "Create game" button; null for an ordinary group.
+  const [storeEvent, setStoreEvent] = useState<StoreEventLink | null>(null);
   const [newDateOffset, setNewDateOffset] = useState(0);
   const [newHour, setNewHour] = useState(7);
   const [newMinute, setNewMinute] = useState(0);
@@ -69,73 +113,113 @@ export default function BrowseScreen() {
   const [newBrackets, setNewBrackets] = useState<number[]>([2]);
   const [newNoGo, setNewNoGo] = useState<NoGoRule[]>([]);
 
-  const [feedbackMsg, setFeedbackMsg] = useState('');
-  const feedbackOpacity = useRef(new Animated.Value(0)).current;
-  const feedbackScale = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    if (params.openCreate === '1') setShowCreate(true);
-  }, [params.openCreate]);
+    if (params.openCreate !== '1') return;
+    if (params.storeEventId === undefined) {
+      setShowCreate(true);
+      return;
+    }
+    const link = parseStoreEventLink(params, dateKeyFromMs(getNow()));
+    if (!link || !isGroupInScope(link.gameType, link.format)) {
+      showDialog('Couldn’t use that event', 'Go back to the Calendar tab and pick the event again.');
+      router.setParams(CLEARED_CREATE_PARAMS);
+      return;
+    }
+    setStoreEvent(link);
+    setShowCreate(true);
+  }, [params.openCreate, params.storeEventId, params.storeEventDate]);
 
   useEffect(() => {
     if (showCreate && currentUser) {
-      const primaryGame = currentUser.games[0] ?? 'mtg';
-      const primaryFormat = (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
-      setNewGame(primaryGame);
-      setNewFormat(primaryFormat);
+      if (storeEvent) {
+        setNewGame(storeEvent.gameType);
+        setNewFormat(storeEvent.format);
+        setNewLocation(storeEvent.venueName);
+        setNewDateOffset(storeEvent.dateOffset);
+        setNewHour(storeEvent.hour);
+        setNewMinute(storeEvent.minute);
+        setNewPeriod(storeEvent.period);
+      } else {
+        const primaryGame = COMMANDER_ONLY ? COMMANDER_GAME : currentUser.games[0] ?? 'mtg';
+        const primaryFormat = COMMANDER_ONLY
+          ? COMMANDER_FORMAT
+          : (currentUser.preferredFormats[primaryGame] ?? [])[0] ?? '';
+        setNewGame(primaryGame);
+        setNewFormat(primaryFormat);
+        setNewLocation(currentUser.location);
+      }
       setNewBrackets(currentUser.brackets.length > 0 ? [...currentUser.brackets] : [2]);
       setNewNoGo([...currentUser.noGo]);
-      setNewLocation(currentUser.location);
     }
-  }, [showCreate]);
+  }, [showCreate, storeEvent]);
 
-  const showFeedback = (msg: string) => {
-    setFeedbackMsg(msg);
-    feedbackOpacity.setValue(0);
-    feedbackScale.setValue(0.8);
-    Animated.parallel([
-      Animated.spring(feedbackScale, { toValue: 1, useNativeDriver: true, bounciness: 10 }),
-      Animated.timing(feedbackOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      setTimeout(() => {
-        Animated.timing(feedbackOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
-      }, 2000);
-    });
+  // Groups the app currently shows and lets a player join (see COMMANDER_ONLY).
+  const listedGroups = groups.filter((g) => isGroupInScope(g.gameType, g.format));
+
+  /**
+   * Explains why a player can't join a group, or returns false when nothing is in the way.
+   * Shared by the Join button on a card and by join-by-code, so both give the same answers.
+   * Parameters: group (the group being joined).
+   * Returns: true if a pop-up was shown and the join must stop; false if it may go ahead.
+   * Edge cases: a player already in this very group is offered a shortcut to open it; the day
+   * check finds nothing while the groups list is still loading, and the database's own
+   * one-per-day rule then refuses the join instead.
+   */
+  const explainJoinBlock = (group: Group): boolean => {
+    if (!currentUser) return true;
+    if (group.players.some((p) => p.id === currentUser.id)) {
+      showDialog('You’re already in this group', `You already have a seat in “${group.name}”.`, [
+        { text: 'OK', style: 'cancel' },
+        { text: 'Open Group', onPress: () => router.push({ pathname: '/group-detail', params: { id: group.id } }) },
+      ]);
+      return true;
+    }
+    const dayKey = groupDayKey(group);
+    const sameDay = findGroupOnDay(groups, currentUser.id, dayKey);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${dayKey ? formatDayHeading(dayKey) : 'that day'}. You can be in one group per day - leave that one first, or join a group on another day.`
+      );
+      return true;
+    }
+    if (group.players.length >= group.targetPlayers) {
+      showDialog('Group full', 'This group has no open spots.');
+      return true;
+    }
+    return false;
   };
 
-  const displayUser = currentUser?.username ?? 'Player';
-  const currentUserGroup = groups.find((g) =>
-    g.players.some((p) => p.id === currentUser?.id)
+  // Only the player's own area, unless they've asked to see everywhere or their area isn't known.
+  const areaGroups = listedGroups.filter((g) => isGroupInArea(g, showAllAreas ? undefined : myArea?.id));
+  // While the app is Commander-only the game filter is hidden and the list is simply every
+  // Commander group in the area; otherwise the chosen filter narrows it. Soonest game first.
+  const filtered = sortGroupsBySchedule(
+    COMMANDER_ONLY
+      ? areaGroups
+      : filter === 'all'
+        ? areaGroups
+        : filter === 'myGames'
+        ? areaGroups.filter((g) => currentUser?.games.includes(g.gameType))
+        : areaGroups.filter((g) => g.gameType === filter)
   );
-
-  const filtered =
-    filter === 'all'
-      ? groups
-      : filter === 'myGames'
-      ? groups.filter((g) => currentUser?.games.includes(g.gameType))
-      : groups.filter((g) => g.gameType === filter);
+  const hiddenElsewhere = listedGroups.length - areaGroups.length;
 
   const handleJoinByCode = () => {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
     const code = codeValue.toUpperCase().trim();
     if (code.length !== 6) {
-      Alert.alert('Invalid code', 'Join codes are 6 characters long.');
+      showDialog('Invalid code', 'Join codes are 6 characters long.');
       return;
     }
-    const group = groups.find((g) => g.joinCode === code);
+    const group = listedGroups.find((g) => g.joinCode === code);
     if (!group) {
-      Alert.alert('Code not found', 'No group matches that join code. Double-check with the host.');
+      showDialog('Code not found', 'No group matches that join code. Double-check with the host.');
       return;
     }
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
-      return;
-    }
-    if (group.players.length >= group.targetPlayers) {
-      Alert.alert('Group full', 'This group has no open spots.');
-      return;
-    }
+    if (explainJoinBlock(group)) return;
     setCodeValue('');
     setShowJoinModal(false);
     handleJoin(group);
@@ -144,14 +228,7 @@ export default function BrowseScreen() {
   const handleJoin = async (group: Group) => {
     if (!currentUser) return;
     if (groupsLoading || joinGroupMutation.isPending) return;
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group before joining another.');
-      return;
-    }
-    if (group.players.length >= group.targetPlayers) {
-      Alert.alert('Group full', 'This group has no open spots.');
-      return;
-    }
+    if (explainJoinBlock(group)) return;
 
     try {
       await joinGroupMutation.mutateAsync({
@@ -160,9 +237,10 @@ export default function BrowseScreen() {
         bracket: currentUser.brackets[0] ?? 2,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showFeedback(`Joined ${group.name}!`);
+      showToast('You’re in!', `You joined “${group.name}” - ${group.location}, ${group.time}.`);
+      claimReward('first_group');
     } catch (err) {
-      Alert.alert('Couldn’t join', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t join', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -172,11 +250,15 @@ export default function BrowseScreen() {
    * path so a reopened form never shows stale draft text from a discarded attempt.
    * Parameters: none.
    * Returns: void.
-   * Edge cases: none — safe to call whether or not the form had any input.
+   * Edge cases: none — safe to call whether or not the form had any input. Also drops any
+   * store-event link and clears the route params that opened the form, so the next "+ Create"
+   * starts as an ordinary group and tapping the same calendar event again reopens it.
    */
   const closeCreateForm = () => {
     setShowCreate(false);
     setNewName('');
+    setStoreEvent(null);
+    router.setParams(CLEARED_CREATE_PARAMS);
     setNewDateOffset(0);
     setNewHour(7);
     setNewMinute(0);
@@ -196,7 +278,7 @@ export default function BrowseScreen() {
    */
   const requestCloseCreate = () => {
     if (newName.trim().length > 0) {
-      Alert.alert(
+      showDialog(
         'Discard this group?',
         "You haven't posted this group yet — closing now won't create it. You'll need to post it from this tab before anyone else can see or join it.",
         [
@@ -209,15 +291,35 @@ export default function BrowseScreen() {
     }
   };
 
+
   const handleCreate = async () => {
     if (!currentUser) return;
     if (groupsLoading || createGroupMutation.isPending) return;
-    if (currentUserGroup) {
-      Alert.alert('Already in a group', 'Leave your current group first.');
+    if (!newName.trim() || !newLocation.trim()) {
+      showDialog('Missing info', 'Group name and location are required.');
       return;
     }
-    if (!newName.trim() || !newLocation.trim()) {
-      Alert.alert('Missing info', 'Group name and location are required.');
+    if (countPostingsBy(groups, currentUser.id) >= MAX_POSTINGS) {
+      showDialog(
+        'Posting limit reached',
+        `You already have ${MAX_POSTINGS} postings up, which is the most allowed at once. Delete one, hand one to another host, or wait for one to finish.`
+      );
+      return;
+    }
+
+    const scheduledAt = (() => {
+      const d = new Date(); d.setDate(d.getDate() + newDateOffset);
+      d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
+      return d.getTime();
+    })();
+    // The day as it reads on this phone: the one-group-per-day rule counts this, not the UTC date.
+    const playDate = dateKeyFromMs(scheduledAt);
+    const sameDay = findGroupOnDay(groups, currentUser.id, playDate);
+    if (sameDay) {
+      showDialog(
+        'One group per day',
+        `You’re already in “${sameDay.name}” on ${formatDayHeading(playDate)}. You can be in one group per day - pick another day for this one, or leave that group first.`
+      );
       return;
     }
 
@@ -229,11 +331,10 @@ export default function BrowseScreen() {
       format: resolvedFormat,
       brackets: resolvedFormat === 'Commander' && newBrackets.length > 0 ? newBrackets : [2],
       location: newLocation.trim(),
-      scheduledAt: (() => {
-        const d = new Date(); d.setDate(d.getDate() + newDateOffset);
-        d.setHours(newPeriod === 'PM' && newHour !== 12 ? newHour + 12 : newPeriod === 'AM' && newHour === 12 ? 0 : newHour, newMinute, 0, 0);
-        return d.getTime();
-      })(),
+      localEventId: storeEvent?.eventId,
+      scheduledAt,
+      playDate,
+      area: myArea?.id,
       time: (() => {
         const d = new Date(); d.setDate(d.getDate() + newDateOffset);
         const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -245,12 +346,13 @@ export default function BrowseScreen() {
     };
 
     try {
-      await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
+      const created = await createGroupMutation.mutateAsync({ hostId: currentUser.id, draft });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeCreateForm();
-      showFeedback('Group posted! Other players can now find and join it.');
+      showToast('Group posted!', `“${created.name}” is live for ${formatDayHeading(playDate)}. Join code ${created.joinCode}.`);
+      claimReward('first_group');
     } catch (err) {
-      Alert.alert('Couldn’t post group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t post group', groupErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -273,14 +375,6 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Feedback banner */}
-      <Animated.View
-        style={[styles.feedbackBanner, { opacity: feedbackOpacity, transform: [{ scale: feedbackScale }] }]}
-        pointerEvents="none"
-      >
-        <Text style={styles.feedbackText}>{feedbackMsg}</Text>
-      </Animated.View>
-
       <View style={styles.topBar}>
         <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Find a Game</Text>
         <View style={styles.topBarActions}>
@@ -290,17 +384,11 @@ export default function BrowseScreen() {
           >
             <Text style={styles.joinToggleText}>🔑 Join a Group</Text>
           </Pressable>
-          <Pressable
-            style={styles.createToggle}
-            onPress={() => { Haptics.selectionAsync(); setShowCreate(true); }}
-          >
-            <Text style={styles.createToggleText}>+ Create</Text>
-          </Pressable>
         </View>
       </View>
 
-      {/* Game filter chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
+      {/* Game filter chips: hidden while the app is Commander-only, since there is only the one */}
+      {!COMMANDER_ONLY && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
         {ALL_GAME_FILTERS.map((f) => {
           const active = filter === f;
           const chipColor = f === 'myGames' ? '#34C759' : f === 'all' ? '#007AFF' : GAME_COLOR[f as GameType];
@@ -320,15 +408,36 @@ export default function BrowseScreen() {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </ScrollView>}
+
+      {myArea && (
+        <View style={styles.areaRow}>
+          <Text style={[styles.areaLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+            {showAllAreas ? 'Showing games everywhere' : `Games near ${myArea.label}`}
+          </Text>
+          <Pressable
+            onPress={() => { Haptics.selectionAsync(); setShowAllAreas((v) => !v); }}
+            accessibilityRole="button"
+            hitSlop={8}
+          >
+            <Text style={[styles.areaToggle, { color: colors.accentText }]}>
+              {showAllAreas ? 'Only near me' : 'Show everywhere'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {/* Group cards */}
         {filtered.length === 0 && (
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No groups found for this game type.</Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+            {hiddenElsewhere > 0
+              ? `No games posted near you yet. Be the first - tap Create a Game. (${hiddenElsewhere} in other areas.)`
+              : COMMANDER_ONLY ? 'No Commander groups posted yet. Be the first - tap Create a Game.' : 'No groups found for this game type.'}
+          </Text>
         )}
         {filtered.map((group) => {
-          const inThisGroup = group.players.some((p) => p.username === displayUser);
+          const inThisGroup = group.players.some((p) => p.id === currentUser?.id);
           const isFull = group.players.length >= group.targetPlayers;
           const rivalInGroup = rivals.some((r) =>
             group.players.some((p) => p.username === r.username)
@@ -389,6 +498,18 @@ export default function BrowseScreen() {
         })}
       </ScrollView>
 
+      {/* The main action sits just above the tab bar, where a thumb already is. */}
+      <View style={[styles.createBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+        <Pressable
+          style={styles.createBarButton}
+          onPress={() => { Haptics.selectionAsync(); setShowCreate(true); }}
+          accessibilityRole="button"
+          accessibilityLabel="Create a game"
+        >
+          <Text style={styles.createBarButtonText}>+ Create a Game</Text>
+        </Pressable>
+      </View>
+
       {/* ── Join a Group popup ── */}
       {showJoinModal && (
         <KeyboardAvoidingView
@@ -407,7 +528,7 @@ export default function BrowseScreen() {
                 value={codeValue}
                 onChangeText={(t) => setCodeValue(t.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6))}
                 placeholder="XXXXXX"
-                placeholderTextColor="#444"
+                placeholderTextColor={colors.placeholder}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 maxLength={6}
@@ -447,9 +568,15 @@ export default function BrowseScreen() {
               </View>
               <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
                 Nothing here is saved until you tap "Post Group" below — closing this
-                without posting won't create anything.
+                without posting won't create anything. You can be in one group per day.
               </Text>
 
+              {storeEvent ? (
+                <Text style={styles.storeEventNote}>
+                  🏪 {storeEvent.format} at {storeEvent.venueName} · {formatDayHeading(storeEvent.dateKey)} · +{VENUE_EVENT_BONUS} bonus points each for a round played there that night
+                </Text>
+              ) : COMMANDER_ONLY ? null : (
+              <>
               <Text style={styles.fieldLabel}>Game</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gamePickerRow}>
                 {(['mtg', 'pokemon', 'lorcana', 'onepiece'] as GameType[]).map((g) => (
@@ -478,12 +605,16 @@ export default function BrowseScreen() {
                   </Pressable>
                 ))}
               </View>
+              </>
+              )}
 
               <Text style={styles.fieldLabel}>Group Name</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor="#555" />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor={colors.placeholder} />
 
+              {!storeEvent && (
+              <>
               <Text style={styles.fieldLabel}>Location</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor="#555" />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor={colors.placeholder} />
 
               <Text style={styles.fieldLabel}>Date</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
@@ -497,11 +628,13 @@ export default function BrowseScreen() {
                       style={[styles.chip, { backgroundColor: colors.bg }, newDateOffset === i && styles.chipTimeActive]}
                       onPress={() => { setNewDateOffset(i); Haptics.selectionAsync(); }}
                     >
-                      <Text style={[styles.chipText, newDateOffset === i && styles.chipTextActive]}>{label}</Text>
+                      <Text style={[styles.chipText, newDateOffset === i && { color: colors.accentOnBg }]}>{label}</Text>
                     </Pressable>
                   );
                 })}
               </ScrollView>
+              </>
+              )}
 
               <Text style={styles.fieldLabel}>Time</Text>
               <View style={[styles.timePicker, { backgroundColor: colors.bg, borderColor: colors.border }]}>
@@ -536,7 +669,7 @@ export default function BrowseScreen() {
 
               <View style={styles.halfField}>
                 <Text style={styles.fieldLabel}>Players Needed</Text>
-                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor="#555" />
+                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor={colors.placeholder} />
               </View>
 
               {newGame !== 'mtg' && (
@@ -562,7 +695,7 @@ export default function BrowseScreen() {
                           style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipBracketActive]}
                           onPress={() => toggleBracket(b)}
                         >
-                          <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                          <Text style={[styles.chipText, active && { color: colors.accentOnBg }]}>
                             {BRACKET_INFO[b].label}
                           </Text>
                         </Pressable>
@@ -582,7 +715,7 @@ export default function BrowseScreen() {
                       style={[styles.chip, { backgroundColor: colors.bg }, active && styles.chipNoGo]}
                       onPress={() => toggleNoGo(rule)}
                     >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{rule}</Text>
+                      <Text style={[styles.chipText, active && { color: colors.dangerOnBg }]}>{rule}</Text>
                     </Pressable>
                   );
                 })}
@@ -604,24 +737,17 @@ export default function BrowseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: every neutral and tinted color comes from ThemeColors, so the screen follows
+// the light/dark setting. Only saturated accents that read on both stay as fixed values.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  storeEventNote: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    color: c.successText,
+  },
   container: {
     flex: 1,
-  },
-  feedbackBanner: {
-    position: 'absolute',
-    top: 80,
-    alignSelf: 'center',
-    backgroundColor: '#34C759',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    zIndex: 99,
-  },
-  feedbackText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
   },
   topBar: {
     flexDirection: 'row',
@@ -644,7 +770,7 @@ const styles = StyleSheet.create({
     borderColor: '#34C759',
   },
   joinToggleText: {
-    color: '#34C759',
+    color: c.successText,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -652,17 +778,39 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '800',
   },
-  createToggle: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#007AFF',
+  areaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
-  createToggleText: {
-    color: '#007AFF',
-    fontWeight: '700',
+  areaLabel: {
+    flex: 1,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  areaToggle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  createBar: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+  },
+  createBarButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  createBarButtonText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 17,
   },
   filterRow: {
     paddingLeft: 20,
@@ -744,7 +892,7 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   codeInput: {
-    backgroundColor: '#1C1C24',
+    backgroundColor: c.bg,
     borderWidth: 1.5,
     borderColor: '#34C759',
     borderRadius: 10,
@@ -752,7 +900,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 22,
     fontWeight: '800',
-    color: '#34C759',
+    color: c.successText,
     letterSpacing: 6,
     textAlign: 'center',
   },
@@ -802,7 +950,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 12,
@@ -827,7 +975,7 @@ const styles = StyleSheet.create({
   },
   gamePickerLabel: {
     fontSize: 10,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -841,26 +989,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#333',
+    borderColor: c.border,
   },
   chipText: {
     fontSize: 12,
-    color: '#888',
+    color: c.textSecondary,
     fontWeight: '600',
   },
   chipTextActive: {
     color: '#FFF',
   },
   chipNoGo: {
-    backgroundColor: '#3D1215',
+    backgroundColor: c.dangerBg,
     borderColor: '#C0392B',
   },
   chipBracketActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   chipTimeActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   timePickerContent: {
@@ -900,7 +1048,7 @@ const styles = StyleSheet.create({
   timeSeparator: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#555',
+    color: c.textMuted,
     marginBottom: 2,
   },
   timePeriod: {
@@ -914,20 +1062,20 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   periodBtnActive: {
-    backgroundColor: '#001A33',
+    backgroundColor: c.accentBg,
     borderColor: '#007AFF',
   },
   periodText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#666',
+    color: c.textMuted,
   },
   periodTextActive: {
     color: '#007AFF',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#2C2C38',
+    borderColor: c.border,
     borderRadius: 10,
     paddingVertical: 11,
     paddingHorizontal: 14,
@@ -942,7 +1090,7 @@ const styles = StyleSheet.create({
   },
   comingSoonNote: {
     fontSize: 11,
-    color: '#555',
+    color: c.textMuted,
     fontStyle: 'italic',
     marginTop: 10,
     marginBottom: 4,
@@ -974,7 +1122,7 @@ const styles = StyleSheet.create({
   groupCardRival: {
     borderColor: '#FF3B30',
     borderWidth: 2,
-    backgroundColor: '#1E1214',
+    backgroundColor: c.rivalMainBg,
   },
   rivalGroupBadge: {
     paddingVertical: 3,
@@ -1008,12 +1156,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: '#333',
+    backgroundColor: c.border,
   },
   fullBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#888',
+    color: c.textSecondary,
     letterSpacing: 0.5,
   },
   groupName: {
@@ -1041,7 +1189,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   joinBtnDisabled: {
-    backgroundColor: '#2C2C38',
+    backgroundColor: c.disabledBg,
   },
   joinBtnText: {
     color: '#FFF',
@@ -1052,12 +1200,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#0D2A15',
+    backgroundColor: c.successBg,
     borderWidth: 1,
     borderColor: '#34C759',
   },
   inGroupText: {
-    color: '#34C759',
+    color: c.successText,
     fontSize: 12,
     fontWeight: '700',
   },

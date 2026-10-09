@@ -1,17 +1,19 @@
 import { supabase } from './supabase';
-import { updateProfile } from './profile-api';
 import { Group, PlayerProfile } from '../data/groups';
-import { GameType, NoGoRule, UserProfile } from '../data/types';
-import { computePlacementScores, GameOutcome, PlacementInput } from '../utils/scoring-utils';
-
-/** How long other group members have to dispute a submitted round before it auto-finalizes. */
-export const DISPUTE_WINDOW_MS = 15 * 60 * 1000;
+import { GameType, NoGoRule } from '../data/types';
+import { GameOutcome, PlacementInput } from '../utils/scoring-utils';
 
 interface GroupPlayerRow {
   player_id: string;
   role: string;
   bracket: number;
-  profiles: { username: string; display_name: string | null; location: string } | null;
+  profiles: {
+    username: string;
+    display_name: string | null;
+    location: string;
+    title?: string | null;
+    name_color?: string | null;
+  } | null;
 }
 
 interface GroupRow {
@@ -21,6 +23,8 @@ interface GroupRow {
   created_by: string;
   created_at: string;
   scheduled_at: string | null;
+  play_date?: string | null;
+  area?: string | null;
   rounds_played: number;
   target_players: number;
   brackets: number[];
@@ -30,10 +34,12 @@ interface GroupRow {
   format: string;
   no_go: string[];
   confirmed: boolean;
+  local_event_id?: string | null;
   group_players: GroupPlayerRow[];
 }
 
-const GROUP_SELECT = '*, group_players(player_id, role, bracket, profiles(username, display_name, location))';
+const GROUP_SELECT =
+  '*, group_players(player_id, role, bracket, profiles(username, display_name, location, title, name_color))';
 
 const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   id: row.player_id,
@@ -42,6 +48,8 @@ const mapPlayerRow = (row: GroupPlayerRow): PlayerProfile => ({
   bracket: row.bracket,
   location: row.profiles?.location ?? '',
   role: row.role,
+  title: row.profiles?.title ?? undefined,
+  nameColor: row.profiles?.name_color ?? undefined,
 });
 
 const mapGroupRow = (row: GroupRow): Group => ({
@@ -51,6 +59,8 @@ const mapGroupRow = (row: GroupRow): Group => ({
   createdBy: row.created_by,
   createdAt: new Date(row.created_at).getTime(),
   scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).getTime() : undefined,
+  playDate: row.play_date ?? undefined,
+  area: row.area ?? undefined,
   roundsPlayed: row.rounds_played,
   players: row.group_players.map(mapPlayerRow),
   targetPlayers: row.target_players,
@@ -61,6 +71,7 @@ const mapGroupRow = (row: GroupRow): Group => ({
   format: row.format,
   noGo: row.no_go as NoGoRule[],
   confirmed: row.confirmed,
+  localEventId: row.local_event_id ?? undefined,
 });
 
 /**
@@ -99,6 +110,11 @@ export interface CreateGroupDraft {
   name: string;
   joinCode: string;
   scheduledAt?: number;
+  /** The calendar day the host picked, "YYYY-MM-DD" on their phone. The one-group-per-day rule
+   * counts this day, not the UTC date of scheduledAt. */
+  playDate?: string;
+  /** The host's event area (an event_areas id), so the posting is listed for their neighbours. */
+  area?: string;
   targetPlayers: number;
   brackets: number[];
   location: string;
@@ -107,6 +123,8 @@ export interface CreateGroupDraft {
   format: string;
   noGo: NoGoRule[];
   hostBracket: number;
+  /** The store event the group is playing at, chosen from the calendar; omit for none. */
+  localEventId?: string;
 }
 
 /**
@@ -117,25 +135,43 @@ export interface CreateGroupDraft {
  * Edge cases: throws (and leaves no group_players row) if the group insert fails; throws if the
  * host's own group_players insert fails even though the group row was created — callers should
  * treat any error here as "creation failed," not attempt to reuse a partially-created group.
+ * A host who already has a group that day is refused at the seat insert (the per-day rule lives
+ * on group_players), which is that second case. The server also refuses an eighth posting by
+ * the same player, with a message meant for them. If the database does not have the play_date
+ * or area column yet (20261008120000 / 20261008140000 not applied), the group is created without
+ * them - the server then buckets by UTC date and the posting is listed in every area - rather
+ * than every create failing.
  */
 export const createGroup = async (hostId: string, draft: CreateGroupDraft): Promise<Group> => {
-  const { data, error } = await supabase
+  const row: Record<string, unknown> = {
+    name: draft.name,
+    join_code: draft.joinCode,
+    created_by: hostId,
+    scheduled_at: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : null,
+    target_players: draft.targetPlayers,
+    brackets: draft.brackets,
+    location: draft.location,
+    time: draft.time,
+    game_type: draft.gameType,
+    format: draft.format,
+    no_go: draft.noGo,
+    local_event_id: draft.localEventId ?? null,
+  };
+  // Columns added after the first release of groups. A server that hasn't had their migration
+  // applied rejects the whole insert, so they are kept apart from the columns every server has.
+  const newer: Record<string, unknown> = {};
+  if (draft.playDate) newer.play_date = draft.playDate;
+  if (draft.area) newer.area = draft.area;
+  const hasNewer = Object.keys(newer).length > 0;
+  let { data, error } = await supabase
     .from('groups')
-    .insert({
-      name: draft.name,
-      join_code: draft.joinCode,
-      created_by: hostId,
-      scheduled_at: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : null,
-      target_players: draft.targetPlayers,
-      brackets: draft.brackets,
-      location: draft.location,
-      time: draft.time,
-      game_type: draft.gameType,
-      format: draft.format,
-      no_go: draft.noGo,
-    })
+    .insert(hasNewer ? { ...row, ...newer } : row)
     .select()
     .single();
+  // PGRST204: the API doesn't know a column. Only then is it safe to retry without the newer ones.
+  if (error && error.code === 'PGRST204' && hasNewer) {
+    ({ data, error } = await supabase.from('groups').insert(row).select().single());
+  }
   if (error) throw error;
 
   const { error: joinError } = await supabase
@@ -168,60 +204,59 @@ export const joinGroup = async (
   if (error) throw error;
 };
 
+/** What leave_group did: the caller left, the caller was last so the group is gone, or nothing. */
+export type LeaveGroupOutcome = 'left' | 'deleted' | 'not_member';
+
 /**
- * Removes a player from a group's roster.
- * Parameters: groupId, playerId.
- * Returns: a promise that resolves once the membership row is deleted.
- * Edge cases: no-op (no error) if the player wasn't a member; does not reassign the host role —
- * callers must call setGroupHost first if the leaving player is the host and others remain.
+ * Removes the signed-in user from a group via the leave_group database function. The server does
+ * the whole thing in one transaction: if they were the last member the group is deleted, and if
+ * they were the host with others remaining, the longest-standing member becomes host. There is
+ * deliberately no playerId argument - the server acts on whoever is signed in, so this can never
+ * be used to remove someone else.
+ * Parameters: groupId.
+ * Returns: 'left', 'deleted' (the caller was the last member), or 'not_member' (nothing changed).
+ * Edge cases: resolves to 'not_member' rather than throwing if the group no longer exists or the
+ * user wasn't in it, so leaving twice or leaving an already-cleaned-up group is harmless; throws
+ * if the user isn't signed in or on a Postgres/network error.
  */
-export const leaveGroup = async (groupId: string, playerId: string): Promise<void> => {
-  const { error } = await supabase
-    .from('group_players')
-    .delete()
-    .eq('group_id', groupId)
-    .eq('player_id', playerId);
+export const leaveGroup = async (groupId: string): Promise<LeaveGroupOutcome> => {
+  const { data, error } = await supabase.rpc('leave_group', { p_group_id: groupId });
   if (error) throw error;
+  return data as LeaveGroupOutcome;
 };
 
 /**
- * Deletes a group entirely (cascades to its group_players and group_results rows).
+ * Deletes a group for everyone via the delete_group database function (cascades to its roster
+ * and results). Only the group's host is allowed to; the server checks, not this client.
+ * This replaces a direct .delete(), which silently affected zero rows because `groups` never had
+ * a DELETE policy - so the old call reported success without deleting anything.
  * Parameters: groupId.
- * Returns: a promise that resolves once the delete completes.
- * Edge cases: none beyond the standard Postgres/network error; callers are responsible for
- * deciding when a group should be deleted (this app does so when its last player leaves).
+ * Returns: a promise that resolves once the group is gone.
+ * Edge cases: resolves without error if the group no longer exists (a repeated tap, or the
+ * stale-group cron got there first); throws if the caller isn't the host.
  */
 export const deleteGroup = async (groupId: string): Promise<void> => {
-  const { error } = await supabase.from('groups').delete().eq('id', groupId);
+  const { error } = await supabase.rpc('delete_group', { p_group_id: groupId });
   if (error) throw error;
 };
 
 /**
- * Reassigns a group's host role from one player to another.
- * Parameters: groupId, newHostId, previousHostId.
- * Returns: a promise that resolves once both role updates complete.
- * Edge cases: if the promotion succeeds but the demotion fails, the group is left with two
- * "Host" rows rather than none — acceptable since isHostForUser only checks for a match, not
- * exclusivity, and a caller can retry the demotion.
+ * Hands a group's host role to another member via the transfer_group_host database function.
+ * The server promotes the new host and demotes the old one in a single transaction, so the group
+ * always ends up with exactly one host. Only the current host may call it.
+ * This replaces two direct .update() calls, which silently affected zero rows because
+ * `group_players` never had an UPDATE policy - host transfer never actually persisted.
+ * Parameters: groupId, newHostId.
+ * Returns: a promise that resolves once the role has moved.
+ * Edge cases: no-op if newHostId is already the host; throws if the caller isn't the host, the
+ * target isn't a member of the group, or the group no longer exists.
  */
-export const setGroupHost = async (
-  groupId: string,
-  newHostId: string,
-  previousHostId: string
-): Promise<void> => {
-  const { error: promoteError } = await supabase
-    .from('group_players')
-    .update({ role: 'Host' })
-    .eq('group_id', groupId)
-    .eq('player_id', newHostId);
-  if (promoteError) throw promoteError;
-
-  const { error: demoteError } = await supabase
-    .from('group_players')
-    .update({ role: 'Member' })
-    .eq('group_id', groupId)
-    .eq('player_id', previousHostId);
-  if (demoteError) throw demoteError;
+export const setGroupHost = async (groupId: string, newHostId: string): Promise<void> => {
+  const { error } = await supabase.rpc('transfer_group_host', {
+    p_group_id: groupId,
+    p_new_host_id: newHostId,
+  });
+  if (error) throw error;
 };
 
 export interface UpdateGroupDraft {
@@ -271,7 +306,11 @@ export interface GroupResultPlacement {
   playerId: string;
   placement: number;
   outcome: GameOutcome;
+  /** Total points for the round, including venueBonus. */
   pointsAwarded: number;
+  /** How much of pointsAwarded is the store-event bonus (0 or VENUE_EVENT_BONUS). Absent on
+   * rounds recorded before the bonus existed. */
+  venueBonus?: number;
 }
 
 export interface GroupResult {
@@ -280,13 +319,6 @@ export interface GroupResult {
   roundNumber: number;
   submittedBy: string;
   submittedAt: number;
-  status: 'pending' | 'disputed' | 'finalized';
-  disputeWindowEndsAt: number;
-  finalizedAt?: number;
-  disputedBy: string[];
-  /** One entry per disputing player id, holding the reason they gave when flagging the round. */
-  disputeReasons: Record<string, string>;
-  appliedBy: string[];
   placements: GroupResultPlacement[];
 }
 
@@ -296,12 +328,6 @@ interface GroupResultRow {
   round_number: number;
   submitted_by: string;
   submitted_at: string;
-  status: 'pending' | 'disputed' | 'finalized';
-  dispute_window_ends_at: string;
-  finalized_at: string | null;
-  disputed_by: string[];
-  dispute_reasons: Record<string, string>;
-  applied_by: string[];
   placements: GroupResultPlacement[];
 }
 
@@ -311,17 +337,12 @@ const mapResultRow = (row: GroupResultRow): GroupResult => ({
   roundNumber: row.round_number,
   submittedBy: row.submitted_by,
   submittedAt: new Date(row.submitted_at).getTime(),
-  status: row.status,
-  disputeWindowEndsAt: new Date(row.dispute_window_ends_at).getTime(),
-  finalizedAt: row.finalized_at ? new Date(row.finalized_at).getTime() : undefined,
-  disputedBy: row.disputed_by,
-  disputeReasons: row.dispute_reasons ?? {},
-  appliedBy: row.applied_by,
-  placements: row.placements,
+  placements: row.placements ?? [],
 });
 
 /**
- * Fetches every reported round for a group, oldest first.
+ * Fetches every reported round for a group, oldest first. Every round here is final: there is
+ * no pending or disputed state, so what this returns is exactly what was paid out.
  * Parameters: groupId.
  * Returns: an array of GroupResult.
  * Edge cases: returns an empty array if no round has been reported yet.
@@ -329,7 +350,7 @@ const mapResultRow = (row: GroupResultRow): GroupResult => ({
 export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]> => {
   const { data, error } = await supabase
     .from('group_results')
-    .select('*')
+    .select('id, group_id, round_number, submitted_by, submitted_at, placements')
     .eq('group_id', groupId)
     .order('round_number', { ascending: true });
   if (error) throw error;
@@ -337,141 +358,32 @@ export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]>
 };
 
 /**
- * Submits a round's results: scores every player's placement via computePlacementScores and
- * inserts a pending result with a fresh dispute window.
- * Parameters: groupId, roundNumber (1-indexed — the caller is responsible for passing
- * group.roundsPlayed + 1), submittedBy (the host's id), placements (each participant's rank).
- * Returns: the newly created GroupResult.
- * Edge cases: throws if RLS rejects the insert (submitter isn't a group member).
+ * Reports a round, and that report is final. The submit_group_result SQL function verifies the
+ * caller is the group's host and that every placed player is a member, scores the raw finish
+ * order itself (so points can't be inflated from the client), adds the one-time store-event
+ * bonus where it applies, records the round, pays every player their points, and counts the
+ * round as played - all in one transaction. There is no dispute window and no way to edit or
+ * cancel a round afterwards, so the caller should confirm the order with the host first.
+ * Parameters: groupId, roundNumber (1-indexed - the caller passes group.roundsPlayed + 1, and
+ * the server refuses anything else, which is what makes a double tap harmless), submittedBy
+ * (unused server-side, kept for call-site compatibility; the host is the authenticated caller),
+ * placements (each participant's rank).
+ * Returns: a promise that resolves once the round is recorded and paid; the caller refetches
+ * the group, its results, and its own profile rather than relying on a return value.
+ * Edge cases: throws if the caller isn't the host, a placement names a non-member or the same
+ * player twice, the round number isn't the next one (already reported, or out of order), or on
+ * any Postgres/network error. On any failure nothing is recorded and nobody is paid.
  */
 export const submitGroupResult = async (
   groupId: string,
   roundNumber: number,
   submittedBy: string,
   placements: PlacementInput[]
-): Promise<GroupResult> => {
-  const scored = computePlacementScores(placements);
-  const { data, error } = await supabase
-    .from('group_results')
-    .insert({
-      group_id: groupId,
-      round_number: roundNumber,
-      submitted_by: submittedBy,
-      dispute_window_ends_at: new Date(Date.now() + DISPUTE_WINDOW_MS).toISOString(),
-      placements: scored,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return mapResultRow(data as GroupResultRow);
-};
-
-/**
- * Flags a pending result as disputed by a group member, permanently blocking it from
- * auto-finalizing — the host must cancel it (cancelGroupResult) and resubmit rather than the
- * dispute ever being "resolved" in place, keeping the anti-cheat model simple. The reason is
- * required so the host has some idea of what to fix before resubmitting, rather than just
- * knowing *that* someone objected.
- * Parameters: result (the result being disputed), playerId (who's disputing it), reason (their
- * required explanation of what's wrong with the round).
- * Returns: a promise that resolves once the update completes.
- * Edge cases: no-op if this player already disputed it (their original reason is kept).
- */
-export const disputeGroupResult = async (
-  result: GroupResult,
-  playerId: string,
-  reason: string
 ): Promise<void> => {
-  if (result.disputedBy.includes(playerId)) return;
-  const { error } = await supabase
-    .from('group_results')
-    .update({
-      disputed_by: [...result.disputedBy, playerId],
-      dispute_reasons: { ...result.disputeReasons, [playerId]: reason },
-      status: 'disputed',
-    })
-    .eq('id', result.id);
-  if (error) throw error;
-};
-
-/**
- * Deletes a disputed (or otherwise unwanted) result so the host can resubmit a corrected round.
- * Parameters: resultId.
- * Returns: a promise that resolves once the row is deleted.
- * Edge cases: none beyond the standard Postgres/network error; deleting a finalized result does
- * not undo points already applied from it (not exposed in the UI — see group-detail.tsx).
- */
-export const cancelGroupResult = async (resultId: string): Promise<void> => {
-  const { error } = await supabase.from('group_results').delete().eq('id', resultId);
-  if (error) throw error;
-};
-
-/**
- * Lazily finalizes a pending result once its dispute window has elapsed with no disputes, and
- * bumps the group's rounds_played — mirrors this app's existing getNow()/devDateOffset pattern
- * of checking elapsed time whenever a screen reads the data, rather than running a scheduled job
- * to do it centrally.
- * Parameters: result (the result to check), currentRoundsPlayed (the group's rounds_played
- * before this round, needed since the increment is a read-then-write rather than an atomic SQL
- * expression).
- * Returns: the result unchanged if it isn't ready to finalize yet, or the updated (now
- * 'finalized') result.
- * Edge cases: the `.eq('status', 'pending')` guard means a concurrent dispute from another
- * player's device loses the update (0 rows affected) rather than overwriting their dispute -
- * `.select().maybeSingle()` then returns null for that case, so the caller re-fetches instead.
- */
-export const finalizeGroupResultIfReady = async (
-  result: GroupResult,
-  currentRoundsPlayed: number
-): Promise<GroupResult> => {
-  if (result.status !== 'pending' || Date.now() < result.disputeWindowEndsAt) return result;
-
-  const { data, error } = await supabase
-    .from('group_results')
-    .update({ status: 'finalized', finalized_at: new Date().toISOString() })
-    .eq('id', result.id)
-    .eq('status', 'pending')
-    .select()
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return result;
-
-  await supabase.from('groups').update({ rounds_played: currentRoundsPlayed + 1 }).eq('id', result.groupId);
-  return mapResultRow(data as GroupResultRow);
-};
-
-/**
- * Applies one player's own share of a finalized result to their profile (points/monthlyPoints,
- * and whichever of wins/losses/draws matches their outcome), then marks them as applied so a
- * later reload never double-awards it. Only ever touches the caller's own profile row — RLS
- * wouldn't allow anything else — so every participant's own client must call this for the
- * group's points to fully settle; there is no single step that applies everyone's at once.
- * Parameters: result (a finalized GroupResult), currentProfile (the calling user's own, current
- * UserProfile, used as the base for the point/record delta).
- * Returns: a promise that resolves once both the profile update and the applied_by marker land,
- * or resolves immediately with no writes if the result isn't finalized, doesn't include this
- * player, or was already applied by them.
- * Edge cases: none beyond the standard Postgres/network error from either write.
- */
-export const applyGroupResultPoints = async (
-  result: GroupResult,
-  currentProfile: UserProfile
-): Promise<void> => {
-  if (result.status !== 'finalized' || result.appliedBy.includes(currentProfile.id)) return;
-  const mine = result.placements.find((p) => p.playerId === currentProfile.id);
-  if (!mine) return;
-
-  await updateProfile(currentProfile.id, {
-    wins: currentProfile.wins + (mine.outcome === 'win' ? 1 : 0),
-    losses: currentProfile.losses + (mine.outcome === 'loss' ? 1 : 0),
-    draws: currentProfile.draws + (mine.outcome === 'draw' ? 1 : 0),
-    points: currentProfile.points + mine.pointsAwarded,
-    monthlyPoints: currentProfile.monthlyPoints + mine.pointsAwarded,
+  const { error } = await supabase.rpc('submit_group_result', {
+    p_group_id: groupId,
+    p_round_number: roundNumber,
+    p_placements: placements.map((p) => ({ playerId: p.playerId, placement: p.placement })),
   });
-
-  const { error } = await supabase
-    .from('group_results')
-    .update({ applied_by: [...result.appliedBy, currentProfile.id] })
-    .eq('id', result.id);
   if (error) throw error;
 };

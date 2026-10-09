@@ -10,6 +10,9 @@ export interface PlayerProfile {
   bracket: number;
   location: string;
   role: string;
+  /** What this player is wearing from the shop, if anything (see src/data/shop.ts). */
+  title?: string;
+  nameColor?: string;
 }
 
 export interface Group {
@@ -19,6 +22,13 @@ export interface Group {
   createdBy: string;
   createdAt: number;
   scheduledAt?: number;
+  /** The calendar day the host picked, "YYYY-MM-DD" as it read on their phone. A player can be
+   * in one group per day, and this is the day that rule counts. Absent on groups posted before
+   * the column existed; use groupDayKey() rather than reading it directly. */
+  playDate?: string;
+  /** The event area (an event_areas id) the host was in when they posted. The Find tab lists
+   * only postings from the player's own area. Absent on older groups, which are listed everywhere. */
+  area?: string;
   roundsPlayed: number;
   players: PlayerProfile[];
   targetPlayers: number;
@@ -29,6 +39,9 @@ export interface Group {
   format: string;
   noGo: NoGoRule[];
   confirmed: boolean;
+  /** The store event (a local_events row) this group is playing at, if any. Links the group to
+   * the Calendar tab's data and makes its rounds eligible for the store-event bonus. */
+  localEventId?: string;
 }
 
 // HARDCODED_GROUPS (the static mock group list) has been removed from development/main — it's

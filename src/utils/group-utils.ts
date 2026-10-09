@@ -1,4 +1,5 @@
 import { Group, PlayerProfile } from "../data/groups";
+import { dateKeyFromMs } from "./calendar-utils";
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
@@ -60,10 +61,134 @@ export const isGroupFull = (group: Group): boolean =>
   group.players.length >= group.targetPlayers;
 
 /**
+ * Works out which calendar day a group is played on, as a "YYYY-MM-DD" key.
+ * A player may be in one group per day, so this is the value two groups are compared by.
+ * It prefers the day the host picked (playDate) and falls back to the local date of the
+ * scheduled time for groups posted before that was recorded.
+ * Parameters: group (the group to read).
+ * Returns: the day key, or undefined when the group has no day at all.
+ * Edge cases: the fallback uses this device's time zone, so for an older group it can differ by
+ * a day from what the host saw; a group with neither value returns undefined and never counts
+ * as clashing with anything.
+ */
+export const groupDayKey = (group: Group): string | undefined =>
+  group.playDate ?? (group.scheduledAt !== undefined ? dateKeyFromMs(group.scheduledAt) : undefined);
+
+/**
+ * Finds the group a player already has on a given day, if any.
+ * This is the check behind "one group per day": before creating or joining, look for a group
+ * the player is in that falls on the same day.
+ * Parameters: groups (every known group), playerId (the player to look for), dayKey (the
+ * "YYYY-MM-DD" day being considered, or undefined).
+ * Returns: the clashing group, or undefined when the day is free.
+ * Edge cases: returns undefined for an undefined dayKey, an unknown player, or an empty list;
+ * if the list hasn't loaded yet it finds nothing, so the database's own rule is the backstop.
+ */
+export const findGroupOnDay = (
+  groups: Group[],
+  playerId: string,
+  dayKey: string | undefined
+): Group | undefined =>
+  dayKey === undefined
+    ? undefined
+    : groups.find(
+        (group) =>
+          groupDayKey(group) === dayKey &&
+          group.players.some((player) => player.id === playerId)
+      );
+
+/**
+ * Lists every group a player is in, soonest first.
+ * Now that a player can hold a group on each day, screens that used to show "your group" show
+ * this list instead.
+ * Parameters: groups (every known group), playerId (the player to look for).
+ * Returns: the player's groups ordered by scheduled time, earliest first.
+ * Edge cases: groups with no scheduled time sort to the end, in their original order; returns an
+ * empty array for an unknown player.
+ */
+export const findGroupsForPlayer = (groups: Group[], playerId: string): Group[] =>
+  sortGroupsBySchedule(
+    groups.filter((group) => group.players.some((player) => player.id === playerId))
+  );
+
+/**
+ * Puts groups in the order a player wants to read them: the soonest game first.
+ * When two groups start at the same moment, the one that was posted first comes first, so a
+ * newer posting can't jump ahead of one that has been waiting.
+ * Parameters: groups (any list of groups).
+ * Returns: a new array in that order; the input is not changed.
+ * Edge cases: groups with no scheduled time go to the end, oldest posting first among
+ * themselves; an empty list returns an empty list.
+ */
+export const sortGroupsBySchedule = (groups: Group[]): Group[] =>
+  [...groups].sort(
+    (a, b) =>
+      (a.scheduledAt ?? Number.MAX_SAFE_INTEGER) - (b.scheduledAt ?? Number.MAX_SAFE_INTEGER) ||
+      a.createdAt - b.createdAt
+  );
+
+/**
+ * Decides whether a posting belongs in a player's Find list, which shows their own area only.
+ * Parameters: group (the posting), areaId (the player's event area, or undefined when it isn't
+ * known or the player has asked to see every area).
+ * Returns: true when the posting should be listed.
+ * Edge cases: with no areaId everything is listed; a posting with no recorded area (made before
+ * areas were saved) is listed everywhere rather than hidden from everyone.
+ */
+export const isGroupInArea = (group: Group, areaId: string | undefined): boolean =>
+  areaId === undefined || group.area === undefined || group.area === areaId;
+
+/** The most postings one player can host at once. The server enforces the same number
+ * (max_postings in 20261008140000); change both together. */
+export const MAX_POSTINGS = 7;
+
+/**
+ * Counts how many postings a player is hosting right now, for the posting limit.
+ * The slot belongs to whoever hosts the group, not whoever first posted it: handing the host
+ * role to someone else frees one of your slots and uses one of theirs - the same way the server
+ * counts.
+ * Parameters: groups (every known group), playerId (the player to count for).
+ * Returns: the number of groups in which that player holds the Host role.
+ * Edge cases: returns 0 for an unknown player or an empty list; a group the player posted and
+ * then handed on is not counted; if the list hasn't loaded yet it undercounts, and the server's
+ * own limit is then what refuses the eighth.
+ */
+export const countPostingsBy = (groups: Group[], playerId: string): number =>
+  groups.filter((group) =>
+    group.players.some((player) => player.id === playerId && player.role === 'Host')
+  ).length;
+
+/**
+ * Turns an error from creating or joining a group into a sentence a player can act on.
+ * The database refuses a second group on the same day and a second seat in the same group with
+ * the same error code, and its own wording ("duplicate key value violates unique constraint")
+ * means nothing to a player.
+ * Parameters: err (whatever was thrown), fallback (what to say when the error has no message).
+ * Returns: a plain-English explanation.
+ * Edge cases: anything that isn't a recognised database refusal returns its own message, or the
+ * fallback when it has none; never throws, whatever is passed in.
+ */
+export const groupErrorMessage = (err: unknown, fallback: string): string => {
+  const e = (typeof err === 'object' && err !== null ? err : {}) as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+  };
+  const text = `${typeof e.message === 'string' ? e.message : ''} ${typeof e.details === 'string' ? e.details : ''}`;
+  if (e.code === '23505') {
+    if (text.includes('group_players_pkey')) return "You're already in this group.";
+    if (text.includes('group_players_one')) {
+      return 'You already have a group that day. You can be in one group per day.';
+    }
+  }
+  return typeof e.message === 'string' && e.message.trim() !== '' ? e.message : fallback;
+};
+
+/**
  * Decides if joining is allowed for a user.
- * Parameters: targetGroup (the requested group), currentUserGroup (the user's current group, if any).
+ * Parameters: targetGroup (the requested group), currentUserGroup (the group the user already has on the same day, if any - see findGroupOnDay).
  * Returns: true when the user can join the group without conflicting memberships or capacity issues.
- * Edge cases: returns false if the user is already in another group or the target group is full.
+ * Edge cases: returns false if the user already has a group that day or the target group is full.
  */
 export const canJoinGroup = (
   targetGroup: Group,

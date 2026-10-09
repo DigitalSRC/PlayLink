@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuthStatus } from '../utils/auth-status';
+import { useThemeColors } from '../utils/theme-utils';
 
 /**
  * Entry point that routes new and returning users to the correct screen based on Supabase
@@ -14,10 +15,11 @@ import { useAuthStatus } from '../utils/auth-status';
  */
 export default function Index() {
   const status = useAuthStatus();
+  const colors = useThemeColors();
 
   if (status === 'loading') {
     return (
-      <View style={styles.loading}>
+      <View style={[styles.loading, { backgroundColor: colors.bg }]}>
         <ActivityIndicator color="#007AFF" />
       </View>
     );
@@ -34,7 +36,6 @@ export default function Index() {
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: '#0F0F14',
     alignItems: 'center',
     justifyContent: 'center',
   },

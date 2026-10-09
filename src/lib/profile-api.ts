@@ -16,6 +16,11 @@ interface ProfileRow {
   draws: number;
   points: number;
   monthly_points: number;
+  point_balance?: number;
+  title?: string | null;
+  name_color?: string | null;
+  card_border?: string | null;
+  created_at?: string;
   rival_ids: string[];
   last_rival_refresh: string | null;
 }
@@ -59,6 +64,13 @@ export const mapRowToProfile = (row: ProfileRow): UserProfile => ({
   draws: row.draws,
   points: row.points,
   monthlyPoints: row.monthly_points,
+  // Read-only from the client's side: the server writes these (see the shop migration), so
+  // mapProfileToRow below deliberately has no way to send them back.
+  pointBalance: row.point_balance ?? 0,
+  title: row.title ?? undefined,
+  nameColor: row.name_color ?? undefined,
+  cardBorder: row.card_border ?? undefined,
+  createdAt: row.created_at ? new Date(row.created_at).getTime() : undefined,
   rivalIds: row.rival_ids,
   lastRivalRefresh: row.last_rival_refresh ?? undefined,
 });
@@ -236,7 +248,23 @@ export const insertProfile = async (
   userId: string,
   draft: Omit<UserProfile, 'id'>
 ): Promise<UserProfile> => {
-  const row = { id: userId, ...mapProfileToRow(draft) };
+  // Send only the identity columns the client is allowed to set at creation. Score and privilege
+  // columns (wins/losses/draws/points/monthly_points/is_developer) are intentionally omitted:
+  // they default to their zero/false values server-side and the harden_rls migration revokes the
+  // client's grant to insert them at all, so including them here would make the insert fail. This
+  // is what stops a crafted onboarding request from creating a profile that already has points.
+  const row = {
+    id: userId,
+    ...mapProfileToRow({
+      username: draft.username,
+      displayName: draft.displayName,
+      location: draft.location,
+      games: draft.games,
+      preferredFormats: draft.preferredFormats,
+      brackets: draft.brackets,
+      noGo: draft.noGo,
+    }),
+  };
   const { data, error } = await supabase.from('profiles').insert(row).select().single();
 
   if (error) {
