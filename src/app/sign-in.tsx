@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { ThemeColors, useThemeColors } from "../utils/theme-utils";
 import {
   ActivityIndicator,
   Animated,
@@ -73,6 +74,8 @@ const describeAuthError = (err: unknown, mode: "signIn" | "signUp"): string => {
  */
 export default function SignIn() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   // Defaults to signIn rather than signUp: this screen is reached both on a fresh install and
   // whenever an existing session ends (e.g. signing out), and the latter is the far more common
   // case in practice. Defaulting to signUp meant a returning user who typed their existing
@@ -200,7 +203,7 @@ export default function SignIn() {
             testID="sign-in-email-input"
             style={[styles.input, !!emailError && styles.inputError]}
             placeholder="Email"
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.placeholder}
             value={email}
             onChangeText={(v) => { setEmail(v); if (emailError) setEmailError(""); }}
             autoCapitalize="none"
@@ -215,7 +218,7 @@ export default function SignIn() {
               testID="sign-in-password-input"
               style={[styles.input, styles.passwordInput, !!passwordError && styles.inputError]}
               placeholder="Password (min. 6 characters)"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.placeholder}
               value={password}
               onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
               secureTextEntry={!showPassword}
@@ -304,10 +307,12 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme, like the signed-in screens: every neutral and tinted color comes from
+// ThemeColors, so this screen follows the light/dark setting too.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F0F14",
+    backgroundColor: c.bg,
   },
   scrollContent: {
     flexGrow: 1,
@@ -323,13 +328,13 @@ const styles = StyleSheet.create({
   brand: {
     fontSize: 30,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: c.textPrimary,
     letterSpacing: 0.5,
     textAlign: "center",
   },
   tagline: {
     fontSize: 15,
-    color: "#888",
+    color: c.textSecondary,
     marginTop: 10,
     textAlign: "center",
   },
@@ -344,14 +349,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   input: {
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: "#FFF",
+    color: c.textPrimary,
   },
   inputError: {
     borderColor: "#FF3B30",
@@ -382,7 +387,7 @@ const styles = StyleSheet.create({
   },
   pitch: {
     fontSize: 14,
-    color: "#AAA",
+    color: c.textBody,
     marginTop: 14,
     textAlign: "center",
     lineHeight: 20,
@@ -429,7 +434,7 @@ const styles = StyleSheet.create({
   appleButton: {
     backgroundColor: "#000000",
     borderWidth: 1,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
   },
   appleButtonText: {
     color: "#FFFFFF",

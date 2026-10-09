@@ -1,5 +1,5 @@
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { Stack, useSegments } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogHost } from '../components/AppDialog';
@@ -14,20 +14,17 @@ import { useThemeColors } from '../utils/theme-utils';
  * The stack's own background follows the theme so no dark strip shows behind a light screen
  * (or the reverse) during a transition, and the status bar's clock and icons are switched to
  * whichever shade reads against it.
- * Parameters: none; reads theme from global context and the current route from the router.
+ * Parameters: none; reads theme from global context.
  * Returns: the status bar setting and a Stack navigator with headers hidden.
- * Edge cases: sign-in, profile creation, and the opening spinner are always drawn dark, so the
- * status bar stays light on them whatever the saved theme is.
+ * Edge cases: none - every screen follows the theme, including sign-in, profile creation, and
+ * the opening spinner, which before a choice has been saved means the device's own setting.
  */
 function ThemedStack() {
   const { theme } = useApp();
   const colors = useThemeColors();
-  const segments = useSegments();
-  const first = segments[0] as string | undefined;
-  const alwaysDark = first === undefined || first === 'sign-in' || first === 'profile-creation';
   return (
     <>
-      <StatusBar style={alwaysDark || theme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
     </>
   );
