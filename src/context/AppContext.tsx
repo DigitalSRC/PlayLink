@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
@@ -6,7 +6,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
-import { fetchProfilesByIds } from '../lib/profile-api';
+import { fetchProfilesByIds, fetchRivalCandidates } from '../lib/profile-api';
+import { registerAppFocusRefresh } from '../lib/query-client';
+import { findRivals, RIVAL_SEARCH_INTERVAL_MS } from '../utils/rival-utils';
 import { useAuthSession } from '../hooks/useAuthSession';
 import {
   profileKeys,
@@ -25,12 +27,15 @@ interface AppState {
   groups: Group[];
   groupsLoading: boolean;
   rivals: UserProfile[];
+  /** True once the player's rivals have been looked up at least once since sign-in. */
+  rivalsLoaded: boolean;
   chosenRivalId: string | null;
   mostPlayedAgainst: UserProfile | null;
   theme: AppTheme;
   devDateOffset: number;
   clearCurrentUser: () => void;
   setRivals: (rivals: UserProfile[]) => void;
+  refreshRivals: () => Promise<void>;
   setChosenRivalId: (id: string) => void;
   setMostPlayedAgainst: (profile: UserProfile | null) => void;
   awardPoints: (amount: number) => void;
@@ -73,9 +78,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const { data: currentUser, isLoading: profileLoading } = useProfileQuery(userId);
   const updateProfileMutation = useUpdateProfileMutation();
+  const { mutateAsync: updateProfileAsync } = updateProfileMutation;
   const { data: groups, isLoading: groupsLoading } = useGroupsQuery();
 
   const [rivals, setRivals] = useState<UserProfile[]>([]);
+  const [rivalsLoaded, setRivalsLoaded] = useState(false);
   const [chosenRivalId, setChosenRivalIdState] = useState<string | null>(null);
   const [mostPlayedAgainst, setMostPlayedAgainst] = useState<UserProfile | null>(null);
   // The saved light/dark choice, or null when there is none - before one has been saved, and
@@ -92,6 +99,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     registerSupabaseAutoRefresh();
+    registerAppFocusRefresh();
   }, []);
 
   // Restores the saved light/dark choice. Until it has been read the app follows the device.
@@ -145,31 +153,113 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     AsyncStorage.setItem(THEME_STORAGE_KEY, t).catch(() => {});
   };
 
+  // The latest profile, for the rival lookups below, which run from timers and tab switches and
+  // so must not hold on to the profile as it was when they were created.
+  const currentUserRef = useRef<UserProfile | null>(null);
+  useEffect(() => {
+    currentUserRef.current = currentUser ?? null;
+  });
+  // Each lookup takes a number; a lookup that finishes after a newer one has started is dropped,
+  // so a slow response can never put back a rival list that has since changed.
+  const rivalLoadSeqRef = useRef(0);
+  const rivalSearchRunningRef = useRef(false);
+
+  /**
+   * Turns the profile's stored rival ids into the rival profiles shown on Home and Profile, and
+   * keeps the Rival the player picked if they are still among them.
+   * Ids of deleted accounts simply find nothing, so a player whose rivals were all deleted ends
+   * up with an empty list - which is what starts the search for new ones (searchForRivals).
+   * Parameters: ids (the profile's rivalIds), forUserId (whose rivals these are).
+   * Returns: the rival profiles found, or null if a newer lookup replaced this one.
+   * Edge cases: no ids gives an empty list without a request; a network error rejects and
+   * leaves the previous list and rivalsLoaded unchanged, so a failed lookup never shows the
+   * "no Rival" banner by mistake.
+   */
+  const loadRivals = useCallback(async (ids: string[], forUserId: string): Promise<UserProfile[] | null> => {
+    const seq = ++rivalLoadSeqRef.current;
+    const [profiles, savedId] = await Promise.all([
+      ids.length > 0 ? fetchProfilesByIds(ids) : Promise.resolve([] as UserProfile[]),
+      AsyncStorage.getItem(chosenRivalStorageKey(forUserId)).catch(() => null),
+    ]);
+    if (seq !== rivalLoadSeqRef.current) return null;
+    setRivals(profiles);
+    // Keep the rival the player picked, as long as they're still one of their rivals; the daily
+    // refresh can drop them, and then the first of the new list stands in.
+    const saved = profiles.some((p) => p.id === savedId) ? savedId : null;
+    setChosenRivalIdState((prev) =>
+      prev !== null && profiles.some((p) => p.id === prev) ? prev : saved ?? profiles[0]?.id ?? null
+    );
+    setRivalsLoaded(true);
+    return profiles;
+  }, []);
+
+  /**
+   * Looks for rivals for a player who has none, the same way onboarding does (findRivals over
+   * the other profiles), and saves any it finds to the player's profile.
+   * Before this, rivals only changed at sign-up and in the daily server job, so a player whose
+   * rivals were deleted, or who signed up before anyone else, waited up to a day for one.
+   * Parameters: none; reads the latest profile.
+   * Returns: a promise that settles when the search is done.
+   * Edge cases: does nothing when signed out or while another search is running; finding
+   * nobody changes nothing; a failed request is logged and retried on the next tick. The daily
+   * refresh-rivals job may later replace what was saved here - it stays the source of truth.
+   */
+  const searchForRivals = useCallback(async (): Promise<void> => {
+    const me = currentUserRef.current;
+    if (!me || rivalSearchRunningRef.current) return;
+    rivalSearchRunningRef.current = true;
+    try {
+      const found = findRivals(me, await fetchRivalCandidates(me.id), 3);
+      if (found.length === 0) return;
+      await updateProfileAsync({ userId: me.id, patch: { rivalIds: found.map((r) => r.id) } });
+    } catch (err) {
+      console.warn('Rival search failed:', err);
+    } finally {
+      rivalSearchRunningRef.current = false;
+    }
+  }, [updateProfileAsync]);
+
   // Rehydrates the rivals list from the profile's stored rival_ids whenever it loads or
   // changes — without this, a returning user (or one whose rivals were just updated by the
   // daily refresh job) would see an empty rivals list until profile-creation ran again, since
-  // `rivals` is otherwise only ever populated once, at signup time.
+  // `rivals` is otherwise only ever populated once, at signup time. An empty or all-deleted
+  // list is loaded too, so the app knows the player has no rival and starts looking for one.
+  const hasProfile = !!currentUser;
   const rivalIdsKey = currentUser?.rivalIds?.join(',') ?? '';
   useEffect(() => {
-    if (!rivalIdsKey) return;
-    let cancelled = false;
-    Promise.all([
-      fetchProfilesByIds(rivalIdsKey.split(',')),
-      userId ? AsyncStorage.getItem(chosenRivalStorageKey(userId)).catch(() => null) : null,
-    ]).then(([profiles, savedId]) => {
-      if (cancelled) return;
-      setRivals(profiles);
-      // Keep the rival the player picked, as long as they're still one of their rivals; the daily
-      // refresh can drop them, and then the first of the new list stands in.
-      const saved = profiles.some((p) => p.id === savedId) ? savedId : null;
-      setChosenRivalIdState((prev) =>
-        prev !== null && profiles.some((p) => p.id === prev) ? prev : saved ?? profiles[0]?.id ?? null
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [rivalIdsKey, userId]);
+    if (!userId || !hasProfile) return;
+    loadRivals(rivalIdsKey ? rivalIdsKey.split(',') : [], userId).catch((err) =>
+      console.warn('Failed to load rivals:', err)
+    );
+  }, [rivalIdsKey, userId, hasProfile, loadRivals]);
+
+  // While the player has no rival, keep looking: now, and again every RIVAL_SEARCH_INTERVAL_MS,
+  // until one is saved (which changes rival_ids, reloads the list, and ends this).
+  const needsRival = !!userId && rivalsLoaded && rivals.length === 0;
+  useEffect(() => {
+    if (!needsRival) return;
+    searchForRivals();
+    const timer = setInterval(searchForRivals, RIVAL_SEARCH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [needsRival, searchForRivals]);
+
+  /**
+   * Looks the player's rivals up again (their names, looks, and scores may have changed), and
+   * if they have none, searches for some straight away. Pull-to-refresh and tab switches call it.
+   * Parameters: none.
+   * Returns: a promise that settles when both steps are done.
+   * Edge cases: does nothing when signed out; failures are logged, never thrown.
+   */
+  const refreshRivals = useCallback(async (): Promise<void> => {
+    const me = currentUserRef.current;
+    if (!me) return;
+    try {
+      const profiles = await loadRivals(me.rivalIds ?? [], me.id);
+      if (profiles && profiles.length === 0) await searchForRivals();
+    } catch (err) {
+      console.warn('Failed to refresh rivals:', err);
+    }
+  }, [loadRivals, searchForRivals]);
 
   /**
    * Records which of their rivals the player has picked as their main Rival, and remembers it
@@ -196,7 +286,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     signingOutUserRef.current = userId ?? null;
     setSavedTheme(null);
     AsyncStorage.removeItem(THEME_STORAGE_KEY).catch(() => {});
+    rivalLoadSeqRef.current++;
     setRivals([]);
+    setRivalsLoaded(false);
     setChosenRivalIdState(null);
     setMostPlayedAgainst(null);
   };
@@ -249,9 +341,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       value={{
         session, authLoading, profileLoading,
         currentUser: currentUser ?? null, groups: groups ?? [], groupsLoading,
-        rivals, chosenRivalId, mostPlayedAgainst,
+        rivals, rivalsLoaded, chosenRivalId, mostPlayedAgainst,
         theme, devDateOffset,
-        clearCurrentUser, setRivals,
+        clearCurrentUser, setRivals, refreshRivals,
         setChosenRivalId, setMostPlayedAgainst,
         awardPoints, addWin, addLoss, addDraw, resetMonthlyPoints,
         setTheme, setDevDateOffset, getNow,

@@ -1,7 +1,9 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { RefreshableScrollView } from '../../components/RefreshableScrollView';
+import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showDialog } from '../../components/AppDialog';
 import PlayerName, { CosmeticBorder } from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
@@ -46,6 +48,10 @@ export default function ShopScreen() {
   const purchaseMutation = usePurchaseShopItemMutation();
   const equipMutation = useEquipShopItemMutation();
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
+
+  const { refreshing, onRefresh } = usePullToRefresh(() =>
+    Promise.all([itemsQuery.refetch(), ownedQuery.refetch()])
+  );
 
   if (!currentUser || !userId) return null;
 
@@ -158,7 +164,12 @@ export default function ShopScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
+    <RefreshableScrollView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      contentContainerStyle={styles.content}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" hitSlop={8}>
         <Text style={[styles.back, { color: colors.accentText }]}>← Back</Text>
       </Pressable>
@@ -264,7 +275,7 @@ export default function ShopScreen() {
           </View>
         ))
       )}
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 

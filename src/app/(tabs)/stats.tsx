@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Dimensions, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshableScrollView } from '../../components/RefreshableScrollView';
+import { usePullToRefresh } from '../../hooks/useRefresh';
 import { useRouter } from 'expo-router';
 import { useQueries } from '@tanstack/react-query';
 import PlayerName from '../../components/PlayerName';
@@ -79,6 +81,10 @@ export default function StatsScreen() {
     })),
   });
 
+  const { refreshing, onRefresh } = usePullToRefresh(() =>
+    Promise.all(leaderboardQueries.map((q) => q.refetch()))
+  );
+
   if (!currentUser) return null;
 
   const totalGames = currentUser.wins + currentUser.losses;
@@ -108,7 +114,12 @@ export default function StatsScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
+    <RefreshableScrollView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      contentContainerStyle={styles.content}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Your Stats</Text>
 
       {/* Overview */}
@@ -289,7 +300,7 @@ export default function StatsScreen() {
           </ScrollView>
         </View>
       )}
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
