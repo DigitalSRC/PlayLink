@@ -1,7 +1,9 @@
 import { Redirect, Tabs } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { NoRivalBanner } from '../../components/NoRivalBanner';
 import { useApp } from '../../context/AppContext';
 import { usePreloadCalendar } from '../../hooks/useLocalEventQueries';
+import { useTabFocusRefresh } from '../../hooks/useRefresh';
 import { useThemeColors } from '../../utils/theme-utils';
 import { useAuthStatus } from '../../utils/auth-status';
 
@@ -33,6 +35,9 @@ const LABEL_SIZE = 13;
  * still exists as a route but is hidden from the bar while SHOP_TAB_ENABLED is false.
  * It also preloads the Calendar tab's events in the background (usePreloadCalendar), so that
  * tab opens without a wait.
+ * Every time a tab is opened, groups, the profile, and rivals are fetched again
+ * (useTabFocusRefresh), so a group another player just posted shows up without a restart; and
+ * while the player has no Rival a warning banner (NoRivalBanner) sits above every tab.
  * Redirects to sign-in if there's no Supabase session, or to profile creation if the session
  * exists but no profiles row does yet.
  * Parameters: none.
@@ -48,6 +53,7 @@ export default function TabLayout() {
   // Starts loading the Calendar's events now, while the player is on Home, so the Calendar tab
   // has them ready. Waits by itself until the profile (and so the location) has loaded.
   usePreloadCalendar(currentUser?.location);
+  const refreshOnTabFocus = useTabFocusRefresh();
 
   if (status === 'loading') {
     return (
@@ -64,47 +70,54 @@ export default function TabLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={({ route }) => {
-        const isHome = route.name === 'home';
-        return {
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
-            height: 94,
-            paddingBottom: 16,
-          },
-          tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarLabelStyle: {
-            fontSize: isHome ? HOME_LABEL_SIZE : LABEL_SIZE,
-            fontWeight: isHome ? '800' : '600',
-          },
-          tabBarIconStyle: {
-            width: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8,
-            height: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8,
-          },
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: isHome ? HOME_ICON_SIZE : ICON_SIZE, lineHeight: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8 }}>
-              {TAB_ICON[route.name]?.[focused ? 'active' : 'inactive'] ?? '●'}
-            </Text>
-          ),
-        };
-      }}
-    >
-      <Tabs.Screen name="stats" options={{ tabBarLabel: 'Stats' }} />
-      <Tabs.Screen name="calendar" options={{ tabBarLabel: 'Calendar' }} />
-      <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop', href: SHOP_TAB_ENABLED ? undefined : null }} />
-      <Tabs.Screen name="home" options={{ tabBarLabel: 'Home' }} />
-      <Tabs.Screen name="browse" options={{ tabBarLabel: 'Find' }} />
-      <Tabs.Screen name="profile" options={{ tabBarLabel: 'Profile' }} />
-    </Tabs>
+    <View style={styles.root}>
+      <Tabs
+        screenListeners={{ focus: refreshOnTabFocus }}
+        screenOptions={({ route }) => {
+          const isHome = route.name === 'home';
+          return {
+            headerShown: false,
+            tabBarStyle: {
+              backgroundColor: colors.card,
+              borderTopColor: colors.border,
+              borderTopWidth: 1,
+              height: 94,
+              paddingBottom: 16,
+            },
+            tabBarActiveTintColor: '#007AFF',
+            tabBarInactiveTintColor: colors.textMuted,
+            tabBarLabelStyle: {
+              fontSize: isHome ? HOME_LABEL_SIZE : LABEL_SIZE,
+              fontWeight: isHome ? '800' : '600',
+            },
+            tabBarIconStyle: {
+              width: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8,
+              height: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8,
+            },
+            tabBarIcon: ({ focused }) => (
+              <Text style={{ fontSize: isHome ? HOME_ICON_SIZE : ICON_SIZE, lineHeight: isHome ? HOME_ICON_SIZE + 8 : ICON_SIZE + 8 }}>
+                {TAB_ICON[route.name]?.[focused ? 'active' : 'inactive'] ?? '●'}
+              </Text>
+            ),
+          };
+        }}
+      >
+        <Tabs.Screen name="stats" options={{ tabBarLabel: 'Stats' }} />
+        <Tabs.Screen name="calendar" options={{ tabBarLabel: 'Calendar' }} />
+        <Tabs.Screen name="shop" options={{ tabBarLabel: 'Shop', href: SHOP_TAB_ENABLED ? undefined : null }} />
+        <Tabs.Screen name="home" options={{ tabBarLabel: 'Home' }} />
+        <Tabs.Screen name="browse" options={{ tabBarLabel: 'Find' }} />
+        <Tabs.Screen name="profile" options={{ tabBarLabel: 'Profile' }} />
+      </Tabs>
+      <NoRivalBanner />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     alignItems: 'center',

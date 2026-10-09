@@ -79,3 +79,19 @@ export const findRivals = (
 
   return ranked;
 };
+
+/** How often the app looks again for rivals while the player has none (one minute). */
+export const RIVAL_SEARCH_INTERVAL_MS = 60_000;
+
+/**
+ * Decides whether the "you have no Rival" banner should be on screen.
+ * It shows only once the player's rivals have actually been looked up and came back empty, and
+ * only until the player closes it - after that it stays closed until the app is next opened.
+ * Parameters: rivalsLoaded (whether the rival lookup has finished at least once), rivalCount
+ * (how many rivals the player has), dismissed (whether the player closed it since the app opened).
+ * Returns: true when the banner should be shown.
+ * Edge cases: still loading, or a lookup that failed (rivalsLoaded false), never shows it, so a
+ * slow or offline start does not wrongly tell the player they have no Rival.
+ */
+export const shouldShowNoRivalBanner = (rivalsLoaded: boolean, rivalCount: number, dismissed: boolean): boolean =>
+  rivalsLoaded && rivalCount === 0 && !dismissed;

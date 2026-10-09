@@ -9,6 +9,11 @@ const mockNow = new Date(2026, 9, 6, 12, 0).getTime();
 
 let mockCurrentUser: { id?: string; location: string } | null = { id: "user-1", location: "Reno, NV" };
 let mockGroups: { name?: string; playDate?: string; players: { id: string }[] }[] = [];
+// Pull-to-refresh reaches for React Query and global context; this screen test renders without either.
+jest.mock("../../hooks/useRefresh", () => ({
+  usePullToRefresh: () => ({ refreshing: false, onRefresh: jest.fn() }),
+}));
+
 jest.mock("../../context/AppContext", () => ({
   useApp: () => ({
     currentUser: mockCurrentUser,

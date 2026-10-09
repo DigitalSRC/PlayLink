@@ -17,6 +17,11 @@ interface MockUser {
 
 const baseUser: MockUser = { id: "user-1", username: "dave", displayName: "Dave", pointBalance: 120, createdAt: Date.UTC(2026, 5, 1) };
 let mockCurrentUser: MockUser | null = baseUser;
+// Pull-to-refresh reaches for React Query and global context; this screen test renders without either.
+jest.mock("../../hooks/useRefresh", () => ({
+  usePullToRefresh: () => ({ refreshing: false, onRefresh: jest.fn() }),
+}));
+
 jest.mock("../../context/AppContext", () => ({
   useApp: () => ({ currentUser: mockCurrentUser, session: { user: { id: "user-1" } }, theme: "dark" }),
 }));

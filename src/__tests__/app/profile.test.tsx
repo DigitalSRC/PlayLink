@@ -27,6 +27,11 @@ const baseUser: MockUser = {
   pointBalance: 40,
 };
 let mockCurrentUser: MockUser | null = { ...baseUser };
+// Pull-to-refresh reaches for React Query and global context; this screen test renders without either.
+jest.mock("../../hooks/useRefresh", () => ({
+  usePullToRefresh: () => ({ refreshing: false, onRefresh: jest.fn() }),
+}));
+
 jest.mock("../../context/AppContext", () => ({
   useApp: () => ({
     currentUser: mockCurrentUser,
