@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -37,6 +37,8 @@ import { formatBrackets } from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
+// Same floor the Calendar's own location editor uses: anything shorter can't be looked up.
+const MIN_LOCATION_LENGTH = 2;
 
 // Dev Tools (src/app/dev-tools.tsx) is a testing scaffold, not part of the shipped MVP
 // surface. Its working copy now lives on the dedicated `dev-tools` branch (and is still
@@ -69,6 +71,8 @@ const DEV_TOOLS_ENABLED = false;
  * Returns: a scrollable profile page.
  * The name and location fields always show the shared profile unless the player is part-way
  * through editing them, so a location changed on the Calendar tab appears here without a reload.
+ * They save by themselves when the player finishes typing or leaves the tab (commitIdentity);
+ * the Save Changes button is only for the game and format lists.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
  * non-developer profiles; the password form validates a 6-character minimum and that both
  * fields match before ever calling Supabase, and shows an inline error or success message; a
@@ -167,8 +171,55 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  const setEditDisplayName = (v: string) => { setDisplayNameDraft(v); setDirty(true); };
-  const setEditLocation = (v: string) => { setLocationDraft(v); setDirty(true); };
+  /**
+   * Saves whatever the player has typed into the name and location fields, then goes back to
+   * showing the shared profile. It runs when a field loses focus, when Done is pressed on the
+   * keyboard, and when the player leaves this tab, so there is no separate Save button to find
+   * at the bottom of the page: typing a new location and switching to the Calendar is enough.
+   * The save goes through the one shared profile update, so the Calendar and the Find tab follow
+   * at once.
+   * Parameters: none; reads the two drafts.
+   * Returns: void.
+   * Edge cases: does nothing when signed out or when nothing was typed; text that matches what
+   * is already saved is dropped without a request; a location shorter than 2 characters is not
+   * saved (the Calendar could not look it up) and the field goes back to the saved one, with a
+   * message; an emptied display name clears it, so the username is shown instead.
+   */
+  const commitIdentity = () => {
+    if (!session || (displayNameDraft === null && locationDraft === null)) return;
+    const patch: { displayName?: string; location?: string } = {};
+    let locationTooShort = false;
+    if (displayNameDraft !== null) {
+      const next = displayNameDraft.trim();
+      if (next !== (currentUser.displayName ?? '')) patch.displayName = next || undefined;
+    }
+    if (locationDraft !== null) {
+      const next = locationDraft.trim();
+      if (next !== currentUser.location) {
+        if (next.length >= MIN_LOCATION_LENGTH) patch.location = next;
+        else locationTooShort = true;
+      }
+    }
+    setDisplayNameDraft(null);
+    setLocationDraft(null);
+    if (Object.keys(patch).length > 0) {
+      updateProfileMutation.mutate({ userId: session.user.id, patch });
+      showToast(
+        patch.location !== undefined ? 'Location updated' : 'Name updated',
+        patch.location !== undefined ? `The Calendar and Find now use ${patch.location}.` : undefined
+      );
+    } else if (locationTooShort) {
+      showToast('Location not changed', 'Enter a city, like Reno, NV.');
+    }
+  };
+
+  // Leaving the tab with a field still focused never fires its blur, so save then too. The ref
+  // always holds the latest commit function, so the tab-blur handler never saves a stale draft.
+  const commitIdentityRef = useRef(commitIdentity);
+  useEffect(() => {
+    commitIdentityRef.current = commitIdentity;
+  });
+  useFocusEffect(useCallback(() => () => commitIdentityRef.current(), []));
 
   const initials = (currentUser.displayName ?? currentUser.username)
     .split(' ')
@@ -185,23 +236,16 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
     updateProfileMutation.mutate({
       userId: session.user.id,
       patch: {
-        displayName: editDisplayName.trim() || undefined,
-        location: editLocation.trim() || currentUser.location,
         games: editGames.length > 0 ? editGames : currentUser.games,
         preferredFormats: editFormats,
       },
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    // The save updates the shared profile at once, so the fields can go back to showing it.
-    setDisplayNameDraft(null);
-    setLocationDraft(null);
     setDirty(false);
     showToast('Profile saved');
   };
 
   const discardChanges = () => {
-    setDisplayNameDraft(null);
-    setLocationDraft(null);
     setEditGames(currentUser.games);
     setEditFormats(currentUser.preferredFormats);
     setDirty(false);
@@ -303,7 +347,10 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
           <TextInput
             style={[styles.displayNameInput, { color: textPrimary, borderColor: border }]}
             value={editDisplayName}
-            onChangeText={setEditDisplayName}
+            onChangeText={setDisplayNameDraft}
+            onBlur={commitIdentity}
+            onSubmitEditing={commitIdentity}
+            returnKeyType="done"
             placeholder="Display name"
             placeholderTextColor={textSec}
             maxLength={32}
@@ -312,10 +359,19 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
           <TextInput
             style={[styles.locationInput, { color: textPrimary, borderColor: border }]}
             value={editLocation}
-            onChangeText={setEditLocation}
-            placeholder="Your area"
+            onChangeText={setLocationDraft}
+            onBlur={commitIdentity}
+            onSubmitEditing={commitIdentity}
+            returnKeyType="done"
+            autoCapitalize="words"
+            autoCorrect={false}
+            maxLength={100}
+            placeholder="City, State - e.g. Reno, NV"
             placeholderTextColor={textSec}
           />
+          <Text style={[styles.fieldHint, { color: textSec }]}>
+            Used by the Calendar and Find. Saves when you finish typing.
+          </Text>
           {DEV_TOOLS_ENABLED && currentUser.isDeveloper && (
             <View style={[styles.devBadge, { marginTop: 10 }]}>
               <Text style={styles.devBadgeText}>🔧 DEVELOPER</Text>
@@ -803,6 +859,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 17, fontWeight: '700', borderBottomWidth: 1,
     paddingVertical: 4, paddingHorizontal: 0,
   },
+  fieldHint: { fontSize: 11, lineHeight: 15, marginTop: 6 },
   locationInput: { fontSize: 14, borderBottomWidth: 1, paddingVertical: 4, paddingHorizontal: 0 },
   devBadge: {
     backgroundColor: c.successBg, borderRadius: 6, paddingHorizontal: 8,
