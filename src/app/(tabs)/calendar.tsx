@@ -9,6 +9,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { RefreshableScrollView } from '../../components/RefreshableScrollView';
+import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showDialog } from '../../components/AppDialog';
 import MonthCalendar from '../../components/MonthCalendar';
 import { useApp } from '../../context/AppContext';
@@ -109,6 +111,8 @@ export default function CalendarScreen() {
     if (calendarShown) claimReward('view_calendar');
   }, [calendarShown, claimReward]);
 
+  const { refreshing, onRefresh } = usePullToRefresh(() => refetchEvents());
+
   if (!currentUser) return null;
 
   const formats = listFormats(allEvents, DEFAULT_FORMAT);
@@ -190,10 +194,12 @@ export default function CalendarScreen() {
         : null;
 
   return (
-    <ScrollView
+    <RefreshableScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
       <Text style={[styles.heading, { color: colors.textPrimary }]}>Calendar</Text>
 
@@ -461,7 +467,7 @@ export default function CalendarScreen() {
           </View>
         </>
       )}
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
