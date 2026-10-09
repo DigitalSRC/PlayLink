@@ -323,74 +323,46 @@ an **individual** owns one piece of it.
 ## 5. Current top-level feature branches
 
 This list records which features exist and roughly what state they're in; who is working on
-each one is tracked by GitHub issue assignment, not here. As of 2026-10-07, the top-level
+each one is tracked by GitHub issue assignment, not here. As of 2026-10-08, the top-level
 branches not yet merged into `development` — all of them shared on `origin` (§2.9) — are:
 
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
   `development`/`main` until finished; it has no entry points or feature flag there — see
   [CLAUDE.md](../CLAUDE.md).
-- **`shop`** — the working Shop: spendable Points (`point_balance`), the monthly total shown as
-  Score, and three kinds of cosmetic (titles, name colors, card borders) bought and worn through
-  server functions. **Stacked on `security-hardening`** - its migration refuses to apply unless
-  the hardening migration is in place. Its migration is live on Supabase (applied 2026-10-07).
 - **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
   Excluded from every other branch except `unitTests`/`test/<feature>`; see
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.
-- **`security-hardening`** — server-authoritative scoring and RLS hardening, including the
-  store-event bonus (moved to the server on 2026-10-07) and working delete/cancel (GitHub issue
-  #10). **Stacked on `commander-only`**, so the merge order into `development` is
-  `event-calendar` -> `commander-only` -> `security-hardening` -> `shop`. Its three migrations
-  are **live on Supabase (applied 2026-10-07)** and were verified there with throwaway accounts.
-  Consequence: any build that still writes scores directly - `development`, `event-calendar`,
-  `commander-only`, and `main` - can no longer report rounds, collect points, or delete a group
-  against the live database. Only this branch, `shop`, and `combined-preview` work fully until
-  the stack is merged. See `docs/security-backlog.md`.
-- **`final-results`** — removes the 15-minute dispute window: the host's report is final, and the
-  server records it, pays every player, and counts the round in one step. **Stacked on `shop`**
-  (the payout credits the spendable balance), so it is the last link:
-  `event-calendar` -> `commander-only` -> `security-hardening` -> `shop` -> `final-results`. Its
-  migration is live on Supabase (applied 2026-10-07).
-- **`readme-refresh`** — rewrites `README.md` with diagrams of the app and the branch flow, plus
-  the `.env` setup step it was missing. Documentation only: no code, no migration. **Stacked on
-  `final-results`** (made 2026-10-08) because the README describes the app as it is once the
-  stack has landed, so it merges into `development` after `final-results`.
-- **`playtest-fixes`** — fixes from the developer's first play-test of `combined-preview` in a
-  browser (2026-10-08): pop-ups that work on web (`showDialog`), one group per day, light mode
-  on every signed-in screen, a title picker on the Profile tab, the "How PlayLink works" guide
-  as a button and as the last step of onboarding, and 25-point starter rewards. **Stacked on
-  `readme-refresh`**, so it lands last. It carries three migrations, all **applied to the live
-  database on 2026-10-08** (run by the developer in the SQL editor, then checked by reading the
-  database back): `20261008120000_group_play_date.sql`, `20261008130000_starter_rewards.sql`,
-  and `20261008140000_group_area_and_posting_limit.sql`. So the live database is again ahead of
-  every branch below this one: builds without this branch still work, but do not send a play
-  date or an area with a new posting. A second round of fixes from testing in Expo Go
-  the same day added self-closing confirmations (`showToast`), the Find tab's bottom Create
-  button, area filter, and date sorting, and the reworked Profile tab.
-- **`combined-preview`** — not a feature: `development` plus the whole stack merged in order
-  (`event-calendar`, `commander-only`, `security-hardening`, `shop`), made on 2026-10-07 so the
-  developer can test everything together. Its tree is identical to `shop`. Do not build on it;
-  fix things on the branch they belong to and re-merge. Delete it from `origin` once the stack
-  has landed in `development`.
-- **`event-calendar`** — **PENDING DEV MERGE (marked 2026-10-07, GitHub issue #12).** The
-  developer considers it finished and will review it before it lands; do not merge it into
-  `development` until they say so. The Calendar tab: a month view of local Commander nights from the
-  `local_events` table, starting with Reno-Sparks, filled by the `sync-local-events` Edge Function.
-  Its two migrations and the function are live on Supabase (applied/deployed 2026-10-07). Also
-  carries the "Create game" button that starts a store-linked group, and a batch of first-time
-  player fixes (sign-in, onboarding, Home) that were placed here rather than on their own branch.
-- **`commander-only`** — hides every game and Magic format except Commander behind the
-  `COMMANDER_ONLY` flag in `src/data/types.ts`, deleting nothing. **Stacked on `event-calendar`**
-  (it has to hide the Calendar's format switcher), so it merges into `development` only after
-  `event-calendar` does. Tracked in GitHub issue #9.
-- **`calendar-system`** — shelved (2026-10-06) in favor of `event-calendar`: a weekly calendar of
-  player groups plus a one-group-per-day rule change. Kept as a reference, not planned to merge.
-  **Its `group_players_one_per_day` migration is nonetheless live on Supabase** (confirmed
-  2026-10-07), so the live database enforces one group per day while `development`'s migrations
-  still declare one group per player overall — see GitHub issue #10.
+- **`npm-12`** — approves `unrs-resolver`'s install script in `package.json`, which npm 12
+  otherwise skips with a warning on every install. Touches only `package.json` and one line of
+  `CLAUDE.md`. Forked from `development` on 2026-10-08; waiting for a go-ahead to merge.
+- **`calendar-system`** — shelved (2026-10-06) in favor of the Calendar tab that shipped: a
+  weekly calendar of player groups plus an earlier one-group-per-day rule. Kept as a reference,
+  not planned to merge. Its `group_players_one_per_day` migration was applied to the live
+  database at the time; `20261008120000_group_play_date.sql` on `development` now builds on that
+  and is the definition to trust.
 - **`location-autocomplete`**, **`store-events`**, **`ui-polish`**, **`onboarding-fixes`** —
-  in-progress features with unmerged work.
+  older branches with unmerged work. `ui-polish` and `onboarding-fixes` are a single commit each
+  and far behind `development`; check whether they are still wanted before building on them.
 - **`LandingPage`** — the marketing site; not an app feature and never merged into the app
   branches. Lives on `origin` because GitHub Pages deploys from it (§2.9).
+
+**Landed in `development` on 2026-10-08**, with the developer's go-ahead after play-testing them
+together, in this order (each was stacked on the one before): `event-calendar` (the Calendar
+tab, store-event groups and bonus), `commander-only` (the `COMMANDER_ONLY` flag),
+`security-hardening` (the server scores rounds; clients cannot write points), `shop` (spendable
+Points and cosmetics), `final-results` (a reported round is final), `readme-refresh` (README
+with diagrams), and `playtest-fixes` (pop-ups that work on web, self-closing confirmations, one
+group per day, the 7-posting limit and area filter on Find, light mode everywhere with the
+device's setting as the default, the reworked Profile tab, the how-it-works guide, and starter
+rewards). Their branches were removed from `origin`, along with `combined-preview`, which only
+existed to test the stack together. Every migration they carry is applied to the live database,
+so `development` and the live database match; `main` does not have any of this.
+
+One thing to know about the test lane: `unitTests` still carries app source from the shelved
+`calendar-system`, `store-events`, and `location-autocomplete` branches, so building
+`test/<feature>` conflicts in `browse.tsx`, `home.tsx`, `profile.tsx`, `group-detail.tsx`, and
+`group-utils.ts`. Resolve those in favor of the feature being tested and keep everything that
+exists only on `unitTests`.
 
 `rival-system` has fully merged into `development` and is no longer an open feature.
 

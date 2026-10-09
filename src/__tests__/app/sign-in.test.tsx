@@ -1,6 +1,13 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { StyleSheet } from "react-native";
 import SignIn from "../../app/sign-in";
+
+// The screen takes its colors from the app's theme, which before sign-in is the device's setting.
+let mockTheme: "dark" | "light" = "dark";
+jest.mock("../../context/AppContext", () => ({
+  useApp: () => ({ theme: mockTheme }),
+}));
 
 const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
@@ -31,6 +38,22 @@ jest.mock("../../lib/auth-api", () => ({
 describe("SignIn", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockTheme = "dark";
+  });
+
+  it("is drawn dark on a device set to dark and light on a device set to light", async () => {
+    const dark = await render(<SignIn />);
+    const darkInput = StyleSheet.flatten(dark.getByTestId("sign-in-email-input").props.style);
+    await dark.unmount();
+
+    mockTheme = "light";
+    const light = await render(<SignIn />);
+    const lightInput = StyleSheet.flatten(light.getByTestId("sign-in-email-input").props.style);
+
+    expect(darkInput.backgroundColor).toBe("#1C1C24");
+    expect(darkInput.color).toBe("#FFFFFF");
+    expect(lightInput.backgroundColor).toBe("#FFFFFF");
+    expect(lightInput.color).toBe("#000000");
   });
 
   // Regression test: typing an email with no "@"/no extension used to just leave the submit

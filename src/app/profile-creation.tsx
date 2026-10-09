@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ThemeColors, useThemeColors } from "../utils/theme-utils";
 import {
   ActivityIndicator,
   Animated,
@@ -12,7 +13,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import LocationAutocomplete from "../components/LocationAutocomplete";
 import { useApp } from "../context/AppContext";
 import {
   BRACKET_INFO,
@@ -93,6 +93,8 @@ export default function ProfileCreation() {
   const router = useRouter();
   const { session, currentUser, setRivals, setChosenRivalId, clearCurrentUser } = useApp();
   const createProfileMutation = useCreateProfileMutation();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
@@ -377,7 +379,7 @@ export default function ProfileCreation() {
         testID="profile-creation-username-input"
         style={[styles.input, !!usernameError && styles.inputError]}
         placeholder="e.g. DarkRitualDave"
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.placeholder}
         value={username}
         onChangeText={(v) => { setUsername(v); if (usernameError) validateUsername(v); }}
         autoFocus
@@ -392,7 +394,7 @@ export default function ProfileCreation() {
       <TextInput
         style={styles.input}
         placeholder="e.g. Dark Ritual Dave"
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.placeholder}
         value={displayName}
         onChangeText={setDisplayName}
         maxLength={32}
@@ -400,10 +402,16 @@ export default function ProfileCreation() {
 
       <Text style={styles.label}>Your City</Text>
       <Text style={styles.labelHint}>Used to find game stores and events near you — you can change it later</Text>
-      <LocationAutocomplete
+      <TextInput
+        testID="profile-creation-location-input"
+        style={styles.input}
+        placeholder="City, State — e.g. Reno, NV"
+        placeholderTextColor={colors.placeholder}
         value={location}
         onChangeText={setLocation}
-        placeholder="City, State — e.g. Reno, NV"
+        autoCapitalize="words"
+        autoCorrect={false}
+        maxLength={100}
       />
     </View>
   );
@@ -531,7 +539,7 @@ export default function ProfileCreation() {
                 style={[styles.chip, active && styles.chipNoGo]}
                 onPress={() => toggleNoGo(rule)}
               >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                <Text style={[styles.chipText, active && { color: colors.dangerOnBg }]}>
                   {rule}
                 </Text>
               </Pressable>
@@ -716,10 +724,12 @@ export default function ProfileCreation() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme, like the signed-in screens: every neutral and tinted color comes from
+// ThemeColors, so this screen follows the light/dark setting too.
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F0F14",
+    backgroundColor: c.bg,
     paddingTop: 56,
   },
   header: {
@@ -735,23 +745,23 @@ const styles = StyleSheet.create({
   signOutLink: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#888",
+    color: c.textSecondary,
     textDecorationLine: "underline",
   },
   welcomeBackBanner: {
     marginHorizontal: 24,
     marginBottom: 16,
-    backgroundColor: "#0A2A0A",
+    backgroundColor: c.successBg,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: "#1C5A1C",
+    borderColor: c.successText,
   },
   welcomeBackText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#34C759",
+    color: c.successText,
     textAlign: "center",
   },
   brand: {
@@ -769,7 +779,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#333",
+    backgroundColor: c.border,
   },
   dotActive: {
     width: 20,
@@ -782,18 +792,18 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: c.textPrimary,
     marginBottom: 6,
   },
   stepSubtitle: {
     fontSize: 15,
-    color: "#888",
+    color: c.textSecondary,
     marginBottom: 28,
   },
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#AAA",
+    color: c.textBody,
     marginBottom: 4,
     marginTop: 16,
     textTransform: "uppercase",
@@ -801,12 +811,12 @@ const styles = StyleSheet.create({
   },
   labelHint: {
     fontSize: 11,
-    color: "#666",
+    color: c.textMuted,
     marginBottom: 8,
   },
   labelOptional: {
     fontSize: 11,
-    color: "#666",
+    color: c.textMuted,
     fontWeight: "400",
     textTransform: "none",
     letterSpacing: 0,
@@ -821,21 +831,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: "#FFF",
+    color: c.textPrimary,
   },
   gameOption: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderWidth: 2,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
     borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 18,
@@ -848,7 +858,7 @@ const styles = StyleSheet.create({
   gameLabel: {
     flex: 1,
     fontSize: 16,
-    color: "#DDD",
+    color: c.textBody,
     fontWeight: "600",
   },
   gameCheck: {
@@ -861,17 +871,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#CCC",
+    color: c.textBody,
     marginBottom: 4,
   },
   sectionHint: {
     fontSize: 12,
-    color: "#666",
+    color: c.textMuted,
     marginBottom: 10,
   },
   comingSoonNote: {
     fontSize: 11,
-    color: "#555",
+    color: c.textMuted,
     marginTop: 10,
     fontStyle: 'italic',
     lineHeight: 16,
@@ -887,19 +897,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#333",
-    backgroundColor: "#1C1C24",
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   chipText: {
     fontSize: 13,
-    color: "#AAA",
+    color: c.textBody,
     fontWeight: "600",
   },
   chipTextActive: {
     color: "#FFF",
   },
   chipNoGo: {
-    backgroundColor: "#3D1215",
+    backgroundColor: c.dangerBg,
     borderColor: "#C0392B",
   },
   bracketRow: {
@@ -913,24 +923,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#333",
-    backgroundColor: "#1C1C24",
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   bracketBtnActive: {
     borderColor: "#007AFF",
-    backgroundColor: "#001A3D",
+    backgroundColor: c.accentBg,
   },
   bracketLabel: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#666",
+    color: c.textMuted,
   },
   bracketLabelActive: {
     color: "#007AFF",
   },
   bracketDesc: {
     fontSize: 10,
-    color: "#555",
+    color: c.textMuted,
     marginTop: 2,
   },
   rivalContainer: {
@@ -939,16 +949,16 @@ const styles = StyleSheet.create({
   rivalCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1C1C24",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1.5,
-    borderColor: "#2C2C38",
+    borderColor: c.border,
   },
   rivalCardPicked: {
     borderColor: "#FF3B30",
-    backgroundColor: "#1F1012",
+    backgroundColor: c.rivalMainBg,
   },
   rivalCardContender: {
     opacity: 0.65,
@@ -976,17 +986,17 @@ const styles = StyleSheet.create({
   rivalName: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#FFF",
+    color: c.textPrimary,
     marginBottom: 2,
   },
   rivalMeta: {
     fontSize: 13,
-    color: "#888",
+    color: c.textSecondary,
     marginBottom: 2,
   },
   rivalLocation: {
     fontSize: 12,
-    color: "#555",
+    color: c.textMuted,
   },
   rivalBadge: {
     paddingVertical: 4,
@@ -1009,7 +1019,7 @@ const styles = StyleSheet.create({
     color: "#C9952A",
   },
   noRivals: {
-    color: "#666",
+    color: c.textMuted,
     textAlign: "center",
     marginTop: 40,
     fontSize: 15,
@@ -1030,19 +1040,19 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   footerLinkText: {
-    color: "#888",
+    color: c.textSecondary,
     fontSize: 14,
     fontWeight: "700",
   },
   rivalExplainer: {
     fontSize: 13,
-    color: "#AAA",
+    color: c.textBody,
     lineHeight: 19,
     marginTop: -14,
     marginBottom: 18,
   },
   nextBtnDisabled: {
-    backgroundColor: "#1C2940",
+    backgroundColor: c.disabledBg,
   },
   nextBtnText: {
     color: "#FFF",
