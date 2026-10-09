@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import { UserProfile } from "../data/types";
-import { findRivals } from "./rival-utils";
+import { findRivals, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner } from "./rival-utils";
 
 const makeProfile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   id: '1',
@@ -114,5 +114,30 @@ describe("rival-utils", () => {
     const user = makeProfile({ id: '1', brackets: [] });
     const rivals = findRivals(user, [dillon]);
     expect(rivals[0].brackets).toEqual(dillon.brackets);
+  });
+});
+
+describe("shouldShowNoRivalBanner", () => {
+  it("shows once the lookup has finished and found no rival", () => {
+    expect(shouldShowNoRivalBanner(true, 0, false)).toBe(true);
+  });
+
+  it("stays hidden while rivals are loading, or after a lookup failed", () => {
+    expect(shouldShowNoRivalBanner(false, 0, false)).toBe(false);
+  });
+
+  it("stays hidden when the player has a rival", () => {
+    expect(shouldShowNoRivalBanner(true, 1, false)).toBe(false);
+    expect(shouldShowNoRivalBanner(true, 3, false)).toBe(false);
+  });
+
+  it("stays hidden once the player has closed it", () => {
+    expect(shouldShowNoRivalBanner(true, 0, true)).toBe(false);
+  });
+});
+
+describe("RIVAL_SEARCH_INTERVAL_MS", () => {
+  it("searches every minute - often enough to notice a new player, not a request storm", () => {
+    expect(RIVAL_SEARCH_INTERVAL_MS).toBe(60_000);
   });
 });
