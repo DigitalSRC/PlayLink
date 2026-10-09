@@ -1,11 +1,12 @@
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { Stack } from 'expo-router';
+import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DialogHost } from '../components/AppDialog';
 import { ToastHost } from '../components/AppToast';
 import { AppProvider, useApp } from '../context/AppContext';
-import { persister, queryClient } from '../lib/query-client';
+import { persister, queryClient, registerAppFocusRefresh } from '../lib/query-client';
 import { useThemeColors } from '../utils/theme-utils';
 
 /**
@@ -40,12 +41,18 @@ function ThemedStack() {
  * DialogHost sits beside the Stack, inside AppProvider (it reads the theme), and draws every
  * pop-up requested through showDialog above whichever screen is open. ToastHost does the same
  * for the short "it worked" messages raised through showToast.
+ * On a phone it also tells React Query when the app returns to the foreground
+ * (registerAppFocusRefresh), so out-of-date groups and profile data are fetched again then.
  * Parameters: none.
  * Returns: the themed Stack navigator (headers hidden; each screen manages its own header) and the dialog host.
  * Edge cases: none — the provider always initialises with default null user state, and the
  * persisted query cache degrades to an empty cache if AsyncStorage has nothing saved yet.
  */
 export default function RootLayout() {
+  useEffect(() => {
+    registerAppFocusRefresh();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
