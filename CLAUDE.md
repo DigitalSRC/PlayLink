@@ -156,7 +156,7 @@ Client side: **[src/data/rewards.ts](src/data/rewards.ts)** (the four rewards an
 
 ### Profile tab layout
 
-The Profile tab is ordered: photo and name, title headline, Shop row, Rivals, Game Settings, app Settings, actions. **Anything that belongs to one game goes behind a row under "Game Settings"**, which opens that game's own sheet (a `Modal`) that edits a copy and saves by itself. Today there is one row, Commander, holding brackets and "won't play against". Add a row and a sheet for a new game or format rather than a new section on the page, so the page stays short. `ProfileScreen` is only the route: it waits for `currentUser` and renders `ProfileContent`, so no hook runs after an early return.
+The Profile tab is ordered: photo and name, title headline, Shop row, Rivals, Game Settings, app Settings, actions. **Anything that belongs to one game goes behind a row under "Game Settings"**, which opens that game's own sheet (a `Modal`) that edits a copy and saves by itself. Today there is one row, Commander, holding brackets and "won't play against". Add a row and a sheet for a new game or format rather than a new section on the page, so the page stays short. `ProfileScreen` is only the route: it waits for `currentUser` and renders `ProfileContent`, so no hook runs after an early return. The name and location fields hold only what is being typed and otherwise show the shared profile; they save by themselves on blur, on Done, and on leaving the tab (`commitIdentity`), because a location typed there and never saved was the cause of "I changed it in Profile and the Calendar did not follow". **No screen should copy a profile field into its own state at mount** - show `currentUser` and keep at most an unsaved draft.
 
 ### Rival matching
 
