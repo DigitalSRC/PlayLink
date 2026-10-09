@@ -7,7 +7,6 @@ import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
 import { fetchProfilesByIds, fetchRivalCandidates } from '../lib/profile-api';
-import { registerAppFocusRefresh } from '../lib/query-client';
 import { findRivals, RIVAL_SEARCH_INTERVAL_MS } from '../utils/rival-utils';
 import { useAuthSession } from '../hooks/useAuthSession';
 import {
@@ -99,7 +98,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     registerSupabaseAutoRefresh();
-    registerAppFocusRefresh();
   }, []);
 
   // Restores the saved light/dark choice. Until it has been read the app follows the device.
