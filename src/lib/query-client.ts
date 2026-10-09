@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { QueryClient } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
+import { AppState, Platform } from 'react-native';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -35,3 +36,23 @@ export const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'playlink-query-cache',
 });
+
+let appFocusRegistered = false;
+
+/**
+ * Tells React Query when the app comes back to the foreground on a phone, so anything older
+ * than its stale time (groups, the profile, rivals) is fetched again the moment the player
+ * returns. A browser already reports this by itself (the page becoming visible again); a
+ * native app does not, so without this, switching away and back never refreshed anything.
+ * Parameters: none.
+ * Returns: void.
+ * Edge cases: does nothing on web, where React Query watches the page itself; safe to call more
+ * than once (fast-refresh reloads) since a module-level guard attaches the listener only once.
+ */
+export const registerAppFocusRefresh = (): void => {
+  if (appFocusRegistered || Platform.OS === 'web') return;
+  appFocusRegistered = true;
+  AppState.addEventListener('change', (state) => {
+    focusManager.setFocused(state === 'active');
+  });
+};

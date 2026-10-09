@@ -11,6 +11,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { RefreshableScrollView } from '../../components/RefreshableScrollView';
+import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showDialog } from '../../components/AppDialog';
 import { showToast } from '../../components/AppToast';
 import { useApp } from '../../context/AppContext';
@@ -373,6 +375,8 @@ export default function BrowseScreen() {
     );
   };
 
+  const { refreshing, onRefresh } = usePullToRefresh();
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={styles.topBar}>
@@ -427,7 +431,12 @@ export default function BrowseScreen() {
         </View>
       )}
 
-      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+      <RefreshableScrollView
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Group cards */}
         {filtered.length === 0 && (
           <Text style={[styles.emptyText, { color: colors.textMuted }]}>
@@ -496,7 +505,7 @@ export default function BrowseScreen() {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* The main action sits just above the tab bar, where a thumb already is. */}
       <View style={[styles.createBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>

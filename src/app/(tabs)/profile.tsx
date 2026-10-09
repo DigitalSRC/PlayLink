@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../../components/AppDialog';
+import { RefreshableScrollView } from '../../components/RefreshableScrollView';
+import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showToast } from '../../components/AppToast';
 import { useApp } from '../../context/AppContext';
 import {
@@ -325,9 +327,15 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   ];
 
   const isDark = theme === 'dark';
+  const { refreshing, onRefresh } = usePullToRefresh();
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: bg }]} contentContainerStyle={styles.content}>
+    <RefreshableScrollView
+      style={[styles.container, { backgroundColor: bg }]}
+      contentContainerStyle={styles.content}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       {dirty && (
         <View style={[styles.unsavedBanner, { backgroundColor: colors.unsavedBanner }]}>
           <Text style={styles.unsavedBannerText}>⚠️ You have unsaved changes</Text>
@@ -813,7 +821,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
           <Text style={styles.logoutBtnText}>LOG OUT</Text>
         </Pressable>
       </View>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 

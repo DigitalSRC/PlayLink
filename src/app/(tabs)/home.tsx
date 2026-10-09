@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { RefreshableScrollView } from '../../components/RefreshableScrollView';
+import { usePullToRefresh } from '../../hooks/useRefresh';
 import HowItWorksSheet from '../../components/HowItWorksSheet';
 import PlayerName from '../../components/PlayerName';
 import { chosenRivalStorageKey, useApp } from '../../context/AppContext';
@@ -65,6 +67,8 @@ export default function HomeScreen() {
     };
   }, [userId]);
 
+  const { refreshing, onRefresh } = usePullToRefresh();
+
   if (!currentUser) return null;
 
   // Undefined data means the server has no starter rewards (or hasn't answered): show none.
@@ -106,7 +110,12 @@ export default function HomeScreen() {
   const winPct = totalGames === 0 ? 0 : Math.round((currentUser.wins / totalGames) * 100);
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
+    <RefreshableScrollView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      contentContainerStyle={styles.content}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <View style={styles.header}>
         <View>
           <Text style={[styles.greeting, { color: colors.textSecondary }]}>{isNewPlayer ? 'Welcome,' : 'Welcome back,'}</Text>
@@ -325,7 +334,7 @@ export default function HomeScreen() {
         onOpenCalendar={() => { closeGuide(); router.push('/(tabs)/calendar'); }}
         onOpenFind={() => { closeGuide(); router.push('/(tabs)/browse'); }}
       />
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
