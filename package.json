@@ -62,5 +62,8 @@
   "overrides": {
     "@react-native/jest-preset": "0.86.0"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "unrs-resolver@1.12.2": true
+  }
 }
