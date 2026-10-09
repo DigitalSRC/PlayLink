@@ -121,9 +121,11 @@ const THEME_COLORS: Record<AppTheme, ThemeColors> = {
  * values — that duplication is exactly what let whole screens stay dark in light mode.
  * Parameters: none; reads `theme` from the global AppContext.
  * Returns: a ThemeColors object matching the current 'dark' or 'light' setting.
- * Edge cases: throws if called outside an AppProvider, same as useApp().
+ * Edge cases: throws if called outside an AppProvider, same as useApp(); a theme value that is
+ * neither 'dark' nor 'light' gets the dark palette.
  */
 export const useThemeColors = (): ThemeColors => {
   const { theme } = useApp();
-  return THEME_COLORS[theme];
+  // Falls back to dark for anything unexpected rather than handing a screen no palette at all.
+  return THEME_COLORS[theme] ?? THEME_COLORS.dark;
 };
