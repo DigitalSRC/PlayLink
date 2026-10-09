@@ -67,6 +67,8 @@ const DEV_TOOLS_ENABLED = false;
  * Parameters: currentUser (the signed-in player's profile, passed in by ProfileScreen so every
  * hook here can rely on it); reads session, chosenRivalId, rivals, and theme from global context.
  * Returns: a scrollable profile page.
+ * The name and location fields always show the shared profile unless the player is part-way
+ * through editing them, so a location changed on the Calendar tab appears here without a reload.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
  * non-developer profiles; the password form validates a 6-character minimum and that both
  * fields match before ever calling Supabase, and shows an inline error or success message; a
@@ -138,8 +140,15 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
     claimReward('choose_rival');
   };
 
-  const [editDisplayName, setEditDisplayNameState] = useState(currentUser.displayName ?? '');
-  const [editLocation, setEditLocationState] = useState(currentUser.location);
+  // What the player has typed but not saved, or null when they haven't touched the field. The
+  // field shows the draft if there is one and the saved profile otherwise, so a change made on
+  // another screen (the Calendar's "Change" location, for one) shows here straight away. Before
+  // this, each field kept its own copy of the profile taken when the tab first opened, and went
+  // on showing the old value after the profile changed elsewhere.
+  const [displayNameDraft, setDisplayNameDraft] = useState<string | null>(null);
+  const [locationDraft, setLocationDraft] = useState<string | null>(null);
+  const editDisplayName = displayNameDraft ?? currentUser.displayName ?? '';
+  const editLocation = locationDraft ?? currentUser.location;
   const [editGames, setEditGames] = useState<GameType[]>(currentUser.games);
   const [editFormats, setEditFormats] = useState(currentUser.preferredFormats);
   const [showTitlePicker, setShowTitlePicker] = useState(false);
@@ -158,8 +167,8 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  const setEditDisplayName = (v: string) => { setEditDisplayNameState(v); setDirty(true); };
-  const setEditLocation = (v: string) => { setEditLocationState(v); setDirty(true); };
+  const setEditDisplayName = (v: string) => { setDisplayNameDraft(v); setDirty(true); };
+  const setEditLocation = (v: string) => { setLocationDraft(v); setDirty(true); };
 
   const initials = (currentUser.displayName ?? currentUser.username)
     .split(' ')
@@ -183,13 +192,16 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
       },
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // The save updates the shared profile at once, so the fields can go back to showing it.
+    setDisplayNameDraft(null);
+    setLocationDraft(null);
     setDirty(false);
     showToast('Profile saved');
   };
 
   const discardChanges = () => {
-    setEditDisplayNameState(currentUser.displayName ?? '');
-    setEditLocationState(currentUser.location);
+    setDisplayNameDraft(null);
+    setLocationDraft(null);
     setEditGames(currentUser.games);
     setEditFormats(currentUser.preferredFormats);
     setDirty(false);
