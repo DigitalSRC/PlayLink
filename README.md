@@ -192,6 +192,32 @@ Each player has three numbers, all paid together when a round is reported:
    ```
    Press `a` for Android, `i` for iOS, or `w` for web, or scan the QR code with Expo Go.
 
+### Showing it to someone who is not on your Wi-Fi
+
+The normal dev server only reaches phones and computers on the same network. To let anyone
+with the link in, start it with a tunnel:
+
+```bash
+npm run demo
+```
+
+Wait for "Tunnel ready". The terminal then shows a QR code and an address ending in
+`exp.direct`.
+
+- **On a phone:** install [Expo Go](https://expo.dev/go) and scan the QR code.
+- **In a web browser:** open `https://<that address>` (the same address with `https://` in
+  front instead of `exp://`). No install needed.
+
+Things to know:
+
+- It only works while that terminal is running and the computer is awake. Close it and the
+  link stops.
+- Everyone is using the real database, so accounts and groups made during a demo are real.
+- The first load is slow, because the app is built on demand for each visitor.
+- This is the development server, opened to the internet for as long as it runs. Share the
+  link with people you know, and stop the server when you are done.
+- The layout is designed for phones; on a laptop screen it is stretched for now.
+
 ### Machine-specific setup
 
 Some tooling paths differ between machines and must not be committed. They live in a
@@ -212,6 +238,7 @@ PATH). Never commit `CLAUDE.local.md`.
 |---|---|
 | `npm install` | Install dependencies |
 | `npx expo start` | Start the dev server (add `--android`, `--ios`, or `--web` to pick a target) |
+| `npm run demo` | Start the dev server with a tunnel, so people outside your network can open it |
 | `npx tsc --noEmit` | Type-check. Only errors under `src/` count; `example/` is noise |
 | `npm run lint` | Run ESLint. The baseline is not clean, so compare against it |
 | `npm test` | Run all Jest tests. Only useful on `unitTests` or a `test/<feature>` branch |
