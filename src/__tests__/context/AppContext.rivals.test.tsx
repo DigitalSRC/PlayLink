@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { Pressable, Text } from "react-native";
-import { AppProvider, useApp } from "../../context/AppContext";
+import { AppProvider, chosenRivalStorageKey, useApp } from "../../context/AppContext";
 import { UserProfile } from "../../data/types";
 import { RIVAL_SEARCH_INTERVAL_MS } from "../../utils/rival-utils";
 
@@ -55,11 +55,13 @@ jest.mock("../../lib/profile-api", () => ({
 }));
 
 function Probe() {
-  const { rivals, rivalsLoaded, refreshRivals, clearCurrentUser } = useApp();
+  const { rivals, rivalsLoaded, refreshRivals, clearCurrentUser, chosenRivalId, setChosenRivalId } = useApp();
   return (
     <>
       <Text testID="loaded">{String(rivalsLoaded)}</Text>
       <Text testID="rivals">{rivals.map((r) => r.id).join(",")}</Text>
+      <Text testID="chosen">{chosenRivalId ?? ""}</Text>
+      <Pressable testID="pick-2" onPress={() => setChosenRivalId("rival-2")} />
       <Pressable testID="refresh" onPress={() => refreshRivals()} />
       <Pressable testID="sign-out" onPress={clearCurrentUser} />
     </>
@@ -243,6 +245,90 @@ describe("AppProvider rivals", () => {
     mockFetchCandidates.mockResolvedValue([makeProfile({ id: "rival-2" })]);
     await fireEvent.press(getByTestId("refresh"));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ userId: "me", patch: { rivalIds: ["rival-2"] } }));
+  });
+
+  describe("the picked Rival", () => {
+    const two = [rival, makeProfile({ id: "rival-2" })];
+
+    it("with nothing saved anywhere, the first rival stands in and nothing is written", async () => {
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"] });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-1"));
+      await settle();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it("uses the pick saved on the profile on a device that has none", async () => {
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"], chosenRivalId: "rival-2" });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-2"));
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it("prefers the profile's pick over an older one saved on the device", async () => {
+      await AsyncStorage.setItem(chosenRivalStorageKey("me"), "rival-1");
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"], chosenRivalId: "rival-2" });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-2"));
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it("sends a pick that exists only on the device up to the profile, once", async () => {
+      await AsyncStorage.setItem(chosenRivalStorageKey("me"), "rival-2");
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"] });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-2"));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ userId: "me", patch: { chosenRivalId: "rival-2" } }));
+
+      await fireEvent.press(getByTestId("refresh"));
+      await settle();
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not send up a device pick for someone who is no longer a rival", async () => {
+      await AsyncStorage.setItem(chosenRivalStorageKey("me"), "gone");
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"] });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-1"));
+      await settle();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it("picking a Rival saves it on the profile and on the device", async () => {
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"] });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-1"));
+
+      await fireEvent.press(getByTestId("pick-2"));
+      await settle();
+      expect(getByTestId("chosen").props.children).toBe("rival-2");
+      expect(mockUpdate).toHaveBeenCalledWith({ userId: "me", patch: { chosenRivalId: "rival-2" } });
+      expect(await AsyncStorage.getItem(chosenRivalStorageKey("me"))).toBe("rival-2");
+    });
+
+    it("keeps the pick on this device when saving it to the profile fails", async () => {
+      mockUpdate.mockRejectedValue(new Error("column does not exist"));
+      mockProfile = makeProfile({ rivalIds: ["rival-1", "rival-2"] });
+      mockFetchByIds.mockResolvedValue(two);
+      const { getByTestId } = await render(tree());
+      await waitFor(() => expect(getByTestId("chosen").props.children).toBe("rival-1"));
+
+      await fireEvent.press(getByTestId("pick-2"));
+      await settle();
+      expect(getByTestId("chosen").props.children).toBe("rival-2");
+      expect(console.warn).toHaveBeenCalledWith("Failed to save the chosen Rival:", expect.any(Error));
+    });
   });
 
   it("forgets the rival state at sign-out", async () => {

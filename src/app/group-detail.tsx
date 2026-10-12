@@ -29,7 +29,7 @@ import { findGroupOnDay, formatBrackets, groupDayKey, groupErrorMessage } from '
 import { PlacementInput } from '../utils/scoring-utils';
 import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
-import { profileKeys } from '../hooks/useProfileQueries';
+import { profileKeys, useRivaledByQuery } from '../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
   useConfirmGroupMutation,
@@ -92,6 +92,8 @@ export default function GroupDetail() {
 
   const { data: group, isLoading: groupLoading, isError: groupFailed, refetch: refetchGroup } = useGroupQuery(id);
   const { data: results = [] } = useGroupResultsQuery(id);
+  // Players who picked this player as their Rival; they are tagged in the roster.
+  const { data: rivaledBy = [] } = useRivaledByQuery(currentUser?.id);
 
   const joinMutation = useJoinGroupMutation();
   const leaveMutation = useLeaveGroupMutation();
@@ -721,6 +723,11 @@ export default function GroupDetail() {
                 <Text style={styles.makeHostText}>Make Host</Text>
               </Pressable>
             )}
+            {player.id !== currentUser.id && rivaledBy.some((r) => r.id === player.id) && (
+              <View style={styles.rivalsYouBadge}>
+                <Text style={styles.rivalsYouBadgeText}>RIVALS YOU</Text>
+              </View>
+            )}
             {player.role === 'Host' && (
               <View style={styles.hostBadge}>
                 <Text style={styles.hostBadgeText}>HOST</Text>
@@ -1225,6 +1232,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: 5,
     backgroundColor: '#E6A817',
     marginLeft: 8,
+  },
+  rivalsYouBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 5,
+    backgroundColor: c.dangerBg,
+    marginLeft: 8,
+  },
+  rivalsYouBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: c.dangerOnBg,
+    letterSpacing: 0.5,
   },
   hostBadgeText: {
     fontSize: 9,

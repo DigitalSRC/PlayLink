@@ -1,18 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchProfile, insertProfile, updateProfile } from '../lib/profile-api';
+import { fetchProfile, fetchRivaledBy, insertProfile, updateProfile } from '../lib/profile-api';
 import { UserProfile } from '../data/types';
 
 /**
  * Query key factory for profile data, keeping every call site's cache key in one place so a
  * typo can't silently create a second, disconnected cache entry for the same user.
  * Parameters: none beyond the key builder's own userId argument.
- * Returns: an object with a `detail(userId)` function producing that user's query key.
+ * Returns: an object with `detail(userId)` and `rivaledBy(userId)` functions producing that
+ * user's query keys.
  * Edge cases: `userId` may be `undefined` (session not yet loaded) — callers pass it through
  * unchanged and instead use `enabled` on the query to avoid firing with an undefined id.
  */
 export const profileKeys = {
   detail: (userId: string | undefined) => ['profile', userId] as const,
+  rivaledBy: (userId: string | undefined) => ['rivaled-by', userId] as const,
 };
+
+/**
+ * Fetches and caches the players who have picked the given player as their Rival.
+ * Screens use it to tag those players ("Rivals you") wherever they appear.
+ * Parameters: userId (the signed-in player, or undefined while the session is loading).
+ * Returns: the standard React Query result object; `data` is a UserProfile[].
+ * Edge cases: disabled while userId is undefined; a failed request is not retried and leaves
+ * `data` undefined, so callers default it to an empty list and simply show no tags - which is
+ * also what happens against a server that does not record picks yet.
+ */
+export const useRivaledByQuery = (userId: string | undefined) =>
+  useQuery({
+    queryKey: profileKeys.rivaledBy(userId),
+    queryFn: () => fetchRivaledBy(userId as string),
+    enabled: !!userId,
+    retry: false,
+  });
 
 /**
  * Fetches and caches the given user's profile row.

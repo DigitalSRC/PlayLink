@@ -168,5 +168,28 @@ describe("profile-api mappers", () => {
       const row = mapProfileToRow({ displayName: undefined, username: "Someone" });
       expect(row).toEqual({ username: "Someone", display_name: null });
     });
+
+    it("sends the picked Rival as chosen_rival_id, and clearing it as null", () => {
+      expect(mapProfileToRow({ chosenRivalId: "user-2" })).toEqual({ chosen_rival_id: "user-2" });
+      expect(mapProfileToRow({ chosenRivalId: undefined })).toEqual({ chosen_rival_id: null });
+      expect(mapProfileToRow({ points: 5 })).not.toHaveProperty("chosen_rival_id");
+    });
+  });
+
+  describe("the picked Rival", () => {
+    const base = {
+      id: "user-1", username: "a", display_name: null, is_developer: false, location: "x", games: ["mtg"],
+      preferred_formats: {}, brackets: [], no_go: [], wins: 0, losses: 0, draws: 0, points: 0,
+      monthly_points: 0, rival_ids: ["user-2"], last_rival_refresh: null,
+    };
+
+    it("is read from chosen_rival_id", () => {
+      expect(mapRowToProfile({ ...base, chosen_rival_id: "user-2" }).chosenRivalId).toBe("user-2");
+    });
+
+    it("is undefined when the row has none, or the server has no such column", () => {
+      expect(mapRowToProfile({ ...base, chosen_rival_id: null }).chosenRivalId).toBeUndefined();
+      expect(mapRowToProfile(base).chosenRivalId).toBeUndefined();
+    });
   });
 });

@@ -8,6 +8,7 @@ import HowItWorksSheet from '../../components/HowItWorksSheet';
 import PlayerName from '../../components/PlayerName';
 import { chosenRivalStorageKey, useApp } from '../../context/AppContext';
 import { STARTER_REWARD_POINTS, STARTER_REWARDS, StarterRewardKey } from '../../data/rewards';
+import { useRivaledByQuery } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward, useStarterRewardsQuery } from '../../hooks/useRewardQueries';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, visibleGames } from '../../data/types';
 import { findGroupsForPlayer } from '../../utils/group-utils';
@@ -37,6 +38,8 @@ export default function HomeScreen() {
   const userId = currentUser?.id;
   const rewardsQuery = useStarterRewardsQuery(userId);
   const claimReward = useClaimStarterReward(userId);
+  // Players who picked this player as their Rival, whether or not it is mutual.
+  const { data: rivaledBy = [] } = useRivaledByQuery(userId);
   const [showGuide, setShowGuide] = useState(false);
   const [welcome, setWelcome] = useState(false);
 
@@ -323,6 +326,34 @@ export default function HomeScreen() {
               </View>
             </>
           )}
+        </View>
+      )}
+
+      {/* Players who made this player their Rival */}
+      {rivaledBy.length > 0 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Rivaling You</Text>
+          <Text style={[styles.rivaledByHint, { color: colors.textMuted }]}>
+            {rivaledBy.length === 1 ? 'This player has' : 'These players have'} made you their Rival.
+          </Text>
+          {rivaledBy.map((player) => (
+            <Pressable key={player.id} style={[styles.rivalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push({ pathname: '/player-profile', params: { username: player.username } })}>
+              <View style={[styles.rivalAvatar, styles.rivalAvatarContender]}>
+                <Text style={styles.rivalInitial}>{player.username.charAt(0) || '?'}</Text>
+              </View>
+              <View style={styles.rivalInfo}>
+                <Text style={[styles.rivalName, { color: colors.textPrimary }]}>{player.displayName ?? player.username}</Text>
+                <Text style={[styles.rivalMeta, { color: colors.textSecondary }]}>
+                  {player.wins}W – {player.losses}L · Score {player.monthlyPoints}
+                </Text>
+              </View>
+              <View style={[styles.rivalBadge, { backgroundColor: colors.dangerBg }]}>
+                <Text style={[styles.rivalBadgeText, { color: colors.dangerOnBg }]}>
+                  {player.id === chosenRivalId ? 'MUTUAL' : 'RIVALS YOU'}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
         </View>
       )}
 
@@ -638,6 +669,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFF',
     letterSpacing: 0.8,
+  },
+  rivaledByHint: {
+    fontSize: 12,
+    marginBottom: 10,
   },
   contendersLabel: {
     fontSize: 10,

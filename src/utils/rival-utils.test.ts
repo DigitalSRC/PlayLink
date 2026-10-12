@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import { UserProfile } from "../data/types";
-import { findRivals, MAX_RIVALS, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner, topUpRivalIds } from "./rival-utils";
+import { findRivals, MAX_RIVALS, pickChosenRival, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner, topUpRivalIds } from "./rival-utils";
 
 const makeProfile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   id: '1',
@@ -163,6 +163,28 @@ describe("topUpRivalIds", () => {
   it("honours a smaller cap", () => {
     expect(topUpRivalIds(me, ["a"], [a, b, c], 2)).toEqual(["a", "b"]);
     expect(topUpRivalIds(me, ["a"], [a, b, c], 1)).toBeNull();
+  });
+});
+
+describe("pickChosenRival", () => {
+  const rivals = [makeProfile({ id: "a" }), makeProfile({ id: "b" }), makeProfile({ id: "c" })];
+
+  it("takes the first preference that is still a rival", () => {
+    expect(pickChosenRival(rivals, ["b", "c"])).toBe("b");
+    expect(pickChosenRival(rivals, [null, undefined, "c"])).toBe("c");
+  });
+
+  it("skips a preference for someone who is no longer a rival", () => {
+    expect(pickChosenRival(rivals, ["gone", "c"])).toBe("c");
+  });
+
+  it("falls back to the first rival when no preference holds", () => {
+    expect(pickChosenRival(rivals, [])).toBe("a");
+    expect(pickChosenRival(rivals, ["gone", null])).toBe("a");
+  });
+
+  it("is null for a player with no rivals, whatever was preferred", () => {
+    expect(pickChosenRival([], ["a"])).toBeNull();
   });
 });
 

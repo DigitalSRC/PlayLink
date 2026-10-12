@@ -108,6 +108,23 @@ export const topUpRivalIds = (
   return added.length > 0 ? [...kept, ...added.map((r) => r.id)] : null;
 };
 
+/**
+ * Decides which of a player's rivals is their Rival (the rest are Contenders).
+ * The first preference that is still one of their rivals wins; with none, the first rival
+ * stands in, so a player with rivals always has a Rival to chase.
+ * Parameters: rivals (the player's current rivals), preferences (rival ids to try, most
+ * trusted first - e.g. the pick in memory, the pick saved on the profile, the pick saved on
+ * this device; null and undefined entries are skipped).
+ * Returns: the Rival's id, or null when the player has no rivals.
+ * Edge cases: a preference for a player who is no longer a rival (the daily refresh dropped
+ * them, or their account was deleted) is ignored.
+ */
+export const pickChosenRival = (
+  rivals: UserProfile[],
+  preferences: (string | null | undefined)[]
+): string | null =>
+  preferences.find((id) => !!id && rivals.some((r) => r.id === id)) ?? rivals[0]?.id ?? null;
+
 /** How often the app looks again for rivals while the player has none (one minute). */
 export const RIVAL_SEARCH_INTERVAL_MS = 60_000;
 
