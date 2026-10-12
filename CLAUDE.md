@@ -321,6 +321,7 @@ feature/<function>  →  life-counter  →  test/life-counter (+ unitTests)  →
 - Preserve the existing navigation flow; route params and screen names must remain consistent.
 - When modifying group-related logic, keep the `PlayerProfile` and `Group` types in [src/data/groups.ts](src/data/groups.ts) intact and update the tests in `src/utils/group-utils.test.ts` on the `unitTests`/`test/<feature>` lane when behavior changes — not on `development`/`main`.
 - Avoid editing content in [example/](example/) unless the task specifically requires it (it's an untracked, gitignored Expo template, not part of the app).
+- Any screen with a text field goes inside [KeyboardAvoidingScreen](src/components/KeyboardAvoidingScreen.tsx) (around its scroll view, which takes `keyboardShouldPersistTaps="handled"`), so the keyboard never covers the field. Sign-in and the Find tab's pop-ups use a bare `KeyboardAvoidingView` with the same settings.
 - Use relative imports. `tsconfig.json` defines an `@/*` → `src/*` alias, but nothing under `src/` uses it.
 - When a finished-but-not-yet-shippable capability needs hiding, follow the existing pattern: a module-level `const X_ENABLED = false` with a comment saying what flips it back on (`OAUTH_ENABLED`, `DEV_TOOLS_ENABLED`). A flag cannot hide a `router.push` to a route file that doesn't exist — typed routes won't compile it.
 
