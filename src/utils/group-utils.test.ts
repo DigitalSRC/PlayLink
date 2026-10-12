@@ -11,6 +11,9 @@ import {
   generateJoinCode,
   groupDayKey,
   groupErrorMessage,
+  MAX_ROUNDS_PER_GROUP,
+  MIN_ROUND_PLAYERS,
+  roundReportBlocker,
   isGroupFull,
   isGroupInArea,
   MAX_POSTINGS,
@@ -299,8 +302,37 @@ describe("group-utils", () => {
 
   it("groupErrorMessage passes other errors through in their own words", () => {
     expect(groupErrorMessage(new Error('Network request failed'), 'Please try again.')).toBe('Network request failed');
-    expect(groupErrorMessage({ code: '23505', message: 'duplicate key value violates unique constraint "groups_join_code_idx"' }, 'x'))
-      .toBe('duplicate key value violates unique constraint "groups_join_code_idx"');
+    expect(groupErrorMessage({ code: 'P0001', message: 'This group is full.' }, 'x')).toBe('This group is full.');
+  });
+
+  it("groupErrorMessage does not show a database error it has no sentence for", () => {
+    expect(groupErrorMessage({ code: '23505', message: 'duplicate key value violates unique constraint "groups_join_code_idx"' }, 'Please try again.'))
+      .toBe('Please try again.');
+    expect(groupErrorMessage({ code: '42501', message: 'permission denied for table groups' }, 'Please try again.'))
+      .toBe('Please try again.');
+  });
+
+  it("roundReportBlocker lets a normal round through", () => {
+    expect(roundReportBlocker(0, 4)).toBeNull();
+    expect(roundReportBlocker(0, MIN_ROUND_PLAYERS)).toBeNull();
+    expect(roundReportBlocker(MAX_ROUNDS_PER_GROUP - 1, 2)).toBeNull();
+  });
+
+  it("roundReportBlocker refuses a round with fewer than two players", () => {
+    expect(roundReportBlocker(0, 1)).toMatch(/at least 2 players/);
+    expect(roundReportBlocker(3, 0)).toMatch(/at least 2 players/);
+  });
+
+  it("roundReportBlocker refuses a round once the group has used all its rounds", () => {
+    expect(roundReportBlocker(MAX_ROUNDS_PER_GROUP, 4)).toMatch(/10 rounds/);
+    expect(roundReportBlocker(MAX_ROUNDS_PER_GROUP + 5, 4)).toMatch(/most allowed/);
+    // Out of rounds is the reason given even when the round is also too small.
+    expect(roundReportBlocker(MAX_ROUNDS_PER_GROUP, 1)).toMatch(/most allowed/);
+  });
+
+  it("the round limits match the numbers in the SQL", () => {
+    expect(MIN_ROUND_PLAYERS).toBe(2);
+    expect(MAX_ROUNDS_PER_GROUP).toBe(10);
   });
 
   it("groupErrorMessage falls back when there is nothing usable to say", () => {

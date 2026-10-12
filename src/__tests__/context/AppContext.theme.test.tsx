@@ -19,8 +19,10 @@ jest.mock("../../hooks/useGroupQueries", () => ({
   useGroupsQuery: () => ({ data: [], isLoading: false }),
 }));
 jest.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ removeQueries: jest.fn() }),
+  useQueryClient: () => ({ removeQueries: jest.fn(), resetQueries: jest.fn() }),
 }));
+// AppProvider clears the cache when the signed-in player goes away; covered in AppContext.cache.test.tsx.
+jest.mock("../../lib/query-client", () => ({ clearCachedPlayerData: jest.fn() }));
 const mockSignOut = jest.fn();
 jest.mock("../../lib/supabase", () => ({
   registerSupabaseAutoRefresh: jest.fn(),

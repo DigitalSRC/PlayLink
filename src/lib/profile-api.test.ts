@@ -1,5 +1,30 @@
 import { describe, expect, it } from "@jest/globals";
-import { mapProfileToRow, mapRowToProfile } from "./profile-api";
+import { escapeLikePattern, mapProfileToRow, mapRowToProfile } from "./profile-api";
+
+// A username from a link is matched with ILIKE, where % and _ are wildcards.
+describe("escapeLikePattern", () => {
+  it("leaves ordinary text alone", () => {
+    expect(escapeLikePattern("DarkRitualDave")).toBe("DarkRitualDave");
+    expect(escapeLikePattern("")).toBe("");
+  });
+
+  it("escapes an underscore, which usernames are allowed to contain", () => {
+    expect(escapeLikePattern("dark_ritual")).toBe("dark\\_ritual");
+  });
+
+  it("escapes a percent sign so it cannot match other players", () => {
+    expect(escapeLikePattern("%")).toBe("\\%");
+    expect(escapeLikePattern("da%")).toBe("da\\%");
+  });
+
+  it("escapes a backslash first, so an escape cannot be undone", () => {
+    expect(escapeLikePattern("\\%")).toBe("\\\\\\%");
+  });
+
+  it("escapes every occurrence", () => {
+    expect(escapeLikePattern("a_b_c%d")).toBe("a\\_b\\_c\\%d");
+  });
+});
 
 describe("profile-api mappers", () => {
   describe("mapRowToProfile", () => {
