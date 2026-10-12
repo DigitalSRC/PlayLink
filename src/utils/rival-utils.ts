@@ -125,6 +125,19 @@ export const pickChosenRival = (
 ): string | null =>
   preferences.find((id) => !!id && rivals.some((r) => r.id === id)) ?? rivals[0]?.id ?? null;
 
+/**
+ * Puts the player's picked Rival at the top of their rivals list, for display.
+ * The Contenders keep the order they were in.
+ * Parameters: rivals (the player's rivals), chosenRivalId (their picked Rival, if any).
+ * Returns: a new list with the Rival first.
+ * Edge cases: with no pick, or a pick who is not in the list, the order is unchanged; the
+ * input array is not changed.
+ */
+export const chosenRivalFirst = (rivals: UserProfile[], chosenRivalId: string | null): UserProfile[] => [
+  ...rivals.filter((r) => r.id === chosenRivalId),
+  ...rivals.filter((r) => r.id !== chosenRivalId),
+];
+
 /** How often the app looks again for rivals while the player has none (one minute). */
 export const RIVAL_SEARCH_INTERVAL_MS = 60_000;
 
