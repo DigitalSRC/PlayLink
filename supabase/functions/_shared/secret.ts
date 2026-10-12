@@ -19,13 +19,13 @@ export const secretsMatch = (
   expected: string | null | undefined
 ): boolean => {
   if (!provided || !expected) return false;
-  const encoder = new TextEncoder();
-  const a = encoder.encode(provided);
-  const b = encoder.encode(expected);
-  let difference = a.length ^ b.length;
-  const length = Math.max(a.length, b.length);
+  // Character codes, not an encoder: this file has to run under Deno and under the app's test
+  // runner, and two strings are identical exactly when their character codes are.
+  let difference = provided.length ^ expected.length;
+  const length = Math.max(provided.length, expected.length);
   for (let i = 0; i < length; i++) {
-    difference |= (a[i] ?? 0) ^ (b[i] ?? 0);
+    // Past the end of a string charCodeAt gives NaN, which `| 0` turns into 0.
+    difference |= (provided.charCodeAt(i) | 0) ^ (expected.charCodeAt(i) | 0);
   }
   return difference === 0;
 };
