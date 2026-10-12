@@ -36,6 +36,8 @@ export interface UserProfile {
   /** When the profile was created (epoch ms). Decides early-supporter shop items. */
   createdAt?: number;
   rivalIds?: string[];
+  /** The one rival this player picked as their Rival, saved on their profile so others can see it. */
+  chosenRivalId?: string;
   lastRivalRefresh?: string;
 }
 

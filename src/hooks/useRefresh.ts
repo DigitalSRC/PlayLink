@@ -8,7 +8,7 @@ import { rewardKeys } from './useRewardQueries';
 /**
  * Marks everything other players can change as out of date, so whatever is on screen is
  * fetched again: the group list, any open group and its rounds, the player's own profile
- * (points arrive when a host reports a round), and their starter rewards.
+ * (points arrive when a host reports a round), who is rivaling them, and their starter rewards.
  * Only queries a screen is currently showing are re-requested; the rest refetch when next shown.
  * Parameters: queryClient (the app's React Query client), userId (the signed-in player, if any).
  * Returns: a promise that settles once the visible queries have been fetched again.
@@ -23,6 +23,7 @@ export const refreshPlayerData = async (queryClient: QueryClient, userId: string
     ...(userId
       ? [
           queryClient.invalidateQueries({ queryKey: profileKeys.detail(userId) }),
+          queryClient.invalidateQueries({ queryKey: profileKeys.rivaledBy(userId) }),
           queryClient.invalidateQueries({ queryKey: rewardKeys.claimed(userId) }),
         ]
       : []),

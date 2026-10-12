@@ -7,7 +7,7 @@ import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
 import { fetchProfilesByIds, fetchRivalCandidates } from '../lib/profile-api';
-import { MAX_RIVALS, RIVAL_SEARCH_INTERVAL_MS, topUpRivalIds } from '../utils/rival-utils';
+import { MAX_RIVALS, pickChosenRival, RIVAL_SEARCH_INTERVAL_MS, topUpRivalIds } from '../utils/rival-utils';
 import { useAuthSession } from '../hooks/useAuthSession';
 import {
   profileKeys,
@@ -54,7 +54,8 @@ const AppContext = createContext<AppState | null>(null);
 // start from the device's own setting.
 const THEME_STORAGE_KEY = 'app-theme';
 
-// Where the player's picked Rival is remembered on this device, one entry per account.
+// Where the player's picked Rival is remembered on this device, one entry per account. The pick
+// is also saved on the profile (chosenRivalId); this copy covers a server that can't store it.
 export const chosenRivalStorageKey = (userId: string) => `chosen-rival:${userId}`;
 
 /**
@@ -161,6 +162,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // so a slow response can never put back a rival list that has since changed.
   const rivalLoadSeqRef = useRef(0);
   const rivalSearchRunningRef = useRef(false);
+  // Accounts whose device-only Rival pick has already been sent up to their profile this run.
+  const chosenRivalUploadedRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Saves the player's picked Rival on their profile, where other players' apps can see it
+   * (that is how someone learns they have been made a Rival) and other devices can read it.
+   * Parameters: forUserId (the player), id (the picked rival's profile id).
+   * Returns: void; the save runs in the background.
+   * Edge cases: a failed save is logged and otherwise ignored - the pick still holds on this
+   * device - which is also what happens against a server that has no column for it yet.
+   */
+  const saveChosenRival = useCallback((forUserId: string, id: string) => {
+    updateProfileAsync({ userId: forUserId, patch: { chosenRivalId: id } }).catch((err) =>
+      console.warn('Failed to save the chosen Rival:', err)
+    );
+  }, [updateProfileAsync]);
 
   /**
    * Turns the profile's stored rival ids into the rival profiles shown on Home and Profile, and
@@ -182,14 +199,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (seq !== rivalLoadSeqRef.current) return null;
     setRivals(profiles);
     // Keep the rival the player picked, as long as they're still one of their rivals; the daily
-    // refresh can drop them, and then the first of the new list stands in.
-    const saved = profiles.some((p) => p.id === savedId) ? savedId : null;
-    setChosenRivalIdState((prev) =>
-      prev !== null && profiles.some((p) => p.id === prev) ? prev : saved ?? profiles[0]?.id ?? null
-    );
+    // refresh can drop them, and then the first of the new list stands in. The pick in memory
+    // comes first, then the one saved on the profile, then the one saved on this device.
+    const me = currentUserRef.current;
+    const onProfile = me?.id === forUserId ? me.chosenRivalId : undefined;
+    setChosenRivalIdState((prev) => pickChosenRival(profiles, [prev, onProfile, savedId]));
+    // A pick made before picks were saved on the profile exists only on this device: send it up
+    // once, so the picked player can be told.
+    if (
+      me?.id === forUserId && !onProfile && savedId && profiles.some((p) => p.id === savedId) &&
+      !chosenRivalUploadedRef.current.has(forUserId)
+    ) {
+      chosenRivalUploadedRef.current.add(forUserId);
+      saveChosenRival(forUserId, savedId);
+    }
     setRivalsLoaded(true);
     return profiles;
-  }, []);
+  }, [saveChosenRival]);
 
   /**
    * Looks for rivals for a player who has fewer than MAX_RIVALS, the same way onboarding does
@@ -263,17 +289,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [loadRivals, searchForRivals]);
 
   /**
-   * Records which of their rivals the player has picked as their main Rival, and remembers it
-   * on this device so it is still their Rival the next time the app opens. Before this was
-   * saved, the pick only lived in memory and quietly reset to the first rival on every restart.
+   * Records which of their rivals the player has picked as their main Rival. The pick is saved
+   * on their profile, so the picked player can be told and the pick follows the player to
+   * another device, and on this device, so it holds even if the profile save fails.
    * Parameters: id (the chosen rival's profile id).
    * Returns: void.
    * Edge cases: with no signed-in user the pick is kept in memory only; a failed save is
-   * ignored, since the pick still holds for this session; the pick is per device, not synced.
+   * ignored, since the pick still holds for this session.
    */
   const setChosenRivalId = (id: string) => {
     setChosenRivalIdState(id);
-    if (userId) AsyncStorage.setItem(chosenRivalStorageKey(userId), id).catch(() => {});
+    if (!userId) return;
+    AsyncStorage.setItem(chosenRivalStorageKey(userId), id).catch(() => {});
+    chosenRivalUploadedRef.current.add(userId);
+    saveChosenRival(userId, id);
   };
 
   const clearCurrentUser = () => {

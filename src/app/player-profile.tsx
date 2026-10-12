@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import PlayerName, { CosmeticBorder } from '../components/PlayerName';
 import { showToast } from '../components/AppToast';
 import { useApp } from '../context/AppContext';
+import { useRivaledByQuery } from '../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
   BRACKET_INFO,
@@ -40,6 +41,7 @@ export default function PlayerProfileScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const { rivals, chosenRivalId, setChosenRivalId, session } = useApp();
   const claimReward = useClaimStarterReward(session?.user.id);
+  const { data: rivaledBy = [] } = useRivaledByQuery(session?.user.id);
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -55,6 +57,8 @@ export default function PlayerProfileScreen() {
 
   const isRival = rivals.some((r) => r.username === username);
   const isChosenRival = profile ? profile.id === chosenRivalId : false;
+  // This player picked the viewer as their Rival, whether or not the viewer rivals them back.
+  const rivalsMe = profile ? rivaledBy.some((r) => r.id === profile.id) : false;
 
   const totalGames = profile ? profile.wins + profile.losses : 0;
   const winPct = totalGames === 0 ? 0 : Math.round((profile!.wins / totalGames) * 100);
@@ -102,6 +106,11 @@ export default function PlayerProfileScreen() {
           {isRival && !isChosenRival && (
             <View style={styles.contenderPill}>
               <Text style={styles.contenderPillText}>CONTENDER</Text>
+            </View>
+          )}
+          {rivalsMe && (
+            <View style={styles.rivalsMePill}>
+              <Text style={styles.rivalsMePillText}>⚔️ MADE YOU THEIR RIVAL</Text>
             </View>
           )}
         </View>
@@ -364,6 +373,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginTop: 4,
     borderWidth: 1,
     borderColor: '#8B6914',
+  },
+  rivalsMePill: {
+    backgroundColor: c.dangerBg,
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    marginTop: 6,
+  },
+  rivalsMePillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: c.dangerOnBg,
+    letterSpacing: 1,
   },
   contenderPillText: {
     fontSize: 11,
