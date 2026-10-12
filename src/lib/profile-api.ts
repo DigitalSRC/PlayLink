@@ -166,18 +166,30 @@ export const fetchProfilesByIds = async (ids: string[]): Promise<UserProfile[]> 
 };
 
 /**
+ * Makes a piece of text safe to use as an exact match in a LIKE / ILIKE filter. In those
+ * filters `%` means "anything" and `_` means "any one character", so a username taken from a
+ * link could otherwise be written to match somebody else's profile ("%") or several at once.
+ * Parameters: value (the text to match literally).
+ * Returns: the same text with backslash, `%`, and `_` each preceded by a backslash.
+ * Edge cases: text with none of those characters is returned unchanged; an empty string stays
+ * empty (and then matches nothing but an empty username).
+ */
+export const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (c) => '\\' + c);
+
+/**
  * Looks up a single profile by its username, case-insensitively (matching the DB's unique
  * index on lower(username)). Used by player-profile.tsx to resolve a rival's screen from a
  * username route param.
  * Parameters: username (the username to search for).
  * Returns: the matching UserProfile, or null if no profile has that username.
- * Edge cases: throws on any Postgres/network error other than "no row found".
+ * Edge cases: throws on any Postgres/network error other than "no row found"; `%` and `_` in
+ * the username are matched as themselves, not as wildcards (usernames may contain `_`).
  */
 export const fetchProfileByUsername = async (username: string): Promise<UserProfile | null> => {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .ilike('username', username)
+    .ilike('username', escapeLikePattern(username))
     .maybeSingle();
   if (error) throw error;
   return data ? mapRowToProfile(data as ProfileRow) : null;

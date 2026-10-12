@@ -34,7 +34,8 @@ import { ShopItem } from '../../data/shop';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
-import { updatePassword } from '../../lib/auth-api';
+import { MIN_PASSWORD_LENGTH, updatePassword } from '../../lib/auth-api';
+import { playerErrorMessage } from '../../utils/error-utils';
 import { formatBrackets } from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
@@ -129,7 +130,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
       );
     } catch (err) {
       setShowTitlePicker(false);
-      showDialog('Couldn’t change your title', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t change your title', playerErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -256,8 +257,8 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const handleChangePassword = async () => {
     setPasswordError('');
     setPasswordSuccess(false);
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters.');
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setPasswordError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -634,7 +635,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
                 style={[styles.passwordInput, { color: textPrimary, borderColor: border }]}
                 value={newPassword}
                 onChangeText={setNewPassword}
-                placeholder="New password (min. 6 characters)"
+                placeholder={`New password (min. ${MIN_PASSWORD_LENGTH} characters)`}
                 placeholderTextColor={textSec}
                 secureTextEntry
                 autoCapitalize="none"
