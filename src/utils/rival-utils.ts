@@ -80,6 +80,34 @@ export const findRivals = (
   return ranked;
 };
 
+/** How many rivals a player can have: one Rival and two Contenders. */
+export const MAX_RIVALS = 3;
+
+/**
+ * Fills a player's empty rival slots without disturbing the rivals they already have.
+ * The rivals they have keep their places (so a chosen Rival stays chosen), and the best new
+ * matches from the pool (ranked by findRivals) are added after them, up to maxRivals in all.
+ * Before this, the app only looked for rivals when a player had none, so someone matched with
+ * one rival while few people had signed up kept just that one as more players joined.
+ * Parameters: currentUser (the player), keptIds (ids of the rivals they have now, in order),
+ * allProfiles (the pool to match against), maxRivals (cap, default MAX_RIVALS).
+ * Returns: the full new list of rival ids, or null when there is nothing to add.
+ * Edge cases: a full list, or a pool with no new match, returns null so the caller saves
+ * nothing; profiles already kept are never added twice; an id repeated in keptIds is kept once.
+ */
+export const topUpRivalIds = (
+  currentUser: UserProfile,
+  keptIds: string[],
+  allProfiles: UserProfile[],
+  maxRivals: number = MAX_RIVALS
+): string[] | null => {
+  const kept = [...new Set(keptIds)];
+  const open = maxRivals - kept.length;
+  if (open <= 0) return null;
+  const added = findRivals(currentUser, allProfiles.filter((p) => !kept.includes(p.id)), open);
+  return added.length > 0 ? [...kept, ...added.map((r) => r.id)] : null;
+};
+
 /** How often the app looks again for rivals while the player has none (one minute). */
 export const RIVAL_SEARCH_INTERVAL_MS = 60_000;
 

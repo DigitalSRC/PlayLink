@@ -192,16 +192,45 @@ describe("AppProvider rivals", () => {
     expect(mockFetchCandidates).not.toHaveBeenCalled();
   });
 
-  it("refreshRivals looks the rivals up again", async () => {
-    mockProfile = makeProfile({ rivalIds: ["rival-1"] });
-    mockFetchByIds.mockResolvedValue([rival]);
+  it("refreshRivals looks the rivals up again, and does not search when the list is full", async () => {
+    const full = [rival, makeProfile({ id: "rival-2" }), makeProfile({ id: "rival-3" })];
+    mockProfile = makeProfile({ rivalIds: full.map((r) => r.id) });
+    mockFetchByIds.mockResolvedValue(full);
     const { getByTestId } = await render(tree());
-    await waitFor(() => expect(getByTestId("rivals").props.children).toBe("rival-1"));
+    await waitFor(() => expect(getByTestId("rivals").props.children).toBe("rival-1,rival-2,rival-3"));
 
     await fireEvent.press(getByTestId("refresh"));
     await settle();
     expect(mockFetchByIds).toHaveBeenCalledTimes(2);
     expect(mockFetchCandidates).not.toHaveBeenCalled();
+  });
+
+  it("refreshRivals fills the empty slots of a player with one rival, keeping that rival first", async () => {
+    mockProfile = makeProfile({ rivalIds: ["rival-1"] });
+    mockFetchByIds.mockResolvedValue([rival]);
+    mockFetchCandidates.mockResolvedValue([rival, makeProfile({ id: "friend-1" }), makeProfile({ id: "friend-2" })]);
+    const { getByTestId } = await render(tree());
+    await waitFor(() => expect(getByTestId("rivals").props.children).toBe("rival-1"));
+    expect(mockFetchCandidates).not.toHaveBeenCalled();
+
+    await fireEvent.press(getByTestId("refresh"));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    const saved = mockUpdate.mock.calls[0][0].patch.rivalIds as string[];
+    expect(saved[0]).toBe("rival-1");
+    expect([...saved].sort()).toEqual(["friend-1", "friend-2", "rival-1"]);
+  });
+
+  it("refreshRivals saves nothing when a player with one rival has nobody new to add", async () => {
+    mockProfile = makeProfile({ rivalIds: ["rival-1"] });
+    mockFetchByIds.mockResolvedValue([rival]);
+    mockFetchCandidates.mockResolvedValue([rival]);
+    const { getByTestId } = await render(tree());
+    await waitFor(() => expect(getByTestId("rivals").props.children).toBe("rival-1"));
+
+    await fireEvent.press(getByTestId("refresh"));
+    await settle();
+    expect(mockFetchCandidates).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it("refreshRivals searches straight away when the rivals have since been deleted", async () => {

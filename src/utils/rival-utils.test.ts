@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import { UserProfile } from "../data/types";
-import { findRivals, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner } from "./rival-utils";
+import { findRivals, MAX_RIVALS, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner, topUpRivalIds } from "./rival-utils";
 
 const makeProfile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   id: '1',
@@ -114,6 +114,55 @@ describe("rival-utils", () => {
     const user = makeProfile({ id: '1', brackets: [] });
     const rivals = findRivals(user, [dillon]);
     expect(rivals[0].brackets).toEqual(dillon.brackets);
+  });
+});
+
+describe("topUpRivalIds", () => {
+  const me = makeProfile({ id: "me", monthlyPoints: 50 });
+  const a = makeProfile({ id: "a", monthlyPoints: 50 });
+  const b = makeProfile({ id: "b", monthlyPoints: 60 });
+  const c = makeProfile({ id: "c", monthlyPoints: 90 });
+  const d = makeProfile({ id: "d", monthlyPoints: 500 });
+
+  it("allows three rivals", () => {
+    expect(MAX_RIVALS).toBe(3);
+  });
+
+  it("keeps the rivals a player has, in order, and adds the closest new matches after them", () => {
+    expect(topUpRivalIds(me, ["d"], [a, b, c, d])).toEqual(["d", "a", "b"]);
+  });
+
+  it("fills every slot for a player with none", () => {
+    expect(topUpRivalIds(me, [], [b, c, d])).toEqual(["b", "c", "d"]);
+  });
+
+  it("adds only as many as there are open slots", () => {
+    expect(topUpRivalIds(me, ["c", "d"], [a, b, c, d])).toEqual(["c", "d", "a"]);
+  });
+
+  it("returns null when the list is already full", () => {
+    expect(topUpRivalIds(me, ["a", "b", "c"], [a, b, c, d])).toBeNull();
+    expect(topUpRivalIds(me, ["a", "b", "c", "d"], [a, b, c, d])).toBeNull();
+  });
+
+  it("returns null when the pool has nobody new", () => {
+    expect(topUpRivalIds(me, ["a"], [a])).toBeNull();
+    expect(topUpRivalIds(me, ["a"], [])).toBeNull();
+  });
+
+  it("never adds the player themself, a rival they already have, or someone who shares no game", () => {
+    const pokemonOnly = makeProfile({ id: "pk", games: ["pokemon"] });
+    expect(topUpRivalIds(me, ["a"], [me, a, pokemonOnly])).toBeNull();
+    expect(topUpRivalIds(me, ["a"], [me, a, pokemonOnly, b])).toEqual(["a", "b"]);
+  });
+
+  it("keeps a rival who is missing from the pool, and counts a repeated id once", () => {
+    expect(topUpRivalIds(me, ["gone", "gone"], [a, b, c])).toEqual(["gone", "a", "b"]);
+  });
+
+  it("honours a smaller cap", () => {
+    expect(topUpRivalIds(me, ["a"], [a, b, c], 2)).toEqual(["a", "b"]);
+    expect(topUpRivalIds(me, ["a"], [a, b, c], 1)).toBeNull();
   });
 });
 
