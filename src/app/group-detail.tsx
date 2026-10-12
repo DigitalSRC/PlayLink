@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../components/AppDialog';
+import { KeyboardAvoidingScreen } from '../components/KeyboardAvoidingScreen';
 import { showToast } from '../components/AppToast';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -617,8 +618,8 @@ export default function GroupDetail() {
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <KeyboardAvoidingScreen style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Back */}
         <Pressable style={styles.backBtn} onPress={goBack}>
           <Text style={styles.backBtnText}>← Back</Text>
@@ -1038,7 +1039,7 @@ export default function GroupDetail() {
         </View>
       )}
 
-    </View>
+    </KeyboardAvoidingScreen>
   );
 }
 

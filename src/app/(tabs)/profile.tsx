@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../../components/AppDialog';
+import { KeyboardAvoidingScreen } from '../../components/KeyboardAvoidingScreen';
 import { RefreshableScrollView } from '../../components/RefreshableScrollView';
 import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showToast } from '../../components/AppToast';
@@ -332,9 +333,11 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const { refreshing, onRefresh } = usePullToRefresh();
 
   return (
+    <KeyboardAvoidingScreen style={{ backgroundColor: bg }}>
     <RefreshableScrollView
       style={[styles.container, { backgroundColor: bg }]}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
@@ -824,6 +827,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
         </Pressable>
       </View>
     </RefreshableScrollView>
+    </KeyboardAvoidingScreen>
   );
 }
 
