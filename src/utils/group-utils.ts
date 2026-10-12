@@ -1,3 +1,4 @@
+import { playerErrorMessage } from './error-utils';
 import { Group, PlayerProfile } from "../data/groups";
 import { dateKeyFromMs } from "./calendar-utils";
 
@@ -138,6 +139,40 @@ export const sortGroupsBySchedule = (groups: Group[]): Group[] =>
 export const isGroupInArea = (group: Group, areaId: string | undefined): boolean =>
   areaId === undefined || group.area === undefined || group.area === areaId;
 
+/** The fewest players a reported round can have. The server enforces the same number
+ * (min_players in 20261012140000); change both together. */
+export const MIN_ROUND_PLAYERS = 2;
+
+/** The most rounds one group can report. The server enforces the same number
+ * (max_rounds_per_group in 20261012140000); change both together. */
+export const MAX_ROUNDS_PER_GROUP = 10;
+
+/** The longest group name and location the server accepts (groups_guard_input in
+ * 20261012140000); the text fields stop at the same lengths. */
+export const MAX_GROUP_NAME_LENGTH = 80;
+export const MAX_GROUP_LOCATION_LENGTH = 200;
+
+/**
+ * Says why a round cannot be reported, before the host is asked to confirm it. The server
+ * refuses the same things; checking here means the host is told straight away, in the app's
+ * own words, instead of after tapping Submit.
+ * Parameters: roundsPlayed (how many rounds the group has already reported), playerCount (how
+ * many players are in the round being reported).
+ * Returns: a sentence to show the host, or null when the round can be reported.
+ * Edge cases: a group that has used all its rounds is reported first, since adding players
+ * would not help; the server also limits how many rounds a player can be in per day, which
+ * cannot be known here and is reported by the server when it applies.
+ */
+export const roundReportBlocker = (roundsPlayed: number, playerCount: number): string | null => {
+  if (roundsPlayed >= MAX_ROUNDS_PER_GROUP) {
+    return `This group has reported ${MAX_ROUNDS_PER_GROUP} rounds, which is the most allowed. Post a new group to keep playing.`;
+  }
+  if (playerCount < MIN_ROUND_PLAYERS) {
+    return `A round needs at least ${MIN_ROUND_PLAYERS} players.`;
+  }
+  return null;
+};
+
 /** The most postings one player can host at once. The server enforces the same number
  * (max_postings in 20261008140000); change both together. */
 export const MAX_POSTINGS = 7;
@@ -165,8 +200,9 @@ export const countPostingsBy = (groups: Group[], playerId: string): number =>
  * means nothing to a player.
  * Parameters: err (whatever was thrown), fallback (what to say when the error has no message).
  * Returns: a plain-English explanation.
- * Edge cases: anything that isn't a recognised database refusal returns its own message, or the
- * fallback when it has none; never throws, whatever is passed in.
+ * Edge cases: a refusal the server worded for the player ("This group is full.") is returned as
+ * it is; any other database error, and an error with no message, returns the fallback (see
+ * playerErrorMessage); never throws, whatever is passed in.
  */
 export const groupErrorMessage = (err: unknown, fallback: string): string => {
   const e = (typeof err === 'object' && err !== null ? err : {}) as {
@@ -181,7 +217,7 @@ export const groupErrorMessage = (err: unknown, fallback: string): string => {
       return 'You already have a group that day. You can be in one group per day.';
     }
   }
-  return typeof e.message === 'string' && e.message.trim() !== '' ? e.message : fallback;
+  return playerErrorMessage(err, fallback);
 };
 
 /**

@@ -78,7 +78,7 @@ jest.mock("../../hooks/useShopQueries", () => ({
   useOwnedShopItemsQuery: () => ({ data: [] }),
   useEquipShopItemMutation: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
-jest.mock("../../lib/auth-api", () => ({ updatePassword: jest.fn() }));
+jest.mock("../../lib/auth-api", () => ({ MIN_PASSWORD_LENGTH: 10, updatePassword: jest.fn() }));
 
 // Leaving the tab saves, which updates the screen, so it has to happen inside act().
 const leaveTab = () =>

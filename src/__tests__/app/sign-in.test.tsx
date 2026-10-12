@@ -29,6 +29,7 @@ const mockSignInWithEmail = jest.fn<(email: string, password: string) => Promise
   () => Promise.resolve()
 );
 jest.mock("../../lib/auth-api", () => ({
+  MIN_PASSWORD_LENGTH: 10,
   signUpWithEmail: (email: string, password: string) => mockSignUpWithEmail(email, password),
   signInWithEmail: (email: string, password: string) => mockSignInWithEmail(email, password),
   signInWithGoogle: jest.fn(),
@@ -73,16 +74,41 @@ describe("SignIn", () => {
     expect(queryByText(/couldn't save|something went wrong/i)).toBeNull();
   });
 
-  it("shows a red inline error for a too-short password and never calls Supabase", async () => {
+  it("shows a red inline error for a too-short password on a new account and never calls Supabase", async () => {
     const { getByTestId, getByText } = await render(<SignIn />);
 
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
-    await fireEvent.changeText(getByTestId("sign-in-password-input"), "123");
+    // Nine characters: one short of the minimum.
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "abcdefgh9");
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
-    expect(getByText(/at least 6 characters/i)).toBeTruthy();
+    expect(getByText(/at least 10 characters/i)).toBeTruthy();
     expect(mockNotificationAsync).toHaveBeenCalledWith("error");
     expect(mockSignUpWithEmail).not.toHaveBeenCalled();
+  });
+
+  it("accepts a new account whose password is exactly the minimum length", async () => {
+    const { getByTestId } = await render(<SignIn />);
+
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "abcdefgh90");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => expect(mockSignUpWithEmail).toHaveBeenCalledWith("player@example.com", "abcdefgh90"));
+  });
+
+  // An account made when the minimum was 6 must not be locked out by the app.
+  it("does not hold signing in to the new minimum", async () => {
+    const { getByTestId, queryByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "abc123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => expect(mockSignInWithEmail).toHaveBeenCalledWith("player@example.com", "abc123"));
+    expect(queryByText(/at least 10 characters/i)).toBeNull();
   });
 
   it("clears the field error as soon as the user edits that field again", async () => {

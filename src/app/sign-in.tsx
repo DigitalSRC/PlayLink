@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import {
+  MIN_PASSWORD_LENGTH,
   signInWithApple,
   signInWithEmail,
   signInWithGoogle,
@@ -123,8 +124,10 @@ export default function SignIn() {
       setEmailError("Enter a valid email address with a valid extension (e.g. name@example.com).");
       hasValidationError = true;
     }
-    if (password.length < 6) {
-      setPasswordError("Password must be at least 6 characters.");
+    // Only a new account is held to the minimum: an account made under the older, shorter
+    // minimum must still be able to sign in.
+    if (mode === "signUp" && password.length < MIN_PASSWORD_LENGTH) {
+      setPasswordError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       hasValidationError = true;
     }
     if (hasValidationError) {
@@ -217,7 +220,7 @@ export default function SignIn() {
             <TextInput
               testID="sign-in-password-input"
               style={[styles.input, styles.passwordInput, !!passwordError && styles.inputError]}
-              placeholder="Password (min. 6 characters)"
+              placeholder={mode === "signUp" ? `Password (min. ${MIN_PASSWORD_LENGTH} characters)` : "Password"}
               placeholderTextColor={colors.placeholder}
               value={password}
               onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
