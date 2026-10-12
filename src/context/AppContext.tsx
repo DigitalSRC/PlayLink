@@ -7,7 +7,7 @@ import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
 import { fetchProfilesByIds, fetchRivalCandidates } from '../lib/profile-api';
-import { findRivals, RIVAL_SEARCH_INTERVAL_MS } from '../utils/rival-utils';
+import { MAX_RIVALS, RIVAL_SEARCH_INTERVAL_MS, topUpRivalIds } from '../utils/rival-utils';
 import { useAuthSession } from '../hooks/useAuthSession';
 import {
   profileKeys,
@@ -192,24 +192,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   /**
-   * Looks for rivals for a player who has none, the same way onboarding does (findRivals over
-   * the other profiles), and saves any it finds to the player's profile.
+   * Looks for rivals for a player who has fewer than MAX_RIVALS, the same way onboarding does
+   * (findRivals over the other profiles), and saves any it finds to the player's profile.
+   * The rivals they already have are kept, in place; only the empty slots are filled.
    * Before this, rivals only changed at sign-up and in the daily server job, so a player whose
    * rivals were deleted, or who signed up before anyone else, waited up to a day for one.
-   * Parameters: none; reads the latest profile.
+   * Parameters: have (the rivals the player has now, as just looked up).
    * Returns: a promise that settles when the search is done.
-   * Edge cases: does nothing when signed out or while another search is running; finding
-   * nobody changes nothing; a failed request is logged and retried on the next tick. The daily
-   * refresh-rivals job may later replace what was saved here - it stays the source of truth.
+   * Edge cases: does nothing when signed out, when the list is already full, or while another
+   * search is running; finding nobody new changes nothing; a failed request is logged and
+   * retried on the next tick or refresh. The daily refresh-rivals job may later replace what
+   * was saved here - it stays the source of truth.
    */
-  const searchForRivals = useCallback(async (): Promise<void> => {
+  const searchForRivals = useCallback(async (have: UserProfile[]): Promise<void> => {
     const me = currentUserRef.current;
-    if (!me || rivalSearchRunningRef.current) return;
+    if (!me || have.length >= MAX_RIVALS || rivalSearchRunningRef.current) return;
     rivalSearchRunningRef.current = true;
     try {
-      const found = findRivals(me, await fetchRivalCandidates(me.id), 3);
-      if (found.length === 0) return;
-      await updateProfileAsync({ userId: me.id, patch: { rivalIds: found.map((r) => r.id) } });
+      const next = topUpRivalIds(me, have.map((r) => r.id), await fetchRivalCandidates(me.id));
+      if (!next) return;
+      await updateProfileAsync({ userId: me.id, patch: { rivalIds: next } });
     } catch (err) {
       console.warn('Rival search failed:', err);
     } finally {
@@ -236,14 +238,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const needsRival = !!userId && rivalsLoaded && rivals.length === 0;
   useEffect(() => {
     if (!needsRival) return;
-    searchForRivals();
-    const timer = setInterval(searchForRivals, RIVAL_SEARCH_INTERVAL_MS);
+    searchForRivals([]);
+    const timer = setInterval(() => searchForRivals([]), RIVAL_SEARCH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [needsRival, searchForRivals]);
 
   /**
    * Looks the player's rivals up again (their names, looks, and scores may have changed), and
-   * if they have none, searches for some straight away. Pull-to-refresh and tab switches call it.
+   * if they have an empty slot, searches for more straight away, so contenders appear as more
+   * players sign up. Pull-to-refresh and tab switches call it.
    * Parameters: none.
    * Returns: a promise that settles when both steps are done.
    * Edge cases: does nothing when signed out; failures are logged, never thrown.
@@ -253,7 +256,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!me) return;
     try {
       const profiles = await loadRivals(me.rivalIds ?? [], me.id);
-      if (profiles && profiles.length === 0) await searchForRivals();
+      if (profiles && profiles.length < MAX_RIVALS) await searchForRivals(profiles);
     } catch (err) {
       console.warn('Failed to refresh rivals:', err);
     }
