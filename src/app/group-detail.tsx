@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -71,11 +72,14 @@ const ROW_HEIGHT = 64;                  // draggable placement row height, inclu
  * host is asked to confirm the order first. The most recent round's standings are shown to
  * everyone in the group.
  * Parameters: none; reads id from route search params and fetches the matching group from Supabase.
- * Returns: a scrollable detail screen or null when the group ID does not match any group, or
- * currentUser hasn't loaded yet.
- * Edge cases: renders null when the group is not found (e.g. it was just deleted by its last
- * player leaving); joining is refused with an explanation when the player already has a group
- * on the same day, since a player can be in one group per day.
+ * Returns: a scrollable detail screen; while the group is loading, a spinner with a Back
+ * button; when it can't be shown, a short explanation with a Back button.
+ * Edge cases: a group that is not found (e.g. it was just deleted by its last player leaving,
+ * or removed after its night passed) or that failed to load never leaves a blank page - the
+ * player can always get back; Back goes to Home when there is no earlier page to return to
+ * (the page was opened by a link or reloaded in a browser); joining is refused with an
+ * explanation when the player already has a group on the same day, since a player can be in
+ * one group per day.
  */
 export default function GroupDetail() {
   const router = useRouter();
@@ -86,7 +90,7 @@ export default function GroupDetail() {
   const queryClient = useQueryClient();
   const claimReward = useClaimStarterReward(currentUser?.id);
 
-  const { data: group } = useGroupQuery(id);
+  const { data: group, isLoading: groupLoading, isError: groupFailed, refetch: refetchGroup } = useGroupQuery(id);
   const { data: results = [] } = useGroupResultsQuery(id);
 
   const joinMutation = useJoinGroupMutation();
@@ -145,8 +149,47 @@ export default function GroupDetail() {
     queryClient.invalidateQueries({ queryKey: profileKeys.detail(myId) });
   }, [myId, roundsIncludingMe]);
 
+  /**
+   * Leaves this page. Normally that is one step back, but a page opened straight from a link, or
+   * reloaded in a browser, has no earlier page, and going back from there does nothing but log
+   * an error - which left the player stuck on the group.
+   * Parameters: none.
+   * Returns: void.
+   * Edge cases: with no earlier page it opens Home in this page's place.
+   */
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/home');
+  };
+
   if (!group || !currentUser) {
-    return null;
+    const waiting = !currentUser || groupLoading;
+    return (
+      <View style={styles.container}>
+        <View style={styles.content}>
+          <Pressable style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>← Back</Text>
+          </Pressable>
+          {waiting ? (
+            <ActivityIndicator color={colors.textSecondary} />
+          ) : (
+            <>
+              <Text style={styles.groupName}>{groupFailed ? 'Couldn’t load this group' : 'This group is gone'}</Text>
+              <Text style={styles.metaRow}>
+                {groupFailed
+                  ? 'Check your connection and try again.'
+                  : 'It was deleted, or its night has passed. Your points from any reported rounds are safe.'}
+              </Text>
+              {groupFailed && (
+                <Pressable style={styles.missingRetryBtn} onPress={() => refetchGroup()}>
+                  <Text style={styles.backBtnText}>Try Again</Text>
+                </Pressable>
+              )}
+            </>
+          )}
+        </View>
+      </View>
+    );
   }
 
   const displayUser = currentUser.username;
@@ -196,7 +239,7 @@ export default function GroupDetail() {
       // here could leave the group half-changed if the app dropped off in between.
       const outcome = await leaveMutation.mutateAsync({ groupId: group.id });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      router.back();
+      goBack();
       showToast(
         'You left the group',
         outcome === 'deleted' && group.players.length > 1
@@ -245,7 +288,7 @@ export default function GroupDetail() {
             try {
               await deleteMutation.mutateAsync({ groupId: group.id });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.back();
+              goBack();
               showToast('Posting deleted', `“${group.name}” has been removed.`);
             } catch (err) {
               showDialog('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
@@ -423,7 +466,7 @@ export default function GroupDetail() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         {/* Back */}
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Pressable style={styles.backBtn} onPress={goBack}>
           <Text style={styles.backBtnText}>← Back</Text>
         </Pressable>
 
@@ -641,7 +684,7 @@ export default function GroupDetail() {
                 )}
                 {!group.confirmed && (
                   <Text style={styles.hostHelpNote}>
-                    Confirm Game locks in who&apos;s playing so you can report results. It opens {CONFIRM_LOCK_MS / 60000} minutes after you post — time for players to join — once at least {minPlayers} are in.
+                    Confirm Game starts the session so you can report results. Players can still join after it, until the group is full. It opens {CONFIRM_LOCK_MS / 60000} minutes after you post — time for players to join — once at least {minPlayers} are in.
                   </Text>
                 )}
               </>
@@ -902,6 +945,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: '#007AFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  missingRetryBtn: {
+    marginTop: 16,
   },
   gameBadge: {
     alignSelf: 'flex-start',
