@@ -24,27 +24,28 @@ describe("refreshPlayerData", () => {
     mockInvalidate.mockResolvedValue(undefined);
   });
 
-  it("marks the groups, open groups, rounds, profile, who rivals the player, and starter rewards out of date", async () => {
+  it("marks the groups, open groups, rounds, votes, profile, who rivals the player, and starter rewards out of date", async () => {
     await refreshPlayerData(client, "me");
 
     expect(invalidatedKeys()).toEqual(
       expect.arrayContaining([
-        ["groups"], ["group"], ["group-results"], ["profile", "me"], ["rivaled-by", "me"], ["starter-rewards", "me"],
+        ["groups"], ["group"], ["group-results"], ["group-ballots"],
+        ["profile", "me"], ["rivaled-by", "me"], ["starter-rewards", "me"],
       ])
     );
-    expect(mockInvalidate).toHaveBeenCalledTimes(6);
+    expect(mockInvalidate).toHaveBeenCalledTimes(7);
   });
 
   it("refreshes only the group data when nobody is signed in", async () => {
     await refreshPlayerData(client, undefined);
 
-    expect(invalidatedKeys()).toEqual([["groups"], ["group"], ["group-results"]]);
+    expect(invalidatedKeys()).toEqual([["groups"], ["group"], ["group-results"], ["group-ballots"]]);
   });
 
   it("does not reject when one of the refetches fails", async () => {
     mockInvalidate.mockRejectedValueOnce(new Error("offline"));
     await expect(refreshPlayerData(client, "me")).resolves.toBeUndefined();
-    expect(mockInvalidate).toHaveBeenCalledTimes(6);
+    expect(mockInvalidate).toHaveBeenCalledTimes(7);
   });
 });
 

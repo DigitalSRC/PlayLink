@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import * as groupApi from "./group-api";
-import { fetchGroupResults, submitGroupResult } from "./group-api";
+import {
+  fetchGroupBallots,
+  fetchGroupResults,
+  mapResultRow,
+  settleGroupResultIfDue,
+  submitGroupResult,
+  voteGroupResult,
+} from "./group-api";
 
 type QueryResult = { data: unknown; error: unknown };
 
@@ -30,8 +37,9 @@ jest.mock("./supabase", () => {
   };
 });
 
-// A reported round is final: one server call records it, pays it, and counts it. These tests pin
-// down that the app sends only a finish order and has no other way to touch a round.
+// A reported round is pending for 15 minutes while the other players agree or contest, then the
+// server pays the order with the most votes. These tests pin down that the app only ever sends
+// finish orders - a report or a vote - and has no other way to touch a round.
 describe("group-api round results", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -123,20 +131,31 @@ describe("group-api round results", () => {
           roundNumber: 1,
           submittedBy: "host",
           submittedAt: Date.UTC(2026, 9, 7, 18, 30),
+          status: "finalized",
+          windowEndsAt: Date.UTC(2026, 9, 7, 18, 30),
+          overturned: false,
           placements: [{ playerId: "host", placement: 1, outcome: "win", pointsAwarded: 40, venueBonus: 10 }],
         },
       ]);
     });
 
-    it("has no pending or disputed state to report", async () => {
+    it("asks for whole rows, so a server without the contest window's columns still answers", async () => {
+      await fetchGroupResults("g");
+      expect(mockSelect).toHaveBeenCalledWith("*");
+    });
+
+    it("does not expose the leftover dispute columns", async () => {
       mockTableResult = {
-        data: [{ id: "r1", group_id: "g", round_number: 1, submitted_by: "h", submitted_at: "2026-10-07T00:00:00Z", placements: [] }],
+        data: [{
+          id: "r1", group_id: "g", round_number: 1, submitted_by: "h", submitted_at: "2026-10-07T00:00:00Z", placements: [],
+          disputed_by: [], dispute_reasons: {}, applied_by: [], finalized_at: null,
+        }],
         error: null,
       };
 
       const [result] = await fetchGroupResults("g");
 
-      for (const gone of ["status", "disputeWindowEndsAt", "disputedBy", "disputeReasons", "appliedBy", "finalizedAt"]) {
+      for (const gone of ["disputedBy", "disputeReasons", "appliedBy", "finalizedAt", "disputed_by", "applied_by"]) {
         expect(result).not.toHaveProperty(gone);
       }
     });
@@ -155,6 +174,125 @@ describe("group-api round results", () => {
       mockTableResult = { data: null, error: new Error("offline") };
       await expect(fetchGroupResults("g")).rejects.toThrow("offline");
     });
+  });
+
+  describe("mapResultRow", () => {
+    const row = {
+      id: "r1", group_id: "g", round_number: 2, submitted_by: "h",
+      submitted_at: "2026-10-12T20:00:00.000Z", placements: [],
+    };
+
+    it("reads a pending round with its window end", () => {
+      const result = mapResultRow({ ...row, status: "pending", dispute_window_ends_at: "2026-10-12T20:15:00.000Z", overturned: false });
+      expect(result.status).toBe("pending");
+      expect(result.windowEndsAt - result.submittedAt).toBe(15 * 60 * 1000);
+      expect(result.overturned).toBe(false);
+    });
+
+    it("reads a settled round, and whether the votes replaced the report", () => {
+      expect(mapResultRow({ ...row, status: "finalized", overturned: true })).toMatchObject({ status: "finalized", overturned: true });
+    });
+
+    it("treats a row with no status, an unknown status, or no window as final and not overturned", () => {
+      for (const status of [undefined, null, "disputed", ""]) {
+        const result = mapResultRow({ ...row, status });
+        expect(result.status).toBe("finalized");
+        expect(result.overturned).toBe(false);
+        expect(result.windowEndsAt).toBe(result.submittedAt);
+      }
+    });
+  });
+
+  describe("fetchGroupBallots", () => {
+    it("reads the group's votes and maps them", async () => {
+      mockTableResult = {
+        data: [
+          { result_id: "r1", player_id: "host", placements: [{ playerId: "host", placement: 1 }] },
+          { result_id: "r1", player_id: "p2", placements: null },
+        ],
+        error: null,
+      };
+
+      const ballots = await fetchGroupBallots("group-1");
+
+      expect(mockFrom).toHaveBeenCalledWith("group_result_ballots");
+      expect(mockEq).toHaveBeenCalledWith("group_id", "group-1");
+      expect(ballots).toEqual([
+        { resultId: "r1", playerId: "host", placements: [{ playerId: "host", placement: 1 }] },
+        { resultId: "r1", playerId: "p2", placements: [] },
+      ]);
+    });
+
+    it("throws on a read error, such as a server with no ballots table", async () => {
+      mockTableResult = { data: null, error: new Error("relation does not exist") };
+      await expect(fetchGroupBallots("g")).rejects.toThrow("relation does not exist");
+    });
+  });
+
+  describe("voteGroupResult", () => {
+    it("agreeing sends no order at all", async () => {
+      mockRpcResult = { data: "recorded", error: null };
+
+      expect(await voteGroupResult("r1", null)).toBe("recorded");
+      expect(mockRpc).toHaveBeenCalledWith("vote_group_result", { p_result_id: "r1", p_placements: null });
+    });
+
+    it("contesting sends only the finish order - never points or outcomes", async () => {
+      mockRpcResult = { data: "recorded", error: null };
+
+      await voteGroupResult("r1", [
+        { playerId: "p2", placement: 1, pointsAwarded: 9999, outcome: "win" } as never,
+        { playerId: "host", placement: 2 },
+      ]);
+
+      expect(mockRpc).toHaveBeenCalledWith("vote_group_result", {
+        p_result_id: "r1",
+        p_placements: [{ playerId: "p2", placement: 1 }, { playerId: "host", placement: 2 }],
+      });
+    });
+
+    it("reports when the vote was the last one and the round was paid", async () => {
+      mockRpcResult = { data: "settled", error: null };
+      expect(await voteGroupResult("r1", null)).toBe("settled");
+    });
+
+    it("reads any other answer as merely recorded", async () => {
+      mockRpcResult = { data: null, error: null };
+      expect(await voteGroupResult("r1", null)).toBe("recorded");
+    });
+
+    it("passes on the server's refusal", async () => {
+      mockRpcResult = { data: null, error: new Error("The time to contest this round has passed") };
+      await expect(voteGroupResult("r1", null)).rejects.toThrow("has passed");
+    });
+  });
+
+  describe("settleGroupResultIfDue", () => {
+    it("asks the server to settle an overdue round and says whether it did", async () => {
+      mockRpcResult = { data: true, error: null };
+      expect(await settleGroupResultIfDue("r1")).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith("settle_group_result_if_due", { p_result_id: "r1" });
+
+      mockRpcResult = { data: false, error: null };
+      expect(await settleGroupResultIfDue("r1")).toBe(false);
+      mockRpcResult = { data: null, error: null };
+      expect(await settleGroupResultIfDue("r1")).toBe(false);
+    });
+
+    it("passes on the server's refusal", async () => {
+      mockRpcResult = { data: null, error: new Error("Only players in this group can do that") };
+      await expect(settleGroupResultIfDue("r1")).rejects.toThrow("Only players in this group");
+    });
+  });
+
+  it("never writes a round or a ballot directly", async () => {
+    mockRpcResult = { data: "recorded", error: null };
+    await submitGroupResult("g", 1, "h", [{ playerId: "h", placement: 1 }]);
+    await voteGroupResult("r1", null);
+    await settleGroupResultIfDue("r1");
+    await fetchGroupResults("g");
+    await fetchGroupBallots("g");
+    expect(mockWrite).not.toHaveBeenCalled();
   });
 
   it("offers no way to dispute, cancel, finalize, or separately collect a round", () => {
