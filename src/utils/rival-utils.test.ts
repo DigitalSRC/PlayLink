@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import { UserProfile } from "../data/types";
-import { findRivals, MAX_RIVALS, pickChosenRival, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner, topUpRivalIds } from "./rival-utils";
+import { chosenRivalFirst, findRivals, MAX_RIVALS, pickChosenRival, RIVAL_SEARCH_INTERVAL_MS, shouldShowNoRivalBanner, topUpRivalIds } from "./rival-utils";
 
 const makeProfile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   id: '1',
@@ -185,6 +185,27 @@ describe("pickChosenRival", () => {
 
   it("is null for a player with no rivals, whatever was preferred", () => {
     expect(pickChosenRival([], ["a"])).toBeNull();
+  });
+});
+
+describe("chosenRivalFirst", () => {
+  const rivals = [makeProfile({ id: "a" }), makeProfile({ id: "b" }), makeProfile({ id: "c" })];
+  const ids = (list: UserProfile[]) => list.map((r) => r.id).join(",");
+
+  it("moves the picked Rival to the top and keeps the others in order", () => {
+    expect(ids(chosenRivalFirst(rivals, "c"))).toBe("c,a,b");
+    expect(ids(chosenRivalFirst(rivals, "b"))).toBe("b,a,c");
+  });
+
+  it("leaves the order alone with no pick, or a pick who is not in the list", () => {
+    expect(ids(chosenRivalFirst(rivals, null))).toBe("a,b,c");
+    expect(ids(chosenRivalFirst(rivals, "gone"))).toBe("a,b,c");
+  });
+
+  it("does not change the list it was given, and handles an empty one", () => {
+    chosenRivalFirst(rivals, "c");
+    expect(ids(rivals)).toBe("a,b,c");
+    expect(chosenRivalFirst([], "a")).toEqual([]);
   });
 });
 

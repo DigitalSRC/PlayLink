@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../components/AppDialog';
+import { KeyboardAvoidingScreen } from '../components/KeyboardAvoidingScreen';
 import { showToast } from '../components/AppToast';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -491,7 +492,7 @@ export default function GroupDetail() {
       closeReportModal();
       showToast(
         `Round ${group.roundsPlayed + 1} reported`,
-        `The other players have ${CONTEST_WINDOW_MS / 60000} minutes to agree or contest. Points are paid after that.`
+        `The other players have ${CONTEST_WINDOW_MS / 60000} minutes to agree or contest, then points are paid. You can start the next round now.`
       );
     } catch (err) {
       showDialog('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
@@ -617,8 +618,8 @@ export default function GroupDetail() {
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <KeyboardAvoidingScreen style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Back */}
         <Pressable style={styles.backBtn} onPress={goBack}>
           <Text style={styles.backBtnText}>← Back</Text>
@@ -682,6 +683,9 @@ export default function GroupDetail() {
                     : `As it stands the group’s order wins:\n${describeOrder(leading.placements)}`}
                 </Text>
               )}
+              <Text style={styles.pendingSub}>
+                No need to wait - start the next round now. This one is settled by itself, and the host can report the next round while it is still open.
+              </Text>
               {inRound && isReporter && <Text style={styles.pendingSub}>Your report is your vote.</Text>}
               {inRound && !isReporter && minutesLeft > 0 && (
                 myVote === 'none' ? (
@@ -1035,7 +1039,7 @@ export default function GroupDetail() {
         </View>
       )}
 
-    </View>
+    </KeyboardAvoidingScreen>
   );
 }
 

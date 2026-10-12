@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingScreen } from '../../components/KeyboardAvoidingScreen';
 import { RefreshableScrollView } from '../../components/RefreshableScrollView';
 import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showDialog } from '../../components/AppDialog';
@@ -194,6 +195,7 @@ export default function CalendarScreen() {
         : null;
 
   return (
+    <KeyboardAvoidingScreen style={{ backgroundColor: colors.bg }}>
     <RefreshableScrollView
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
@@ -468,6 +470,7 @@ export default function CalendarScreen() {
         </>
       )}
     </RefreshableScrollView>
+    </KeyboardAvoidingScreen>
   );
 }
 
