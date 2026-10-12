@@ -330,6 +330,15 @@ export interface GroupResult {
   roundNumber: number;
   submittedBy: string;
   submittedAt: number;
+  /** 'pending' while players can still agree with or contest the report (nobody has been paid
+   * yet); 'finalized' once the votes are counted and the points paid. */
+  status: 'pending' | 'finalized';
+  /** When the contest window ends, in milliseconds. For a final round it is in the past. */
+  windowEndsAt: number;
+  /** True when the group's votes replaced the order the host reported. */
+  overturned: boolean;
+  /** While pending: the host's reported order with provisional points. Once final: the winning
+   * order with the points actually paid. */
   placements: GroupResultPlacement[];
 }
 
@@ -339,21 +348,39 @@ interface GroupResultRow {
   round_number: number;
   submitted_by: string;
   submitted_at: string;
+  status?: string | null;
+  dispute_window_ends_at?: string | null;
+  overturned?: boolean | null;
   placements: GroupResultPlacement[];
 }
 
-const mapResultRow = (row: GroupResultRow): GroupResult => ({
-  id: row.id,
-  groupId: row.group_id,
-  roundNumber: row.round_number,
-  submittedBy: row.submitted_by,
-  submittedAt: new Date(row.submitted_at).getTime(),
-  placements: row.placements ?? [],
-});
+/**
+ * Converts a `group_results` row into the app's GroupResult shape.
+ * Parameters: row (as returned by Supabase).
+ * Returns: the matching GroupResult.
+ * Edge cases: a row from a server without the contest window (no status worth trusting, no
+ * overturned column) reads as a final, not-overturned round, which is what such a server pays;
+ * any status other than 'pending' is treated as final; a missing window end falls back to the
+ * time the round was reported.
+ */
+export const mapResultRow = (row: GroupResultRow): GroupResult => {
+  const submittedAt = new Date(row.submitted_at).getTime();
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    roundNumber: row.round_number,
+    submittedBy: row.submitted_by,
+    submittedAt,
+    status: row.status === 'pending' ? 'pending' : 'finalized',
+    windowEndsAt: row.dispute_window_ends_at ? new Date(row.dispute_window_ends_at).getTime() : submittedAt,
+    overturned: row.overturned === true,
+    placements: row.placements ?? [],
+  };
+};
 
 /**
- * Fetches every reported round for a group, oldest first. Every round here is final: there is
- * no pending or disputed state, so what this returns is exactly what was paid out.
+ * Fetches every reported round for a group, oldest first. A round is either pending (reported,
+ * still open to be agreed with or contested, nobody paid) or final (votes counted, points paid).
  * Parameters: groupId.
  * Returns: an array of GroupResult.
  * Edge cases: returns an empty array if no round has been reported yet.
@@ -361,29 +388,98 @@ const mapResultRow = (row: GroupResultRow): GroupResult => ({
 export const fetchGroupResults = async (groupId: string): Promise<GroupResult[]> => {
   const { data, error } = await supabase
     .from('group_results')
-    .select('id, group_id, round_number, submitted_by, submitted_at, placements')
+    .select('*')
     .eq('group_id', groupId)
     .order('round_number', { ascending: true });
   if (error) throw error;
   return (data as GroupResultRow[]).map(mapResultRow);
 };
 
+/** One player's vote on a round: the finish order they say is right. */
+export interface ResultBallot {
+  resultId: string;
+  playerId: string;
+  placements: PlacementInput[];
+}
+
 /**
- * Reports a round, and that report is final. The submit_group_result SQL function verifies the
- * caller is the group's host and that every placed player is a member, scores the raw finish
- * order itself (so points can't be inflated from the client), adds the one-time store-event
- * bonus where it applies, records the round, pays every player their points, and counts the
- * round as played - all in one transaction. There is no dispute window and no way to edit or
- * cancel a round afterwards, so the caller should confirm the order with the host first.
+ * Fetches every vote cast on a group's rounds, the hosts' own reports included, so the group
+ * page can show who has voted and which order is ahead.
+ * Parameters: groupId.
+ * Returns: an array of ResultBallot, in no particular order.
+ * Edge cases: returns an empty array when nobody has voted, and for someone who is not in the
+ * group (the server shows ballots only to the group's players); throws on a Postgres/network
+ * error, including a server that has no contest window yet - callers treat that as no votes.
+ */
+export const fetchGroupBallots = async (groupId: string): Promise<ResultBallot[]> => {
+  const { data, error } = await supabase
+    .from('group_result_ballots')
+    .select('result_id, player_id, placements')
+    .eq('group_id', groupId);
+  if (error) throw error;
+  return (data as { result_id: string; player_id: string; placements: PlacementInput[] | null }[]).map((row) => ({
+    resultId: row.result_id,
+    playerId: row.player_id,
+    placements: row.placements ?? [],
+  }));
+};
+
+/**
+ * Casts the signed-in player's vote on a pending round: either agreeing with the host's report,
+ * or contesting it with the finish order the player says is right. When the window ends the
+ * order with the most votes is the one that is paid; with no single leader the report stands.
+ * Parameters: resultId (the round), placements (the player's order, or null to agree with the
+ * report).
+ * Returns: 'settled' if this was the last vote needed and the round has now been paid, else
+ * 'recorded'.
+ * Edge cases: throws if the round is already final or its window has ended, if the caller did
+ * not play in the round or is the one who reported it, or if a contested order does not rank
+ * exactly the players the report ranked. Voting again replaces the earlier vote.
+ */
+export const voteGroupResult = async (
+  resultId: string,
+  placements: PlacementInput[] | null
+): Promise<'recorded' | 'settled'> => {
+  const { data, error } = await supabase.rpc('vote_group_result', {
+    p_result_id: resultId,
+    p_placements: placements ? placements.map((p) => ({ playerId: p.playerId, placement: p.placement })) : null,
+  });
+  if (error) throw error;
+  return data === 'settled' ? 'settled' : 'recorded';
+};
+
+/**
+ * Asks the server to settle a round whose contest window has ended. The server's own job does
+ * this every minute; this is the fallback for when that job is late, so a player looking at an
+ * overdue round is not left waiting. It can only do what the job would do anyway.
+ * Parameters: resultId (the round).
+ * Returns: true if this call settled and paid the round, false if there was nothing to do.
+ * Edge cases: false for a round that is already final or still inside its window; throws if
+ * the caller is not in the round's group or on a Postgres/network error.
+ */
+export const settleGroupResultIfDue = async (resultId: string): Promise<boolean> => {
+  const { data, error } = await supabase.rpc('settle_group_result_if_due', { p_result_id: resultId });
+  if (error) throw error;
+  return data === true;
+};
+
+/**
+ * Reports a round. The submit_group_result SQL function verifies the caller is the group's host
+ * and that every placed player is a member, records the round as pending, and counts it as
+ * played. Nobody is paid yet: the other players have 15 minutes to agree or contest
+ * (voteGroupResult), and the server then scores the winning order itself (so points can't be
+ * inflated from the client), adds the one-time store-event bonus where it applies, and pays
+ * everyone. The host cannot edit or cancel a report, so the caller should confirm the order first.
  * Parameters: groupId, roundNumber (1-indexed - the caller passes group.roundsPlayed + 1, and
  * the server refuses anything else, which is what makes a double tap harmless), submittedBy
  * (unused server-side, kept for call-site compatibility; the host is the authenticated caller),
  * placements (each participant's rank).
- * Returns: a promise that resolves once the round is recorded and paid; the caller refetches
- * the group, its results, and its own profile rather than relying on a return value.
+ * Returns: a promise that resolves once the round is recorded; the caller refetches the group
+ * and its results rather than relying on a return value.
  * Edge cases: throws if the caller isn't the host, a placement names a non-member or the same
  * player twice, the round number isn't the next one (already reported, or out of order), or on
- * any Postgres/network error. On any failure nothing is recorded and nobody is paid.
+ * any Postgres/network error. On any failure nothing is recorded. Against a server without the
+ * contest window the round is final and paid at once, and reads back that way.
  */
 export const submitGroupResult = async (
   groupId: string,

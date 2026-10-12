@@ -39,7 +39,7 @@ export default function HowItWorksSheet({
     },
     {
       title: 'Play',
-      body: 'You can be in one group per day. The host confirms the game, then reports how each round finished.',
+      body: 'You can be in one group per day. The host confirms the game, then reports how each round finished. You get 15 minutes to agree or contest the result before points are paid.',
     },
     {
       title: 'Earn points',
