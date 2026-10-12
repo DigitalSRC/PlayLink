@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
@@ -27,13 +27,24 @@ import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from 
 import { formatDayHeading } from '../utils/calendar-utils';
 import { findGroupOnDay, formatBrackets, groupDayKey, groupErrorMessage } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
+import {
+  CONTEST_WINDOW_MS,
+  contestMinutesLeft,
+  leadingOrder,
+  normalizePlacements,
+  orderKey,
+  voteStatus,
+} from '../utils/contest-utils';
+import { GroupResult, settleGroupResultIfDue } from '../lib/group-api';
 import { ThemeColors, useThemeColors } from '../utils/theme-utils';
 import { VENUE_EVENT_BONUS } from '../utils/venue-bonus-utils';
 import { profileKeys, useRivaledByQuery } from '../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../hooks/useRewardQueries';
 import {
+  groupKeys,
   useConfirmGroupMutation,
   useDeleteGroupMutation,
+  useGroupBallotsQuery,
   useGroupQuery,
   useGroupResultsQuery,
   useJoinGroupMutation,
@@ -41,6 +52,7 @@ import {
   useSetGroupHostMutation,
   useSubmitGroupResultMutation,
   useUpdateGroupMutation,
+  useVoteGroupResultMutation,
 } from '../hooks/useGroupQueries';
 
 /**
@@ -60,6 +72,7 @@ const ordinal = (n: number): string => {
 const CONFIRM_LOCK_MS = 30 * 60 * 1000; // group must be 30 min old before host can start a game
 const MIN_PLAYERS_OTHER = 2;            // minimum attendees required to start any game format
 const ROW_HEIGHT = 64;                  // draggable placement row height, including its gap
+const PENDING_REFRESH_MS = 15 * 1000;   // how often an open round's countdown and votes are refreshed
 
 /**
  * Group detail screen showing the full roster, settings, and host controls for a single group,
@@ -67,9 +80,11 @@ const ROW_HEIGHT = 64;                  // draggable placement row height, inclu
  * once it's over. Points are placement-based (see scoring-utils.ts): the winner's base pool
  * scales with pod size, each subsequent rank earns half of the one before it, last place always
  * scores zero placement points, and everyone gets a flat participation bonus regardless.
- * A reported round is final the moment the host submits it: the server scores it and pays every
- * player in one step, and there is no dispute window and no way to change it afterwards, so the
- * host is asked to confirm the order first. The most recent round's standings are shown to
+ * A reported round is not paid at once: for 15 minutes every other player in it can agree with
+ * the report or contest it by entering the order they say is right. When the time is up, or as
+ * soon as everyone has voted, the server pays the order with the most votes (the host's report
+ * when no single order leads). The host cannot change a report, so they are asked to confirm the
+ * order first. Rounds still open, and the most recent final round's standings, are shown to
  * everyone in the group.
  * Parameters: none; reads id from route search params and fetches the matching group from Supabase.
  * Returns: a scrollable detail screen; while the group is loading, a spinner with a Back
@@ -102,6 +117,7 @@ export default function GroupDetail() {
   const confirmMutation = useConfirmGroupMutation();
   const submitResultMutation = useSubmitGroupResultMutation();
   const updateGroupMutation = useUpdateGroupMutation();
+  const voteMutation = useVoteGroupResultMutation();
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group?.name ?? '');
@@ -120,6 +136,10 @@ export default function GroupDetail() {
   const [editPeriod, setEditPeriod] = useState<'AM' | 'PM'>(parsedTime.p);
 
   const [showReportModal, setShowReportModal] = useState(false);
+  // The pending round the sheet is being used to contest; null when the host is reporting a new one.
+  const [contesting, setContesting] = useState<GroupResult | null>(null);
+  // The current time, refreshed every few seconds, for the contest countdown.
+  const [now, setNow] = useState(() => Date.now());
   // Finish order, best first — the source of truth for the report modal's drag-and-drop list.
   const [placementOrder, setPlacementOrder] = useState<string[]>([]);
   // Player ids tied with whoever is directly above them in placementOrder (index 0 can never be
@@ -128,9 +148,42 @@ export default function GroupDetail() {
   const [tiedWithAbove, setTiedWithAbove] = useState<Set<string>>(new Set());
   const rowPositions = useSharedValue<Record<string, number>>({});
 
-  // The round reported most recently. Rounds are final as soon as they're reported, so this is
-  // simply the last one; it is shown to the whole group as the latest standings.
-  const latestResult = results.length > 0 ? results[results.length - 1] : undefined;
+  // Rounds still open to be agreed with or contested, and the votes cast on them so far.
+  const { data: ballots = [] } = useGroupBallotsQuery(id);
+  const pendingResults = results.filter((r) => r.status === 'pending');
+  const hasPending = pendingResults.length > 0;
+  // The most recent round that has been settled and paid; shown to the whole group as the
+  // latest standings.
+  const finalResults = results.filter((r) => r.status === 'finalized');
+  const latestResult = finalResults.length > 0 ? finalResults[finalResults.length - 1] : undefined;
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), PENDING_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  // While a round is open, other players are voting and the server may settle it at any moment:
+  // re-read the rounds and votes on every tick so this screen follows along.
+  useEffect(() => {
+    if (!hasPending) return;
+    queryClient.invalidateQueries({ queryKey: groupKeys.results(id) });
+    queryClient.invalidateQueries({ queryKey: groupKeys.ballots(id) });
+  }, [now, hasPending, id, queryClient]);
+
+  // The server settles a round within a minute of its window ending. If this screen is looking
+  // at one that is overdue, ask for it once, so a late job never leaves players waiting.
+  const settleAskedRef = useRef<Set<string>>(new Set());
+  const overdueIds = pendingResults.filter((r) => r.windowEndsAt <= now).map((r) => r.id).join(',');
+  useEffect(() => {
+    if (!overdueIds) return;
+    for (const resultId of overdueIds.split(',')) {
+      if (settleAskedRef.current.has(resultId)) continue;
+      settleAskedRef.current.add(resultId);
+      settleGroupResultIfDue(resultId)
+        .catch(() => false)
+        .then(() => queryClient.invalidateQueries({ queryKey: groupKeys.results(id) }));
+    }
+  }, [overdueIds, id, queryClient]);
 
   // Keeps the shared position map (read by every draggable row's animated style) in sync with
   // placementOrder — the plain-state array stays the single source of truth; this is just its
@@ -141,11 +194,11 @@ export default function GroupDetail() {
     rowPositions.value = next;
   }, [placementOrder]);
 
-  // A round pays every player the moment the host reports it, but only the host's own app knows
-  // that happened. When this screen sees a round it hasn't seen before that the current player
-  // took part in, it refreshes their profile so their new points show without a restart.
+  // A round pays every player when it is settled, which happens on the server. When this screen
+  // sees a settled round it hasn't seen before that the current player took part in, it
+  // refreshes their profile so their new points show without a restart.
   const myId = currentUser?.id;
-  const roundsIncludingMe = results.filter((r) => r.placements.some((p) => p.playerId === myId)).length;
+  const roundsIncludingMe = finalResults.filter((r) => r.placements.some((p) => p.playerId === myId)).length;
   useEffect(() => {
     if (!myId || roundsIncludingMe === 0) return;
     queryClient.invalidateQueries({ queryKey: profileKeys.detail(myId) });
@@ -338,10 +391,39 @@ export default function GroupDetail() {
   };
 
   const openReportModal = () => {
+    setContesting(null);
     setPlacementOrder(group.players.map((p) => p.id));
     setTiedWithAbove(new Set());
     setShowReportModal(true);
   };
+
+  const closeReportModal = () => {
+    setShowReportModal(false);
+    setContesting(null);
+  };
+
+  /**
+   * The name to show for a player in a round, who may have left the group since it was played.
+   * Parameters: playerId.
+   * Returns: their display name, else their username, else "A player who left".
+   * Edge cases: none.
+   */
+  const nameOf = (playerId: string): string => {
+    const player = group.players.find((x) => x.id === playerId);
+    return player?.displayName ?? player?.username ?? 'A player who left';
+  };
+
+  /**
+   * Reads a finish order back as lines of text ("1st - Ana"), best first, for a confirmation.
+   * Parameters: placements (the order to describe).
+   * Returns: one line per player.
+   * Edge cases: tied players share an ordinal; an empty order gives an empty string.
+   */
+  const describeOrder = (placements: PlacementInput[]): string =>
+    [...placements]
+      .sort((a, b) => a.placement - b.placement)
+      .map((p) => `${ordinal(p.placement)} - ${nameOf(p.playerId)}`)
+      .join('\n');
 
   // Called (via runOnJS) once a drag gesture releases — positionsSnapshot is the row-position
   // shared value's plain-object contents at that moment, movedId is whichever row was dragged.
@@ -406,17 +488,20 @@ export default function GroupDetail() {
         placements,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowReportModal(false);
-      showToast(`Round ${group.roundsPlayed + 1} recorded`, 'Points have been paid to every player. The standings are at the top of this page.');
+      closeReportModal();
+      showToast(
+        `Round ${group.roundsPlayed + 1} reported`,
+        `The other players have ${CONTEST_WINDOW_MS / 60000} minutes to agree or contest. Points are paid after that.`
+      );
     } catch (err) {
       showDialog('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
   /**
-   * Asks the host to confirm the finish order before it is submitted. A reported round is final -
-   * points are paid at once and it can't be edited, disputed, or cancelled - so this read-back is
-   * the only check against a mis-dragged row.
+   * Asks the host to confirm the finish order before it is submitted. The host can't edit or
+   * cancel a report - only the other players' votes can replace it - so this read-back is the
+   * host's own check against a mis-dragged row.
    * Parameters: none.
    * Returns: void; submits only if the host confirms.
    * Edge cases: does nothing while a submission is already in flight.
@@ -424,18 +509,85 @@ export default function GroupDetail() {
   const handleSubmitResult = () => {
     if (submitResultMutation.isPending) return;
     const placements = buildPlacements();
-    const summary = placements
-      .map((p) => {
-        const player = group.players.find((x) => x.id === p.playerId);
-        return `${ordinal(p.placement)} - ${player?.displayName ?? player?.username ?? 'Player'}`;
-      })
-      .join('\n');
     showDialog(
       `Submit round ${group.roundsPlayed + 1}?`,
-      `${summary}\n\nThis is final. Points are paid right away and the round can’t be changed afterwards.`,
+      `${describeOrder(placements)}\n\nYou can’t change this afterwards. The other players get ${CONTEST_WINDOW_MS / 60000} minutes to agree or contest, then points are paid.`,
       [
         { text: 'Go Back', style: 'cancel' },
         { text: 'Submit', onPress: () => submitResult(placements) },
+      ]
+    );
+  };
+
+  /**
+   * Records the player's vote on an open round: agreeing with the report, or contesting it with
+   * their own order.
+   * Parameters: result (the open round), placements (the player's order, or null to agree).
+   * Returns: a promise that resolves once the vote is recorded or refused.
+   * Edge cases: a refusal (the time ran out, the round was settled meanwhile) is shown as a
+   * pop-up and the sheet stays open; a second tap while the first is in flight is ignored; if
+   * this was the last vote needed the round is paid at once and the player is told so.
+   */
+  const castVote = async (result: GroupResult, placements: PlacementInput[] | null) => {
+    if (voteMutation.isPending) return;
+    try {
+      const outcome = await voteMutation.mutateAsync({ groupId: group.id, resultId: result.id, placements });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      closeReportModal();
+      if (outcome === 'settled') {
+        showToast(`Round ${result.roundNumber} is final`, 'Everyone has voted, so points have been paid.');
+      } else if (placements) {
+        showToast('Contest recorded', 'If more players enter your order than the reported one, yours replaces it.');
+      } else {
+        showToast('Vote recorded', 'Points are paid once everyone has voted or the time runs out.');
+      }
+    } catch (err) {
+      showDialog('Couldn’t record your vote', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  /**
+   * Opens the finish-order sheet for contesting an open round, starting from the order the
+   * player last entered, or from the reported order if they have not contested yet.
+   * Parameters: result (the open round).
+   * Returns: void.
+   * Edge cases: tied players in the starting order stay marked as tied.
+   */
+  const openContestSheet = (result: GroupResult) => {
+    const mine = ballots.find((b) => b.resultId === result.id && b.playerId === currentUser.id);
+    const start = normalizePlacements(mine?.placements ?? result.placements);
+    setPlacementOrder(start.map((p) => p.playerId));
+    setTiedWithAbove(
+      new Set(start.filter((p, i) => i > 0 && p.placement === start[i - 1].placement).map((p) => p.playerId))
+    );
+    setContesting(result);
+    setShowReportModal(true);
+  };
+
+  /**
+   * Asks the player to confirm the order they are contesting with, then records it as their vote.
+   * Parameters: none; reads the sheet's order and the round being contested.
+   * Returns: void; votes only if the player confirms.
+   * Edge cases: an order identical to the report is not a contest - the player is told to use
+   * Looks Right instead; does nothing while a vote is already in flight.
+   */
+  const handleSubmitContest = () => {
+    const result = contesting;
+    if (!result || voteMutation.isPending) return;
+    const placements = buildPlacements();
+    if (orderKey(placements) === orderKey(result.placements)) {
+      showDialog(
+        'That’s the reported order',
+        'This is the same order the host reported. Move the players into the order they really finished, or close this and tap Looks Right.'
+      );
+      return;
+    }
+    showDialog(
+      `Contest round ${result.roundNumber}?`,
+      `${describeOrder(placements)}\n\nYou’re saying this is how the round really finished. It replaces the report only if more players enter this order than the reported one.`,
+      [
+        { text: 'Go Back', style: 'cancel' },
+        { text: 'Contest', onPress: () => castVote(result, placements) },
       ]
     );
   };
@@ -489,18 +641,86 @@ export default function GroupDetail() {
           <Text style={styles.groupName}>{group.name}</Text>
         )}
 
-        {group.confirmed && group.roundsPlayed > 0 && (
+        {group.confirmed && group.roundsPlayed > 0 && !hasPending && (
           <View style={styles.confirmedBadge}>
             <Text style={styles.confirmedText}>✓ Round {group.roundsPlayed} Final</Text>
           </View>
         )}
+
+        {/* Rounds reported but still open: every player in them can agree or contest */}
+        {pendingResults.map((result) => {
+          const roundBallots = ballots.filter((b) => b.resultId === result.id);
+          const inRound = result.placements.some((p) => p.playerId === currentUser.id);
+          const isReporter = result.submittedBy === currentUser.id;
+          const myVote = voteStatus(result.placements, roundBallots, currentUser.id);
+          const minutesLeft = contestMinutesLeft(result.windowEndsAt, now);
+          const contested = roundBallots.filter((b) => orderKey(b.placements) !== orderKey(result.placements)).length;
+          const leading = leadingOrder(result.placements, roundBallots);
+          return (
+            <View key={result.id} style={styles.pendingCard}>
+              <Text style={styles.pendingTitle}>⏳ Round {result.roundNumber} - waiting to be confirmed</Text>
+              <Text style={styles.pendingSub}>
+                {minutesLeft > 0
+                  ? `Reported by ${nameOf(result.submittedBy)}. Points are paid in about ${minutesLeft} min, or as soon as every player has voted.`
+                  : 'Time is up - the votes are being counted. Points will show in a moment.'}
+              </Text>
+              {[...result.placements]
+                .sort((a, b) => a.placement - b.placement)
+                .map((p) => (
+                  <Text key={p.playerId} style={styles.resultRow}>
+                    {ordinal(p.placement)} · {nameOf(p.playerId)} · +{p.pointsAwarded} pts if confirmed
+                  </Text>
+                ))}
+              <Text style={styles.pendingSub}>
+                {roundBallots.length} of {result.placements.length} players have voted
+                {contested > 0 ? ` · ${contested} contested` : ''}.
+              </Text>
+              {contested > 0 && (
+                <Text style={styles.pendingNote}>
+                  {leading.isReport
+                    ? 'As it stands the report holds. A different order needs more votes than the report has.'
+                    : `As it stands the group’s order wins:\n${describeOrder(leading.placements)}`}
+                </Text>
+              )}
+              {inRound && isReporter && <Text style={styles.pendingSub}>Your report is your vote.</Text>}
+              {inRound && !isReporter && minutesLeft > 0 && (
+                myVote === 'none' ? (
+                  <View style={[styles.editBtnRow, styles.pendingActions]}>
+                    <Pressable style={styles.saveBtn} onPress={() => castVote(result, null)}>
+                      <Text style={styles.saveBtnText}>Looks Right</Text>
+                    </Pressable>
+                    <Pressable style={styles.cancelBtn} onPress={() => openContestSheet(result)}>
+                      <Text style={styles.cancelBtnText}>Contest</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.pendingSub}>
+                      {myVote === 'agreed' ? 'You agreed with this report.' : 'You contested this report with your own order.'}
+                    </Text>
+                    <View style={[styles.editBtnRow, styles.pendingActions]}>
+                      {myVote === 'contested' && (
+                        <Pressable style={styles.cancelBtn} onPress={() => castVote(result, null)}>
+                          <Text style={styles.cancelBtnText}>Agree Instead</Text>
+                        </Pressable>
+                      )}
+                      <Pressable style={styles.cancelBtn} onPress={() => openContestSheet(result)}>
+                        <Text style={styles.cancelBtnText}>{myVote === 'contested' ? 'Change My Order' : 'Contest Instead'}</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )
+              )}
+            </View>
+          );
+        })}
         {!group.confirmed && group.roundsPlayed > 0 && (
           <View style={styles.roundInProgressBadge}>
             <Text style={styles.roundInProgressText}>🎮 Round {group.roundsPlayed + 1} of this session</Text>
           </View>
         )}
 
-        {/* Latest round's standings - final, and visible to every member */}
+        {/* Latest settled round's standings - final, and visible to every member */}
         {latestResult && (
           <View style={styles.resultStatusCard}>
             <Text style={styles.resultStatusTitle}>Round {latestResult.roundNumber} results</Text>
@@ -515,7 +735,10 @@ export default function GroupDetail() {
                   </Text>
                 );
               })}
-            <Text style={styles.resultStatusSub}>Results are final. Points have been added.</Text>
+            <Text style={styles.resultStatusSub}>
+              {latestResult.overturned ? 'The players voted for a different order than was reported. ' : ''}
+              Results are final. Points have been added.
+            </Text>
           </View>
         )}
 
@@ -776,19 +999,20 @@ export default function GroupDetail() {
       {showReportModal && (
         <View style={styles.modalBackdrop}>
           <View style={styles.reportSheet}>
-            <Text style={styles.reportTitle}>Report Round {group.roundsPlayed + 1}</Text>
+            <Text style={styles.reportTitle}>
+              {contesting ? `Contest Round ${contesting.roundNumber}` : `Report Round ${group.roundsPlayed + 1}`}
+            </Text>
             <Text style={styles.reportSubtitle}>
+              {contesting ? 'Put the players in the order they really finished. ' : ''}
               Drag ☰ to set each player&apos;s finish order (1st at top). Use &quot;Tie with above&quot; for a shared placement.
             </Text>
             <View style={[styles.reportList, { height: placementOrder.length * ROW_HEIGHT }]}>
               {placementOrder.map((playerId, index) => {
-                const player = group.players.find((p) => p.id === playerId);
-                if (!player) return null;
                 return (
                   <DraggablePlacementRow
                     key={playerId}
                     playerId={playerId}
-                    label={player.displayName ?? player.username}
+                    label={nameOf(playerId)}
                     index={index}
                     totalCount={placementOrder.length}
                     positions={rowPositions}
@@ -800,11 +1024,11 @@ export default function GroupDetail() {
               })}
             </View>
             <View style={styles.editBtnRow}>
-              <Pressable style={styles.cancelBtn} onPress={() => setShowReportModal(false)}>
+              <Pressable style={styles.cancelBtn} onPress={closeReportModal}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.saveBtn} onPress={handleSubmitResult}>
-                <Text style={styles.saveBtnText}>Submit Results</Text>
+              <Pressable style={styles.saveBtn} onPress={contesting ? handleSubmitContest : handleSubmitResult}>
+                <Text style={styles.saveBtnText}>{contesting ? 'Submit My Order' : 'Submit Results'}</Text>
               </Pressable>
             </View>
           </View>
@@ -1037,6 +1261,35 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textPrimary,
     fontSize: 13,
     lineHeight: 20,
+  },
+  pendingCard: {
+    backgroundColor: c.warnBg,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E6A817',
+  },
+  pendingTitle: {
+    color: c.warnText,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  pendingSub: {
+    color: c.textBody,
+    fontSize: 12,
+    marginVertical: 6,
+  },
+  pendingNote: {
+    color: c.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  pendingActions: {
+    marginTop: 6,
   },
   metaCard: {
     backgroundColor: c.card,
