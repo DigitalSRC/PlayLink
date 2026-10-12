@@ -4,6 +4,12 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
 
+/** The shortest password a new account or a password change may use. The Supabase project's
+ * own minimum (Authentication settings, and supabase/config.toml for local runs) must be at
+ * least this; the server is what enforces it. Signing in is never checked against it, so an
+ * account made under the older, shorter minimum can still sign in. */
+export const MIN_PASSWORD_LENGTH = 10;
+
 /**
  * Signs the user in with Google via Supabase's hosted OAuth flow. Opens Google's consent
  * screen in an in-app browser, waits for the `playlink://` redirect back into the app, and
@@ -87,7 +93,7 @@ export const signInWithApple = async (): Promise<void> => {
  * confirmation disabled, so a successful call establishes a session immediately — there's no
  * "check your email" step.
  * Parameters: email (the new account's email), password (plain text; Supabase's minimum length
- * requirement is enforced server-side, currently 6 characters).
+ * requirement is enforced server-side; see MIN_PASSWORD_LENGTH).
  * Returns: a promise that resolves once the account is created and signed in; as with the OAuth
  * flows, the app's onAuthStateChange listener picks up the new session automatically.
  * Edge cases: throws if the email is already registered, if the password doesn't meet
@@ -117,7 +123,7 @@ export const signInWithEmail = async (email: string, password: string): Promise<
  * on whichever session is already active, so this doesn't need the user's current password —
  * only a valid session, which the profile screen already requires to be reachable.
  * Parameters: newPassword (plain text; Supabase's minimum length requirement is enforced
- * server-side, currently 6 characters).
+ * server-side; see MIN_PASSWORD_LENGTH).
  * Returns: a promise that resolves once the password has been updated.
  * Edge cases: throws if the new password doesn't meet Supabase's minimum length requirement,
  * if the session has expired, or on any other Supabase/network error.

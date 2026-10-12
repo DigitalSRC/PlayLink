@@ -39,6 +39,8 @@ import {
   groupDayKey,
   groupErrorMessage,
   isGroupInArea,
+  MAX_GROUP_LOCATION_LENGTH,
+  MAX_GROUP_NAME_LENGTH,
   MAX_POSTINGS,
   sortGroupsBySchedule,
 } from '../../utils/group-utils';
@@ -618,12 +620,12 @@ export default function BrowseScreen() {
               )}
 
               <Text style={styles.fieldLabel}>Group Name</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} placeholder="e.g. Saturday Grind" placeholderTextColor={colors.placeholder} />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newName} onChangeText={setNewName} maxLength={MAX_GROUP_NAME_LENGTH} placeholder="e.g. Saturday Grind" placeholderTextColor={colors.placeholder} />
 
               {!storeEvent && (
               <>
               <Text style={styles.fieldLabel}>Location</Text>
-              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Downtown Library" placeholderTextColor={colors.placeholder} />
+              <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newLocation} onChangeText={setNewLocation} maxLength={MAX_GROUP_LOCATION_LENGTH} placeholder="e.g. Downtown Library" placeholderTextColor={colors.placeholder} />
 
               <Text style={styles.fieldLabel}>Date</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePickerContent}>
@@ -678,7 +680,7 @@ export default function BrowseScreen() {
 
               <View style={styles.halfField}>
                 <Text style={styles.fieldLabel}>Players Needed</Text>
-                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" placeholderTextColor={colors.placeholder} />
+                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" maxLength={2} placeholderTextColor={colors.placeholder} />
               </View>
 
               {newGame !== 'mtg' && (

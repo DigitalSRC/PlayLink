@@ -26,7 +26,16 @@ import PlayerName from '../components/PlayerName';
 import { useApp } from '../context/AppContext';
 import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from '../data/types';
 import { formatDayHeading } from '../utils/calendar-utils';
-import { findGroupOnDay, formatBrackets, groupDayKey, groupErrorMessage } from '../utils/group-utils';
+import { playerErrorMessage } from '../utils/error-utils';
+import {
+  findGroupOnDay,
+  formatBrackets,
+  groupDayKey,
+  groupErrorMessage,
+  MAX_GROUP_LOCATION_LENGTH,
+  MAX_GROUP_NAME_LENGTH,
+  roundReportBlocker,
+} from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
 import {
   CONTEST_WINDOW_MS,
@@ -303,7 +312,7 @@ export default function GroupDetail() {
           : `You’re no longer in “${group.name}”.`
       );
     } catch (err) {
-      showDialog('Couldn’t leave group', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t leave group', playerErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -347,7 +356,7 @@ export default function GroupDetail() {
               goBack();
               showToast('Posting deleted', `“${group.name}” has been removed.`);
             } catch (err) {
-              showDialog('Couldn’t delete posting', err instanceof Error ? err.message : 'Please try again.');
+              showDialog('Couldn’t delete posting', playerErrorMessage(err, 'Please try again.'));
             }
           },
         },
@@ -372,7 +381,7 @@ export default function GroupDetail() {
               await setHostMutation.mutateAsync({ groupId: group.id, newHostId: playerId });
               showToast('Host changed', `${targetName} is now the host.`);
             } catch (err) {
-              showDialog('Couldn’t change host', err instanceof Error ? err.message : 'Please try again.');
+              showDialog('Couldn’t change host', playerErrorMessage(err, 'Please try again.'));
             }
           },
         },
@@ -387,7 +396,7 @@ export default function GroupDetail() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast('Game confirmed', 'When a round ends, tap Report Results to record how it finished.');
     } catch (err) {
-      showDialog('Couldn’t confirm game', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t confirm game', playerErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -495,7 +504,7 @@ export default function GroupDetail() {
         `The other players have ${CONTEST_WINDOW_MS / 60000} minutes to agree or contest, then points are paid. You can start the next round now.`
       );
     } catch (err) {
-      showDialog('Couldn’t submit results', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t submit results', playerErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -510,6 +519,12 @@ export default function GroupDetail() {
   const handleSubmitResult = () => {
     if (submitResultMutation.isPending) return;
     const placements = buildPlacements();
+    // The server refuses these too; saying so here spares the host a read-back they can't send.
+    const blocker = roundReportBlocker(group.roundsPlayed, placements.length);
+    if (blocker) {
+      showDialog('Can’t report this round', blocker);
+      return;
+    }
     showDialog(
       `Submit round ${group.roundsPlayed + 1}?`,
       `${describeOrder(placements)}\n\nYou can’t change this afterwards. The other players get ${CONTEST_WINDOW_MS / 60000} minutes to agree or contest, then points are paid.`,
@@ -613,7 +628,7 @@ export default function GroupDetail() {
       setEditing(false);
       showToast('Changes saved', 'Everyone in the group sees the update.');
     } catch (err) {
-      showDialog('Couldn’t save changes', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t save changes', playerErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -637,6 +652,7 @@ export default function GroupDetail() {
             style={styles.editTitleInput}
             value={editName}
             onChangeText={setEditName}
+            maxLength={MAX_GROUP_NAME_LENGTH}
           />
         ) : (
           <Text style={styles.groupName}>{group.name}</Text>
@@ -754,7 +770,7 @@ export default function GroupDetail() {
               {group.localEventId ? (
                 <Text style={styles.metaRow}>📍 {group.location}</Text>
               ) : (
-                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location" placeholderTextColor={colors.placeholder} />
+                <TextInput style={styles.editInput} value={editLocation} onChangeText={setEditLocation} maxLength={MAX_GROUP_LOCATION_LENGTH} placeholder="Location" placeholderTextColor={colors.placeholder} />
               )}
 
               <Text style={styles.editLabel}>Day</Text>
@@ -802,7 +818,7 @@ export default function GroupDetail() {
               </View>
 
               <Text style={styles.editLabel}>Players Needed</Text>
-              <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" />
+              <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" maxLength={2} />
 
               {group.format === 'Commander' && (
                 <>
