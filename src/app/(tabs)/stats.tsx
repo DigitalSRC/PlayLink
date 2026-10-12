@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useQueries } from '@tanstack/react-query';
 import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
+import { useRivaledByQuery } from '../../hooks/useProfileQueries';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, GameType, UserProfile, visibleGames } from '../../data/types';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { fetchLeaderboard } from '../../lib/profile-api';
@@ -66,6 +67,8 @@ const buildSelfRow = (user: UserProfile): LeaderRow => ({
 export default function StatsScreen() {
   const router = useRouter();
   const { currentUser } = useApp();
+  // Players who picked this player as their Rival; their rows are tagged so the player knows.
+  const { data: rivaledBy = [] } = useRivaledByQuery(currentUser?.id);
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
@@ -270,6 +273,9 @@ export default function StatsScreen() {
                           />
                         </View>
                         {p.isMe && <Text style={styles.leaderYou}>YOU</Text>}
+                        {!p.isMe && rivaledBy.some((r) => r.id === p.id) && (
+                          <Text style={styles.leaderRivalsYou}>RIVALS YOU</Text>
+                        )}
                         <Text style={[styles.leaderRecord, { color: colors.textMuted }]}>{p.wins}-{p.losses}-{p.draws}</Text>
                       </View>
                       <Text style={[styles.leaderPts, { color: colors.textSecondary }, p.isMe && styles.leaderPtsMe]}>{p.monthlyPoints}</Text>
@@ -387,6 +393,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   leaderName: { fontSize: 14, fontWeight: '700' },
   leaderNameMe: { color: '#007AFF' },
   leaderYou: { fontSize: 9, fontWeight: '800', color: '#007AFF', backgroundColor: c.accentBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  leaderRivalsYou: { fontSize: 9, fontWeight: '800', color: c.dangerOnBg, backgroundColor: c.dangerBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
   leaderRecord: { fontSize: 10, fontWeight: '600' },
   leaderPts: { fontSize: 13, fontWeight: '700' },
   leaderPtsMe: { color: '#007AFF' },
