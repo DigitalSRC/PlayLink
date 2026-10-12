@@ -36,6 +36,7 @@ import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
 import { updatePassword } from '../../lib/auth-api';
 import { formatBrackets } from '../../utils/group-utils';
+import { chosenRivalFirst } from '../../utils/rival-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
@@ -321,8 +322,9 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
     showToast('Commander settings saved');
   };
 
+  // The picked Rival is listed first, so choosing a new one moves them to the top.
   const allRivalsInSection = [
-    ...rivals,
+    ...chosenRivalFirst(rivals, chosenRivalId),
     ...(mostPlayedAgainst && !rivals.some((r) => r.id === mostPlayedAgainst.id) ? [mostPlayedAgainst] : []),
   ];
 
