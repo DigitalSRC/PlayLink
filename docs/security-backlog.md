@@ -62,6 +62,42 @@ security checklist.
 
 ---
 
+## Status update — 2026-10-12 (security audit)
+
+A full audit against a standard checklist found no data exposure or sign-in bypass. What it did
+find is fixed on branch `security-audit` (not yet merged, migrations not yet applied):
+
+- **Unlimited points.** A host could report a round with only themselves in it, repeatedly.
+  Now: two players per round, 10 rounds per group, 12 reported rounds per player per 24 hours.
+- **Forgeable group fields.** `groups` and `group_players` now grant columns by name.
+- **No server-side limits on text**, and a full group was refused only by the app. Both are
+  now enforced by triggers.
+- **`resolve-area` had no rate limit.** 30 calls an hour and 3 new areas a day per player;
+  unused areas are removed after 90 days.
+- **`is_group_member`** has a pinned search_path and is no longer callable signed out; the four
+  oldest tables no longer carry grants to `anon`.
+- **App:** database errors are not shown to players; the cache is cleared at sign-out; new
+  passwords need 10 characters; a username from a link is matched literally.
+- **Landing page:** the signup function no longer overwrites saved details (committed on
+  `LandingPage`, not pushed).
+
+Still open after the audit, each needing a decision or a setting outside the code:
+
+- Issue 3 (auth posture): the project's own minimum password length must be raised to 10 in the
+  dashboard to match the app; email confirmation, CAPTCHA, and requiring a recent sign-in to
+  change a password are still off. Without confirmation or CAPTCHA, accounts are free to
+  create, which is what makes two accounts trading wins possible (now bounded, not prevented).
+- Issue 5 (secrets): the access tokens in `CLAUDE.local.md` should be rotated and kept
+  somewhere other than a plaintext file.
+- Issue 2 (profile read exposure) is unchanged.
+- The 30-minute wait before confirming a game is still only checked by the app (GitHub #18);
+  the full-group half of that issue is now enforced.
+- The landing page's signup function still reveals whether an email is on the list.
+- The session token is kept in AsyncStorage (`localStorage` on web); moving it to the device's
+  secure store on phones is not done.
+- `npm audit` reports issues in build and test tooling with no fix available short of
+  downgrading Expo.
+
 ## Status update — 2026-10-06
 
 Work done since this file was written. None of it is applied to the Supabase project yet.
