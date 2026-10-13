@@ -32,6 +32,7 @@ import {
 } from "../data/types";
 import { useCreateProfileMutation } from "../hooks/useProfileQueries";
 import { fetchRivalCandidates, UsernameTakenError, updateProfile } from "../lib/profile-api";
+import { playerErrorMessage } from "../utils/error-utils";
 import { findRivals } from "../utils/rival-utils";
 
 // Ordered labels for the four-step onboarding flow displayed in the progress indicator.
@@ -249,9 +250,7 @@ export default function ProfileCreation() {
           setUsernameError(err.message);
           setStep(0);
         } else {
-          setSubmitError(
-            err instanceof Error ? err.message : "Couldn't save your profile. Please try again."
-          );
+          setSubmitError(playerErrorMessage(err, "Couldn't save your profile. Please try again."));
         }
         return;
       }
