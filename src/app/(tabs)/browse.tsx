@@ -32,6 +32,7 @@ import {
   NoGoRule,
 } from '../../data/types';
 import {
+  clampGroupSize,
   countPostingsBy,
   findGroupOnDay,
   formatBrackets,
@@ -41,7 +42,9 @@ import {
   isGroupInArea,
   MAX_GROUP_LOCATION_LENGTH,
   MAX_GROUP_NAME_LENGTH,
+  MAX_GROUP_PLAYERS,
   MAX_POSTINGS,
+  MIN_GROUP_PLAYERS,
   sortGroupsBySchedule,
 } from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
@@ -344,7 +347,7 @@ export default function BrowseScreen() {
         const dayLabel = newDateOffset === 0 ? 'Today' : newDateOffset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         return `${dayLabel} · ${newHour}:${String(newMinute).padStart(2, '0')} ${newPeriod}`;
       })(),
-      targetPlayers: Math.max(2, Number(newTarget) || 4),
+      targetPlayers: clampGroupSize(newTarget, 4),
       noGo: newNoGo,
       hostBracket: currentUser.brackets[0] ?? 2,
     };
@@ -679,8 +682,8 @@ export default function BrowseScreen() {
               </View>
 
               <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>Players Needed</Text>
-                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" maxLength={2} placeholderTextColor={colors.placeholder} />
+                <Text style={styles.fieldLabel}>Players Needed ({MIN_GROUP_PLAYERS}-{MAX_GROUP_PLAYERS})</Text>
+                <TextInput style={[styles.input, { backgroundColor: colors.bg, color: colors.textPrimary }]} value={newTarget} onChangeText={setNewTarget} keyboardType="numeric" maxLength={1} placeholderTextColor={colors.placeholder} />
               </View>
 
               {newGame !== 'mtg' && (
