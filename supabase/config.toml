@@ -385,6 +385,19 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Whether each function asks Supabase to check the caller's sign-in before it runs. Written
+# down here so a deploy that forgets the --no-verify-jwt flag (or adds it by mistake) cannot
+# change it. The two cron-called functions check their own secret header instead; resolve-area
+# is called by players and must keep the check on.
+[functions.refresh-rivals]
+verify_jwt = false
+
+[functions.sync-local-events]
+verify_jwt = false
+
+[functions.resolve-area]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

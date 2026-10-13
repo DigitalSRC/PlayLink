@@ -62,6 +62,53 @@ security checklist.
 
 ---
 
+## Status update — 2026-10-13 (audit follow-ups)
+
+The audit's working list was worked through on branch `security-audit`. Done in code (not yet
+merged; migration `20261013120000` not yet applied):
+
+- **Table size capped at 8** (server trigger and both forms), and a round of more than 8 is
+  refused. Closes the "50 throwaway accounts pay one winner 500 points a round" route.
+- **A posting needs a day within the next 90**, so a posting can no longer sit in Find for good.
+- **Changing a password needs the current one.**
+- **The session is kept in the device's secure store on phones** (moved across from
+  AsyncStorage on first read). Not yet tried on a phone.
+- **Signed-out visitors cannot open `group-detail`, `player-profile`, or `profile-creation`.**
+- Three places that could show a raw database or sign-in error now go through
+  `playerErrorMessage`; each Edge Function's JWT setting is pinned in `supabase/config.toml`;
+  five unused packages were removed.
+
+Still open, with why:
+
+- **CAPTCHA on sign-up and sign-in (medium).** Needs a Cloudflare Turnstile site key and secret
+  set in the Supabase dashboard, then the app must pass a `captchaToken` to `signUp` and
+  `signInWithPassword` (a web widget, and a WebView on phones). Until then accounts are free
+  to make; the table cap and the round limits bound what that is worth.
+- **Rotate the two tokens in `CLAUDE.local.md` (low)** and keep them out of the file (Issue 5).
+- **Column-level profile reads (low, Issue 2).** Any signed-in account can read every column of
+  every profile. Needs a decision first: `player-profile` shows another player's location and
+  "won't play against" list today, and hiding those is a product change. The audit's sketch:
+  revoke table-level `select`, grant the public columns by name, and read your own row through
+  a `my_profile()` function; every `select('*')` in `profile-api.ts` then has to name columns.
+- **Leaked-password protection is off** (dashboard, Authentication settings; reported by
+  Supabase's own advisor on 2026-10-13).
+- **`rls_auto_enable()` and `set_updated_at()`** exist in the live database but in no
+  migration. The first is SECURITY DEFINER and callable signed out; the second has no pinned
+  `search_path`. Find out what made them, then revoke or pin.
+- **CORS on `resolve-area` is `*`.** Not exploitable with bearer-token sign-in; narrow it once
+  the web app has a fixed domain.
+- **`npm audit`**: 0 critical. Only `decode-uri-component` (through expo-router) runs in the
+  app; a malformed link can hang the tab of the person who opened it. Re-check after each Expo
+  SDK bump. Never run `npm audit fix --force` (it downgrades to `expo@44`).
+- Before turning `OAUTH_ENABLED` on, add `playlink://auth/callback` to the project's redirect
+  allow-list.
+- Notes, no action yet: `refresh-rivals` reads all profiles in one request, so past 1,000
+  players the rest never get the monthly reset; a host can use up a member's 12-rounds-a-day
+  quota by reporting rounds they are in; there is no account deletion, which Apple requires;
+  `rival_ids` is client-writable (cosmetic); `AppContext`'s `awardPoints` / `addWin` and
+  related mutators are dead code the database refuses; the landing page has no limit on
+  anonymous sign-ups and its function reveals whether an email is on the list.
+
 ## Status update — 2026-10-12 (security audit)
 
 A full audit against a standard checklist found no data exposure or sign-in bypass. What it did
