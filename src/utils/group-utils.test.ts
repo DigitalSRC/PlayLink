@@ -3,6 +3,9 @@ import { Group } from "../data/groups";
 import {
   buildNewPlayer,
   canJoinGroup,
+  clampGroupSize,
+  MAX_GROUP_PLAYERS,
+  MIN_GROUP_PLAYERS,
   countPostingsBy,
   findGroupByUsername,
   findGroupOnDay,
@@ -333,6 +336,58 @@ describe("group-utils", () => {
   it("the round limits match the numbers in the SQL", () => {
     expect(MIN_ROUND_PLAYERS).toBe(2);
     expect(MAX_ROUNDS_PER_GROUP).toBe(10);
+  });
+
+  it("roundReportBlocker refuses a round with more players than a group can hold", () => {
+    expect(roundReportBlocker(0, MAX_GROUP_PLAYERS)).toBeNull();
+    expect(roundReportBlocker(0, MAX_GROUP_PLAYERS + 1)).toMatch(/at most 8 players/);
+    expect(roundReportBlocker(0, 50)).toMatch(/at most 8 players/);
+    // Out of rounds is still the reason given first.
+    expect(roundReportBlocker(MAX_ROUNDS_PER_GROUP, 50)).toMatch(/most allowed/);
+  });
+
+  it("the group size limits match the numbers in the SQL", () => {
+    expect(MIN_GROUP_PLAYERS).toBe(2);
+    expect(MAX_GROUP_PLAYERS).toBe(8);
+  });
+
+  it("clampGroupSize keeps a size inside the limits as it is", () => {
+    expect(clampGroupSize("2", 4)).toBe(2);
+    expect(clampGroupSize("4", 6)).toBe(4);
+    expect(clampGroupSize("8", 4)).toBe(8);
+    expect(clampGroupSize(5, 4)).toBe(5);
+  });
+
+  it("clampGroupSize brings a size outside the limits to the nearest limit", () => {
+    expect(clampGroupSize("1", 4)).toBe(2);
+    expect(clampGroupSize("9", 4)).toBe(8);
+    expect(clampGroupSize("50", 4)).toBe(8);
+    expect(clampGroupSize(1e9, 4)).toBe(8);
+  });
+
+  it("clampGroupSize uses the fallback when nothing usable was typed", () => {
+    expect(clampGroupSize("", 4)).toBe(4);
+    expect(clampGroupSize("abc", 6)).toBe(6);
+    expect(clampGroupSize(undefined, 3)).toBe(3);
+    expect(clampGroupSize("0", 5)).toBe(5);
+    expect(clampGroupSize("-3", 5)).toBe(5);
+    expect(clampGroupSize("Infinity", 5)).toBe(5);
+  });
+
+  it("clampGroupSize holds the fallback to the limits too", () => {
+    // A group posted before the limit can have a size above it; editing brings it down.
+    expect(clampGroupSize("", 20)).toBe(8);
+    expect(clampGroupSize("abc", 1)).toBe(2);
+    expect(clampGroupSize("", NaN)).toBe(2);
+    expect(clampGroupSize("", -7)).toBe(2);
+  });
+
+  it("clampGroupSize rounds a fraction down to a whole number", () => {
+    expect(clampGroupSize("4.9", 4)).toBe(4);
+    expect(clampGroupSize("2.5", 4)).toBe(2);
+    expect(clampGroupSize("", 5.7)).toBe(5);
+    // 0.5 rounds down to no players at all, which is nothing usable.
+    expect(clampGroupSize("0.5", 6)).toBe(6);
   });
 
   it("groupErrorMessage falls back when there is nothing usable to say", () => {
