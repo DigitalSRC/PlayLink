@@ -14,6 +14,7 @@ import {
   usePurchaseShopItemMutation,
   useShopItemsQuery,
 } from '../../hooks/useShopQueries';
+import { playerErrorMessage } from '../../utils/error-utils';
 import { borderStyleFor, groupShopItems, pointsShort, safeNameColor, shopItemState } from '../../utils/shop-utils';
 import { useThemeColors } from '../../utils/theme-utils';
 
@@ -87,7 +88,7 @@ export default function ShopScreen() {
       await equipMutation.mutateAsync({ userId, kind: item.kind, itemId: wearing ? null : item.id });
       Haptics.selectionAsync();
     } catch (err) {
-      showDialog('Couldn’t change your look', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t change your look', playerErrorMessage(err, 'Please try again.'));
     } finally {
       setBusyItemId(null);
     }
@@ -118,7 +119,7 @@ export default function ShopScreen() {
         ]
       );
     } catch (err) {
-      showDialog('Couldn’t buy that', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t buy that', playerErrorMessage(err, 'Please try again.'));
     } finally {
       setBusyItemId(null);
     }

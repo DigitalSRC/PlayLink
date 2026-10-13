@@ -2,7 +2,9 @@ import 'react-native-url-polyfill/auto';
 import './crypto-polyfill';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { AppState, Platform } from 'react-native';
+import { makeChunkedSecureStorage } from './secure-session-storage';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,10 +23,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // there instead lets GoTrueClient fall back to its own SSR-safe in-memory storage.
 const isServerSideWeb = Platform.OS === 'web' && typeof window === 'undefined';
 
+// On a phone the session goes in the device's secure store (Keychain / Keystore), not in
+// AsyncStorage, which is a plain file a backup or a rooted phone can read. A session saved in
+// AsyncStorage by an older build is moved across the first time it is read. A browser has no
+// secure store, so the web build keeps AsyncStorage (localStorage underneath).
+const sessionStorage =
+  Platform.OS === 'web'
+    ? AsyncStorage
+    : makeChunkedSecureStorage(
+        {
+          getItem: (key) => SecureStore.getItemAsync(key),
+          setItem: (key, value) => SecureStore.setItemAsync(key, value),
+          removeItem: (key) => SecureStore.deleteItemAsync(key),
+        },
+        AsyncStorage
+      );
+
 /**
  * The single Supabase client instance used everywhere in the app for auth and database access.
- * Sessions are persisted to AsyncStorage (native, and the browser via AsyncStorage's web shim)
- * so a signed-in user stays signed in across app restarts; the Node-side static-prerender pass
+ * Sessions are persisted (the device's secure store on a phone, AsyncStorage's web shim in the
+ * browser - see sessionStorage above) so a signed-in user stays signed in across app restarts;
+ * the Node-side static-prerender pass
  * uses Supabase's own safe in-memory fallback instead (see isServerSideWeb above), since there
  * is nothing to persist across a single server-side render anyway.
  * `detectSessionInUrl` is disabled because native has no browser URL bar to parse, and
@@ -36,7 +55,7 @@ const isServerSideWeb = Platform.OS === 'web' && typeof window === 'undefined';
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: isServerSideWeb ? undefined : AsyncStorage,
+    storage: isServerSideWeb ? undefined : sessionStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

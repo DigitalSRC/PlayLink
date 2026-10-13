@@ -37,6 +37,25 @@ export const persister = createAsyncStoragePersister({
   key: 'playlink-query-cache',
 });
 
+/**
+ * Throws away everything cached for the player who was signed in: the in-memory cache and the
+ * copy saved on the device. Groups, round results, purchases, and rewards are all cached, and
+ * the saved copy is read back on the next start, so without this the next person to sign in on
+ * the same phone or browser could be shown the previous player's data.
+ * Parameters: client (the app's query client; passed in so this is testable).
+ * Returns: a promise that resolves once the saved copy has been removed.
+ * Edge cases: a failure to remove the saved copy is ignored - the in-memory cache is already
+ * empty, and the saved copy is overwritten the next time anything is cached.
+ */
+export const clearCachedPlayerData = async (client: QueryClient): Promise<void> => {
+  client.clear();
+  try {
+    await persister.removeClient();
+  } catch {
+    // See Edge cases above.
+  }
+};
+
 let appFocusRegistered = false;
 
 /**

@@ -10,9 +10,16 @@
 // user: the public anon key is itself a valid JWT, so gateway verification alone would let a
 // signed-out caller in.
 //
-// What a caller can cause is deliberately small: one geocoder lookup, at most one new area row,
-// and at most one locator sync per area per cooldown (enforced in the database by
-// claimAndSyncArea, so it holds across all callers). The total number of areas is capped.
+// What a caller can cause is deliberately small: a few geocoder lookups, at most one new area
+// row, and at most one locator sync per area per cooldown (enforced in the database by
+// claimAndSyncArea, so it holds across all callers). Each player is also limited in how often
+// they can call this at all and in how many new areas they can create per day (take_rate_limit,
+// 20261012140000_security_audit_hardening.sql) - without that, one account could spend the
+// geocoder's free allowance or fill the areas table, which is capped. That migration must be
+// applied BEFORE this version is deployed: with no counter to ask, every request is refused.
+//
+// Replies carry an error code and nothing else. What actually went wrong (a database message,
+// the geocoder's or the locator's reply) goes to the function's log, not to the caller.
 //
 // Geocoding uses Open-Meteo's geocoding API (no key). It is free for non-commercial use; a
 // commercial launch needs their paid plan or a different geocoder - only geocode() would change.
@@ -41,6 +48,11 @@ const MANUAL_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 // (and the scheduled sync's workload) without bound.
 const MAX_AREAS = 500;
 const NEW_AREA_RADIUS_METERS = 25000;
+// How often one player may call this function. The app asks once an hour per location, plus
+// when the player changes location or taps "Update events".
+const MAX_CALLS_PER_HOUR = 30;
+// How many brand-new areas one player may cause to be created in a day.
+const MAX_NEW_AREAS_PER_DAY = 3;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -81,6 +93,37 @@ Deno.serve(async (req: Request) => {
   });
   const { data: userData, error: userError } = await userClient.auth.getUser();
   if (userError || !userData?.user) return json(401, { error: 'not_authenticated' });
+  const userId = userData.user.id;
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  /**
+   * Counts one use of a limited action by the signed-in caller and says whether it is allowed.
+   * Parameters: bucket (which limit), max (uses allowed per window), window (a Postgres interval).
+   * Returns: 'ok', 'limited' (over the limit), or 'error' (the counter could not be asked).
+   * Edge cases: anything but a clear "yes" from the database is not 'ok', so a failure of the
+   * counter refuses the request instead of letting it through unlimited.
+   */
+  const takeLimit = async (bucket: string, max: number, window: string): Promise<'ok' | 'limited' | 'error'> => {
+    const { data, error } = await supabase.rpc('take_rate_limit', {
+      p_user: userId,
+      p_bucket: bucket,
+      p_max: max,
+      p_window: window,
+    });
+    if (error) {
+      console.error(`rate limit check failed (${bucket}):`, error.message);
+      return 'error';
+    }
+    return data === true ? 'ok' : 'limited';
+  };
+
+  const callLimit = await takeLimit('resolve-area', MAX_CALLS_PER_HOUR, '1 hour');
+  if (callLimit === 'limited') return json(429, { error: 'rate_limited' });
+  if (callLimit === 'error') return json(503, { error: 'unavailable' });
 
   let payload: { location?: unknown; refresh?: unknown };
   try {
@@ -99,24 +142,26 @@ Deno.serve(async (req: Request) => {
       if (place) break;
     }
   } catch (error) {
-    return json(502, { error: 'geocoder_unavailable', detail: String(error) });
+    console.error('geocoder failed:', error);
+    return json(502, { error: 'geocoder_unavailable' });
   }
   if (!place) return json(404, { error: 'location_not_found' });
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
 
   const { data: existing, error: areasError } = await supabase
     .from('event_areas')
     .select(EVENT_AREA_COLUMNS);
-  if (areasError) return json(500, { error: 'areas_unavailable', detail: areasError.message });
+  if (areasError) {
+    console.error('reading areas failed:', areasError.message);
+    return json(500, { error: 'areas_unavailable' });
+  }
   const areas = (existing ?? []) as EventAreaRow[];
 
   let area = findContainingArea(areas, place.latitude, place.longitude);
   if (!area) {
     if (areas.length >= MAX_AREAS) return json(429, { error: 'too_many_areas' });
+    const createLimit = await takeLimit('create-area', MAX_NEW_AREAS_PER_DAY, '1 day');
+    if (createLimit === 'limited') return json(429, { error: 'rate_limited' });
+    if (createLimit === 'error') return json(503, { error: 'unavailable' });
     const id = areaSlug(place);
     // ignoreDuplicates: if two players ask for the same new city at the same moment, the second
     // insert is a no-op and both read back the one row.
@@ -131,14 +176,18 @@ Deno.serve(async (req: Request) => {
       },
       { onConflict: 'id', ignoreDuplicates: true }
     );
-    if (insertError) return json(500, { error: 'area_create_failed', detail: insertError.message });
+    if (insertError) {
+      console.error('creating area failed:', insertError.message);
+      return json(500, { error: 'area_create_failed' });
+    }
     const { data: created, error: readError } = await supabase
       .from('event_areas')
       .select(EVENT_AREA_COLUMNS)
       .eq('id', id)
       .maybeSingle();
     if (readError || !created) {
-      return json(500, { error: 'area_create_failed', detail: readError?.message ?? 'not found' });
+      console.error('reading new area failed:', readError?.message ?? 'not found');
+      return json(500, { error: 'area_create_failed' });
     }
     area = created as EventAreaRow;
   }
@@ -165,7 +214,9 @@ Deno.serve(async (req: Request) => {
       lastSyncedAt = now.toISOString();
     }
   } catch (error) {
-    syncError = String(error);
+    // The app only needs to know the refresh did not go through; the reason stays in the log.
+    console.error(`sync of ${area.id} failed:`, error);
+    syncError = 'sync_failed';
   }
 
   return json(200, {
