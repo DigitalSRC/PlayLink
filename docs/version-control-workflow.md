@@ -329,6 +329,12 @@ branches not yet merged into `development` — all of them shared on `origin` (�
 - **`life-counter`** — in-progress life/commander-damage tracking screen. Excluded from
   `development`/`main` until finished; it has no entry points or feature flag there — see
   [CLAUDE.md](../CLAUDE.md).
+- **`security-audit`** — fixes from the 2026-10-12 security audit: round limits, column-level
+  grants on `groups`/`group_players`, input limits, a rate limit on `resolve-area`, database
+  errors no longer shown to players, and the cache cleared at sign-out. Forked from
+  `development` on 2026-10-12 so it can land ahead of the play-test stack; tested on
+  `unitTests`. Its migrations (`20261012140000`, `20261012140100`) are not applied to the live
+  database. Waiting for a go-ahead to merge.
 - **`dev-tools`** — home for `src/app/dev-tools.tsx`, the developer testing screen.
   Excluded from every other branch except `unitTests`/`test/<feature>`; see
   [CLAUDE.md](../CLAUDE.md) for the `DEV_TOOLS_ENABLED` flag.

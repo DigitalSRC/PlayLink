@@ -78,7 +78,11 @@ jest.mock("../../hooks/useShopQueries", () => ({
   useOwnedShopItemsQuery: () => ({ data: [] }),
   useEquipShopItemMutation: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
-jest.mock("../../lib/auth-api", () => ({ MIN_PASSWORD_LENGTH: 10, updatePassword: jest.fn() }));
+const mockUpdatePassword = jest.fn<(current: string, next: string) => Promise<void>>();
+jest.mock("../../lib/auth-api", () => ({
+  MIN_PASSWORD_LENGTH: 10,
+  updatePassword: (current: string, next: string) => mockUpdatePassword(current, next),
+}));
 
 // Leaving the tab saves, which updates the screen, so it has to happen inside act().
 const leaveTab = () =>
@@ -255,5 +259,107 @@ describe("ProfileScreen name and location fields", () => {
     const { toJSON } = await render(<ProfileScreen />);
 
     expect(toJSON()).toBeNull();
+  });
+});
+
+describe("ProfileScreen change-password form", () => {
+  const CURRENT = "Current password";
+  const NEW = "New password (min. 10 characters)";
+  const CONFIRM = "Confirm new password";
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCurrentUser = { ...baseUser };
+    mockUpdatePassword.mockResolvedValue(undefined);
+  });
+
+  const openForm = async () => {
+    const screen = await render(<ProfileScreen />);
+    await fireEvent.press(screen.getByText("Change Password"));
+    return screen;
+  };
+
+  it("asks for the current password as well as the new one", async () => {
+    const { getByPlaceholderText } = await openForm();
+
+    expect(getByPlaceholderText(CURRENT).props.secureTextEntry).toBe(true);
+    expect(getByPlaceholderText(NEW)).toBeTruthy();
+    expect(getByPlaceholderText(CONFIRM)).toBeTruthy();
+  });
+
+  it("sends nothing without the current password", async () => {
+    const { getByPlaceholderText, getByText } = await openForm();
+
+    await fireEvent.changeText(getByPlaceholderText(NEW), "new-password-22");
+    await fireEvent.changeText(getByPlaceholderText(CONFIRM), "new-password-22");
+    await fireEvent.press(getByText("Update Password"));
+
+    expect(getByText("Enter your current password.")).toBeTruthy();
+    expect(mockUpdatePassword).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the new password is too short or the two do not match", async () => {
+    const { getByPlaceholderText, getByText } = await openForm();
+
+    await fireEvent.changeText(getByPlaceholderText(CURRENT), "old-password-1");
+    await fireEvent.changeText(getByPlaceholderText(NEW), "short");
+    await fireEvent.changeText(getByPlaceholderText(CONFIRM), "short");
+    await fireEvent.press(getByText("Update Password"));
+    expect(getByText("Password must be at least 10 characters.")).toBeTruthy();
+
+    await fireEvent.changeText(getByPlaceholderText(NEW), "new-password-22");
+    await fireEvent.changeText(getByPlaceholderText(CONFIRM), "new-password-23");
+    await fireEvent.press(getByText("Update Password"));
+    expect(getByText("Passwords do not match.")).toBeTruthy();
+
+    expect(mockUpdatePassword).not.toHaveBeenCalled();
+  });
+
+  it("passes both passwords on, then clears every field", async () => {
+    const { getByPlaceholderText, getByText } = await openForm();
+
+    await fireEvent.changeText(getByPlaceholderText(CURRENT), "old-password-1");
+    await fireEvent.changeText(getByPlaceholderText(NEW), "new-password-22");
+    await fireEvent.changeText(getByPlaceholderText(CONFIRM), "new-password-22");
+    await act(async () => {
+      await fireEvent.press(getByText("Update Password"));
+    });
+
+    expect(mockUpdatePassword).toHaveBeenCalledWith("old-password-1", "new-password-22");
+    expect(getByText("Password updated.")).toBeTruthy();
+    expect(getByPlaceholderText(CURRENT).props.value).toBe("");
+    expect(getByPlaceholderText(NEW).props.value).toBe("");
+    expect(getByPlaceholderText(CONFIRM).props.value).toBe("");
+  });
+
+  it("says so when the current password is wrong, and keeps what was typed", async () => {
+    mockUpdatePassword.mockRejectedValue(new Error("Your current password is not right."));
+    const { getByPlaceholderText, getByText, queryByText } = await openForm();
+
+    await fireEvent.changeText(getByPlaceholderText(CURRENT), "wrong-password");
+    await fireEvent.changeText(getByPlaceholderText(NEW), "new-password-22");
+    await fireEvent.changeText(getByPlaceholderText(CONFIRM), "new-password-22");
+    await act(async () => {
+      await fireEvent.press(getByText("Update Password"));
+    });
+
+    expect(getByText("Your current password is not right.")).toBeTruthy();
+    expect(queryByText("Password updated.")).toBeNull();
+    expect(getByPlaceholderText(NEW).props.value).toBe("new-password-22");
+  });
+
+  it("does not show a database error to the player", async () => {
+    mockUpdatePassword.mockRejectedValue({ code: "42501", message: "permission denied for table users" });
+    const { getByPlaceholderText, getByText, queryByText } = await openForm();
+
+    await fireEvent.changeText(getByPlaceholderText(CURRENT), "old-password-1");
+    await fireEvent.changeText(getByPlaceholderText(NEW), "new-password-22");
+    await fireEvent.changeText(getByPlaceholderText(CONFIRM), "new-password-22");
+    await act(async () => {
+      await fireEvent.press(getByText("Update Password"));
+    });
+
+    expect(getByText("Could not change password. Please try again.")).toBeTruthy();
+    expect(queryByText(/permission denied/)).toBeNull();
   });
 });

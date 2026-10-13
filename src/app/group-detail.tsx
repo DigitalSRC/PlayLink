@@ -28,12 +28,15 @@ import { BRACKET_INFO, DAYS_OF_WEEK, GAME_COLOR, GAME_EMOJI, GAME_LABELS } from 
 import { formatDayHeading } from '../utils/calendar-utils';
 import { playerErrorMessage } from '../utils/error-utils';
 import {
+  clampGroupSize,
   findGroupOnDay,
   formatBrackets,
   groupDayKey,
   groupErrorMessage,
   MAX_GROUP_LOCATION_LENGTH,
   MAX_GROUP_NAME_LENGTH,
+  MAX_GROUP_PLAYERS,
+  MIN_GROUP_PLAYERS,
   roundReportBlocker,
 } from '../utils/group-utils';
 import { PlacementInput } from '../utils/scoring-utils';
@@ -620,7 +623,7 @@ export default function GroupDetail() {
           name: editName.trim(),
           location: editLocation.trim(),
           time: `${editDay} · ${editHour}:${String(editMinute).padStart(2, '0')} ${editPeriod}`,
-          targetPlayers: Math.max(2, Number(editTarget) || group.targetPlayers),
+          targetPlayers: clampGroupSize(editTarget, group.targetPlayers),
           brackets: editBrackets,
         },
       });
@@ -817,8 +820,8 @@ export default function GroupDetail() {
                 </View>
               </View>
 
-              <Text style={styles.editLabel}>Players Needed</Text>
-              <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" maxLength={2} />
+              <Text style={styles.editLabel}>Players Needed ({MIN_GROUP_PLAYERS}-{MAX_GROUP_PLAYERS})</Text>
+              <TextInput style={styles.editInput} value={editTarget} onChangeText={setEditTarget} keyboardType="numeric" maxLength={1} />
 
               {group.format === 'Commander' && (
                 <>
