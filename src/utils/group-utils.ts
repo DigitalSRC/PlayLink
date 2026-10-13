@@ -152,6 +152,30 @@ export const MAX_ROUNDS_PER_GROUP = 10;
 export const MAX_GROUP_NAME_LENGTH = 80;
 export const MAX_GROUP_LOCATION_LENGTH = 200;
 
+/** The fewest and most players a group can ask for. The server enforces the same numbers
+ * (groups_guard_input and group_results_guard_round in 20261013120000); change both together.
+ * The top is low on purpose: the winner's points grow with the table, so a table of 50
+ * throwaway accounts paid 500 points a round. */
+export const MIN_GROUP_PLAYERS = 2;
+export const MAX_GROUP_PLAYERS = 8;
+
+/**
+ * Turns whatever was typed into "Players Needed" into a table size the server accepts. The
+ * field is free text, so it can hold nothing, letters, a fraction, or a number far too large;
+ * the server refuses anything outside the limits, and this keeps the app from sending it.
+ * Parameters: value (the typed text or a number), fallback (the size to use when the value is
+ * not a number - the form's default, or the group's current size).
+ * Returns: a whole number from MIN_GROUP_PLAYERS to MAX_GROUP_PLAYERS.
+ * Edge cases: blank, non-numeric, zero, and negative values give the fallback, itself held to
+ * the limits; a fraction is rounded down; a number above the limit gives the limit.
+ */
+export const clampGroupSize = (value: string | number | undefined, fallback: number): number => {
+  const parsed = Math.floor(Number(value));
+  const size = Number.isFinite(parsed) && parsed > 0 ? parsed : Math.floor(fallback);
+  const safe = Number.isFinite(size) ? size : MIN_GROUP_PLAYERS;
+  return Math.min(MAX_GROUP_PLAYERS, Math.max(MIN_GROUP_PLAYERS, safe));
+};
+
 /**
  * Says why a round cannot be reported, before the host is asked to confirm it. The server
  * refuses the same things; checking here means the host is told straight away, in the app's
@@ -160,8 +184,9 @@ export const MAX_GROUP_LOCATION_LENGTH = 200;
  * many players are in the round being reported).
  * Returns: a sentence to show the host, or null when the round can be reported.
  * Edge cases: a group that has used all its rounds is reported first, since adding players
- * would not help; the server also limits how many rounds a player can be in per day, which
- * cannot be known here and is reported by the server when it applies.
+ * would not help; a round with more players than a group can hold (only possible in a group
+ * posted before the size limit) is refused too; the server also limits how many rounds a player
+ * can be in per day, which cannot be known here and is reported by the server when it applies.
  */
 export const roundReportBlocker = (roundsPlayed: number, playerCount: number): string | null => {
   if (roundsPlayed >= MAX_ROUNDS_PER_GROUP) {
@@ -169,6 +194,9 @@ export const roundReportBlocker = (roundsPlayed: number, playerCount: number): s
   }
   if (playerCount < MIN_ROUND_PLAYERS) {
     return `A round needs at least ${MIN_ROUND_PLAYERS} players.`;
+  }
+  if (playerCount > MAX_GROUP_PLAYERS) {
+    return `A round can have at most ${MAX_GROUP_PLAYERS} players.`;
   }
   return null;
 };
