@@ -91,16 +91,72 @@ export const signInWithApple = async (): Promise<void> => {
 /**
  * Creates a new account with an email and password. This Supabase project has email
  * confirmation disabled, so a successful call establishes a session immediately — there's no
- * "check your email" step.
+ * "check your email" step. The player's confirmation that they are an adult and accept the
+ * terms is recorded in the account's own metadata, with the time, as a record of consent.
  * Parameters: email (the new account's email), password (plain text; Supabase's minimum length
  * requirement is enforced server-side; see MIN_PASSWORD_LENGTH).
  * Returns: a promise that resolves once the account is created and signed in; as with the OAuth
  * flows, the app's onAuthStateChange listener picks up the new session automatically.
  * Edge cases: throws if the email is already registered, if the password doesn't meet
- * Supabase's minimum length requirement, or on any other Supabase/network error.
+ * Supabase's minimum length requirement, or on any other Supabase/network error. The sign-up
+ * screen only calls this once the age and terms box is ticked.
  */
 export const signUpWithEmail = async (email: string, password: string): Promise<void> => {
-  const { error } = await supabase.auth.signUp({ email, password });
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { adult_and_terms_accepted_at: new Date().toISOString() } },
+  });
+  if (error) throw error;
+};
+
+/** The route a password-reset email links back to (src/app/reset-password.tsx). */
+export const PASSWORD_RESET_PATH = 'reset-password';
+
+/**
+ * Emails a link for choosing a new password. The link opens the app's reset-password screen:
+ * `playlink://reset-password` on a phone, the same page of the website on the web build. The
+ * address must be listed under Authentication → URL Configuration → Redirect URLs in Supabase,
+ * or Supabase sends the player to the Site URL instead.
+ * Parameters: email (the address the player typed).
+ * Returns: a promise that resolves once Supabase has accepted the request.
+ * Edge cases: Supabase answers the same way whether or not the email has an account, so the
+ * caller must too, or the form would tell anyone which emails are registered. The link only
+ * works on the device (and, on the web, the browser) that asked for it, because the sign-in
+ * flow is PKCE: the secret half is stored here. Throws on a network failure or when Supabase
+ * refuses (too many requests in a short time).
+ */
+export const requestPasswordReset = async (email: string): Promise<void> => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: Linking.createURL(PASSWORD_RESET_PATH),
+  });
+  if (error) throw error;
+};
+
+/**
+ * Signs the player in with the code from a password-reset link, so they can choose a new
+ * password. Must run on the device that asked for the link (see requestPasswordReset).
+ * Parameters: code (the `code` parameter the link arrived with).
+ * Returns: a promise that resolves once the player is signed in.
+ * Edge cases: throws on an expired or already-used code, and on a link opened on another device
+ * (no matching secret is stored here); the caller tells the player to ask for a new link.
+ */
+export const startPasswordReset = async (code: string): Promise<void> => {
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) throw error;
+};
+
+/**
+ * Sets a new password for the player signed in through a reset link. Unlike updatePassword it
+ * does not ask for the current password: the reset link proved they own the email.
+ * Parameters: newPassword (plain text; at least MIN_PASSWORD_LENGTH, enforced by the server).
+ * Returns: a promise that resolves once the password is changed.
+ * Edge cases: throws when there is no session (the link was never opened) or the password is
+ * too short, the same as the old one, or found in a leaked-password list (when the project has
+ * that check on).
+ */
+export const setNewPassword = async (newPassword: string): Promise<void> => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw error;
 };
 
@@ -123,37 +179,64 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 export const WRONG_CURRENT_PASSWORD = 'Your current password is not right.';
 
 /**
- * Changes the password for the currently signed-in user, after checking they know the current
- * one. Supabase's updateUser needs only a live session, so without this check anyone holding an
- * unlocked phone (or a copied session) could set a new password and keep the account for good.
- * The check is a fresh sign-in with the account's own email and the password typed.
- * Parameters: currentPassword (what the player typed as their existing password), newPassword
- * (plain text; Supabase's minimum length requirement is enforced server-side; see
- * MIN_PASSWORD_LENGTH).
- * Returns: a promise that resolves once the password has been updated.
- * Edge cases: throws WRONG_CURRENT_PASSWORD when the current password does not match, and
- * changes nothing; throws "Please sign in again." when there is no session or the account has
- * no email (an OAuth-only account has no password to check); any other failure of the check (no
- * network, too many attempts) is rethrown as it is, never reported as a wrong password; throws
- * if the new password doesn't meet Supabase's minimum length. The check signs the same account
- * in again, so the session is replaced by a new one for the same player.
+ * Checks that the signed-in player knows their own password, by signing the same account in
+ * again with the account's email and the password typed. Used before anything a borrowed
+ * unlocked phone (or a copied session) must not be able to do: changing the password, deleting
+ * the account. The fresh sign-in also refreshes the token's record of when the password was
+ * last entered, which the server's delete_my_account checks for itself.
+ * Parameters: password (what the player typed as their current password).
+ * Returns: a promise that resolves once the password is confirmed.
+ * Edge cases: throws WRONG_CURRENT_PASSWORD when the password does not match; throws "Please
+ * sign in again." when there is no session or the account has no email (an OAuth-only account
+ * has no password to check); any other failure (no network, too many attempts) is rethrown as it
+ * is, never reported as a wrong password. The session is replaced by a new one for the same player.
  */
-export const updatePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+const confirmCurrentPassword = async (password: string): Promise<void> => {
   const { data, error: userError } = await supabase.auth.getUser();
   const email = data?.user?.email;
   if (userError || !email) throw new Error('Please sign in again.');
 
-  const { error: checkError } = await supabase.auth.signInWithPassword({
-    email,
-    password: currentPassword,
-  });
+  const { error: checkError } = await supabase.auth.signInWithPassword({ email, password });
   if (checkError) {
     if (/invalid login credentials/i.test(checkError.message)) {
       throw new Error(WRONG_CURRENT_PASSWORD);
     }
     throw checkError;
   }
+};
 
+/**
+ * Changes the password for the currently signed-in user, after checking they know the current
+ * one. Supabase's updateUser needs only a live session, so without this check anyone holding an
+ * unlocked phone (or a copied session) could set a new password and keep the account for good.
+ * Parameters: currentPassword (what the player typed as their existing password), newPassword
+ * (plain text; Supabase's minimum length requirement is enforced server-side; see
+ * MIN_PASSWORD_LENGTH).
+ * Returns: a promise that resolves once the password has been updated.
+ * Edge cases: every failure of the check is as in confirmCurrentPassword, and changes nothing;
+ * throws if the new password doesn't meet Supabase's minimum length.
+ */
+export const updatePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  await confirmCurrentPassword(currentPassword);
   const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+};
+
+/**
+ * Deletes the signed-in player's account for good: their login, profile, purchases, and seats.
+ * The groups they were in carry on (the host role passes to another player, and a group left
+ * empty is removed), and past rounds keep their results. The password is checked here first,
+ * and the server's delete_my_account refuses on its own unless the password was entered in the
+ * last 10 minutes, so a session alone can never delete an account.
+ * Parameters: password (what the player typed as their current password).
+ * Returns: a promise that resolves once the account is gone. The caller should then sign out
+ * locally, since the session now belongs to nobody.
+ * Edge cases: every failure of the password check is as in confirmCurrentPassword, and deletes
+ * nothing; a refusal from the server (a group whose round can still be contested would be
+ * removed by leaving it) is thrown with its plain-English message and deletes nothing.
+ */
+export const deleteAccount = async (password: string): Promise<void> => {
+  await confirmCurrentPassword(password);
+  const { error } = await supabase.rpc('delete_my_account');
   if (error) throw error;
 };

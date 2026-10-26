@@ -328,7 +328,8 @@ export interface GroupResult {
   id: string;
   groupId: string;
   roundNumber: number;
-  submittedBy: string;
+  /** The host who reported the round, or null once that player has deleted their account. */
+  submittedBy: string | null;
   submittedAt: number;
   /** 'pending' while players can still agree with or contest the report (nobody has been paid
    * yet); 'finalized' once the votes are counted and the points paid. */
@@ -346,7 +347,7 @@ interface GroupResultRow {
   id: string;
   group_id: string;
   round_number: number;
-  submitted_by: string;
+  submitted_by: string | null;
   submitted_at: string;
   status?: string | null;
   dispute_window_ends_at?: string | null;

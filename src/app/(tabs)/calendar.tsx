@@ -323,6 +323,10 @@ export default function CalendarScreen() {
           {refreshNote !== null && (
             <Text style={[styles.refreshNote, { color: colors.textBody }]}>{refreshNote}</Text>
           )}
+          {/* Events come from stores' own public listings, which PlayLink neither runs nor checks. */}
+          <Text style={[styles.sourceNote, { color: colors.textSecondary }]}>
+            Events come from stores’ public listings and may be out of date. Check with the store before you go.
+          </Text>
 
           <Text style={[styles.showing, { color: colors.textPrimary }]}>Showing {format} events</Text>
           {!COMMANDER_ONLY && formats.length > 1 && (
@@ -572,6 +576,11 @@ const styles = StyleSheet.create({
   updatedText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  sourceNote: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: 8,
   },
   refreshNote: {
     fontSize: 12,

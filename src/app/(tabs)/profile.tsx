@@ -1,8 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -31,11 +33,12 @@ import {
   NoGoRule,
   UserProfile,
 } from '../../data/types';
+import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../data/legal';
 import { ShopItem } from '../../data/shop';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
-import { MIN_PASSWORD_LENGTH, updatePassword } from '../../lib/auth-api';
+import { deleteAccount, MIN_PASSWORD_LENGTH, updatePassword } from '../../lib/auth-api';
 import { playerErrorMessage } from '../../utils/error-utils';
 import { formatBrackets } from '../../utils/group-utils';
 import { chosenRivalFirst } from '../../utils/rival-utils';
@@ -178,6 +181,11 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
   /**
    * Saves whatever the player has typed into the name and location fields, then goes back to
    * showing the shared profile. It runs when a field loses focus, when Done is pressed on the
@@ -286,6 +294,53 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
     } finally {
       setIsChangingPassword(false);
     }
+  };
+
+  /**
+   * Deletes the player's account for good once they confirm, then signs out and returns to the
+   * sign-in screen. The password typed in the form is checked first, and the server checks again
+   * that it was entered just now, so a session alone cannot delete an account.
+   * Parameters: none; reads the typed password from state.
+   * Returns: a promise that settles once the account is deleted or the attempt failed.
+   * Edge cases: an empty password is refused before anything is sent; a wrong password or a
+   * refusal from the server (a group whose round can still be contested) is shown under the form
+   * and deletes nothing; a second tap while one attempt is running is ignored.
+   */
+  const deleteMyAccount = async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteAccount(deletePassword);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      clearCurrentUser();
+      router.replace('/sign-in');
+      showToast('Account deleted', 'Your account and everything in it are gone.');
+    } catch (err) {
+      setDeleteError(playerErrorMessage(err, 'Could not delete your account. Please try again.'));
+      setIsDeleting(false);
+    }
+  };
+
+  /**
+   * Asks the player to confirm deleting their account, after checking a password was typed.
+   * Parameters: none.
+   * Returns: void; deletes only if the player confirms.
+   * Edge cases: with no password typed, says so under the form instead of asking.
+   */
+  const handleDeleteAccount = () => {
+    setDeleteError('');
+    if (deletePassword.length === 0) {
+      setDeleteError('Enter your password to delete your account.');
+      return;
+    }
+    showDialog(
+      'Delete your account?',
+      'Your profile, points, purchases, and seats in groups are deleted for good. This can’t be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Account', style: 'destructive', onPress: deleteMyAccount },
+      ]
+    );
   };
 
   const toggleFormat = (game: GameType, fmt: string) => {
@@ -693,6 +748,71 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
           )}
         </View>
 
+        <View style={[styles.settingsCard, { backgroundColor: card, borderColor: border }]}>
+          <Pressable
+            style={styles.passwordToggleRow}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setDeleteError('');
+              setShowDeleteForm((v) => !v);
+            }}
+            accessibilityRole="button"
+            testID="profile-delete-account-toggle"
+          >
+            <Text style={[styles.settingsLabel, { color: textSec, marginBottom: 0 }]}>Delete Account</Text>
+            <Text style={[styles.passwordToggleArrow, { color: textSec }]}>{showDeleteForm ? '−' : '+'}</Text>
+          </Pressable>
+
+          {showDeleteForm && (
+            <View style={styles.passwordForm}>
+              <Text style={[styles.sectionHint, { color: textSec }]}>
+                Deletes your profile, points, purchases, and seats in groups for good. Groups you host
+                pass to another player. Enter your password to confirm.
+              </Text>
+              <TextInput
+                style={[styles.passwordInput, { color: textPrimary, borderColor: border }]}
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                placeholder="Password"
+                placeholderTextColor={textSec}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isDeleting}
+                testID="profile-delete-account-password"
+              />
+              {!!deleteError && <Text style={styles.passwordErrorText}>{deleteError}</Text>}
+              <Pressable
+                style={[styles.deleteAccountBtn, isDeleting && styles.passwordSubmitBtnDisabled]}
+                onPress={handleDeleteAccount}
+                disabled={isDeleting}
+                accessibilityRole="button"
+                testID="profile-delete-account-submit"
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.passwordSubmitText}>Delete My Account</Text>
+                )}
+              </Pressable>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.legalRow}>
+          <Pressable onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[styles.legalLink, { color: colors.accentText }]}>Privacy Policy</Text>
+          </Pressable>
+          <Text style={[styles.legalDot, { color: textSec }]}>·</Text>
+          <Pressable onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[styles.legalLink, { color: colors.accentText }]}>Terms</Text>
+          </Pressable>
+          <Text style={[styles.legalDot, { color: textSec }]}>·</Text>
+          <Pressable onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[styles.legalLink, { color: colors.accentText }]}>Contact Support</Text>
+          </Pressable>
+        </View>
+
         {/* Dev Tools entry point removed along with src/app/dev-tools.tsx — see
             DEV_TOOLS_ENABLED above and CLAUDE.md git workflow. */}
       </View>
@@ -1035,6 +1155,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: '#007AFF', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
   },
   passwordSubmitBtnDisabled: { opacity: 0.6 },
+  legalRow: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center',
+    gap: 8, marginTop: 4,
+  },
+  legalLink: { fontSize: 13, fontWeight: '600' },
+  legalDot: { fontSize: 13 },
+  deleteAccountBtn: {
+    backgroundColor: '#C0392B', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+  },
   passwordSubmitText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
   themeBtnTextActive: { color: '#007AFF' },
   themeBtnTextActiveLight: { color: '#8B6000' },

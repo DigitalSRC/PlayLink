@@ -27,6 +27,8 @@ const baseUser: MockUser = {
   pointBalance: 40,
 };
 let mockCurrentUser: MockUser | null = { ...baseUser };
+const mockClearCurrentUser = jest.fn();
+const mockReplace = jest.fn();
 // Pull-to-refresh reaches for React Query and global context; this screen test renders without either.
 jest.mock("../../hooks/useRefresh", () => ({
   usePullToRefresh: () => ({ refreshing: false, onRefresh: jest.fn() }),
@@ -39,7 +41,7 @@ jest.mock("../../context/AppContext", () => ({
     rivals: [],
     chosenRivalId: null,
     mostPlayedAgainst: null,
-    clearCurrentUser: jest.fn(),
+    clearCurrentUser: mockClearCurrentUser,
     setChosenRivalId: jest.fn(),
     theme: "dark",
     setTheme: jest.fn(),
@@ -49,7 +51,7 @@ jest.mock("../../context/AppContext", () => ({
 // The tab losing focus is simulated by running the cleanup the screen registered.
 let mockLeaveTab: (() => void) | undefined;
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
   useFocusEffect: (effect: () => (() => void) | void) => {
     mockLeaveTab = effect() ?? undefined;
   },
@@ -79,9 +81,20 @@ jest.mock("../../hooks/useShopQueries", () => ({
   useEquipShopItemMutation: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 const mockUpdatePassword = jest.fn<(current: string, next: string) => Promise<void>>();
+const mockDeleteAccount = jest.fn<(password: string) => Promise<void>>();
 jest.mock("../../lib/auth-api", () => ({
   MIN_PASSWORD_LENGTH: 10,
   updatePassword: (current: string, next: string) => mockUpdatePassword(current, next),
+  deleteAccount: (password: string) => mockDeleteAccount(password),
+}));
+
+type DialogButton = { text: string; onPress?: () => void | Promise<void> };
+const mockShowDialog = jest.fn<(title: string, message?: string, buttons?: DialogButton[]) => void>();
+jest.mock("../../components/AppDialog", () => ({
+  showDialog: (title: string, message?: string, buttons?: DialogButton[]) => mockShowDialog(title, message, buttons),
+}));
+jest.mock("expo-web-browser", () => ({
+  openBrowserAsync: jest.fn(),
 }));
 
 // Leaving the tab saves, which updates the screen, so it has to happen inside act().
@@ -360,6 +373,90 @@ describe("ProfileScreen change-password form", () => {
     });
 
     expect(getByText("Could not change password. Please try again.")).toBeTruthy();
+    expect(queryByText(/permission denied/)).toBeNull();
+  });
+});
+
+describe("ProfileScreen delete-account form", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCurrentUser = { ...baseUser };
+    mockDeleteAccount.mockResolvedValue(undefined);
+  });
+
+  const openForm = async () => {
+    const screen = await render(<ProfileScreen />);
+    await fireEvent.press(screen.getByTestId("profile-delete-account-toggle"));
+    return screen;
+  };
+
+  /** Presses the button with this label on the most recent pop-up. */
+  const pressDialogButton = (label: string) =>
+    act(async () => {
+      const buttons = mockShowDialog.mock.calls.at(-1)?.[2] ?? [];
+      await buttons.find((b) => b.text === label)?.onPress?.();
+    });
+
+  it("asks for the password before anything else", async () => {
+    const { getByTestId, getByText } = await openForm();
+
+    await fireEvent.press(getByTestId("profile-delete-account-submit"));
+
+    expect(getByText("Enter your password to delete your account.")).toBeTruthy();
+    expect(mockShowDialog).not.toHaveBeenCalled();
+    expect(mockDeleteAccount).not.toHaveBeenCalled();
+  });
+
+  it("asks the player to confirm, and deletes nothing on Cancel", async () => {
+    const { getByTestId } = await openForm();
+
+    await fireEvent.changeText(getByTestId("profile-delete-account-password"), "my-password-1");
+    await fireEvent.press(getByTestId("profile-delete-account-submit"));
+    expect(mockShowDialog).toHaveBeenCalledWith("Delete your account?", expect.stringMatching(/can’t be undone/), expect.any(Array));
+
+    await pressDialogButton("Cancel");
+    expect(mockDeleteAccount).not.toHaveBeenCalled();
+    expect(mockClearCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it("deletes with the typed password, signs out, and goes to sign-in", async () => {
+    const { getByTestId } = await openForm();
+
+    await fireEvent.changeText(getByTestId("profile-delete-account-password"), "my-password-1");
+    await fireEvent.press(getByTestId("profile-delete-account-submit"));
+    await pressDialogButton("Delete Account");
+
+    expect(mockDeleteAccount).toHaveBeenCalledWith("my-password-1");
+    expect(mockClearCurrentUser).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/sign-in");
+    expect(mockShowToast).toHaveBeenCalledWith("Account deleted", expect.any(String));
+  });
+
+  it("keeps the player signed in and says why when the server refuses", async () => {
+    mockDeleteAccount.mockRejectedValue({
+      code: "P0001",
+      message: "A round in this group can still be contested. Try again in a few minutes, once it is final.",
+    });
+    const { getByTestId, getByText } = await openForm();
+
+    await fireEvent.changeText(getByTestId("profile-delete-account-password"), "my-password-1");
+    await fireEvent.press(getByTestId("profile-delete-account-submit"));
+    await pressDialogButton("Delete Account");
+
+    expect(getByText(/can still be contested/)).toBeTruthy();
+    expect(mockClearCurrentUser).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("does not show a database error to the player", async () => {
+    mockDeleteAccount.mockRejectedValue({ code: "42501", message: "permission denied for function delete_my_account" });
+    const { getByTestId, getByText, queryByText } = await openForm();
+
+    await fireEvent.changeText(getByTestId("profile-delete-account-password"), "my-password-1");
+    await fireEvent.press(getByTestId("profile-delete-account-submit"));
+    await pressDialogButton("Delete Account");
+
+    expect(getByText("Could not delete your account. Please try again.")).toBeTruthy();
     expect(queryByText(/permission denied/)).toBeNull();
   });
 });
