@@ -4,6 +4,7 @@ import {
   createGroup,
   CreateGroupDraft,
   deleteGroup,
+  fetchGroupBallots,
   fetchGroupById,
   fetchGroupResults,
   fetchGroups,
@@ -13,6 +14,7 @@ import {
   submitGroupResult,
   updateGroup,
   UpdateGroupDraft,
+  voteGroupResult,
 } from '../lib/group-api';
 import { PlayerProfile } from '../data/groups';
 import { PlacementInput } from '../utils/scoring-utils';
@@ -20,13 +22,15 @@ import { PlacementInput } from '../utils/scoring-utils';
 /**
  * Query key factory for group data, so every call site shares the same cache keys.
  * Parameters: none beyond the key builders' own arguments.
- * Returns: an object with `list()` and `detail(groupId)`/`results(groupId)` key builders.
+ * Returns: an object with `list()` and `detail(groupId)`/`results(groupId)`/`ballots(groupId)`
+ * key builders.
  * Edge cases: none.
  */
 export const groupKeys = {
   list: () => ['groups'] as const,
   detail: (groupId: string | undefined) => ['group', groupId] as const,
   results: (groupId: string | undefined) => ['group-results', groupId] as const,
+  ballots: (groupId: string | undefined) => ['group-ballots', groupId] as const,
 };
 
 /**
@@ -63,6 +67,22 @@ export const useGroupResultsQuery = (groupId: string | undefined) =>
     queryKey: groupKeys.results(groupId),
     queryFn: () => fetchGroupResults(groupId as string),
     enabled: !!groupId,
+  });
+
+/**
+ * Fetches and caches the votes cast on a group's rounds.
+ * Parameters: groupId.
+ * Returns: the standard React Query result object; `data` is a ResultBallot[].
+ * Edge cases: disabled while groupId is undefined; a failed request is not retried and leaves
+ * `data` undefined, so callers default it to an empty list - which is also what happens
+ * against a server that has no contest window yet.
+ */
+export const useGroupBallotsQuery = (groupId: string | undefined) =>
+  useQuery({
+    queryKey: groupKeys.ballots(groupId),
+    queryFn: () => fetchGroupBallots(groupId as string),
+    enabled: !!groupId,
+    retry: false,
   });
 
 /**
@@ -202,10 +222,10 @@ export const useConfirmGroupMutation = () => {
 };
 
 /**
- * Reports a round. The server records it as final and pays every player in the same step, so on
- * success this refreshes everything the round changed: the group's results, the group itself
- * (its rounds-played count), the group list, and the submitter's own profile (their points).
- * Other players' apps pick up their new points the next time they load the group or their profile.
+ * Reports a round. The server records it as pending and opens the contest window, so on success
+ * this refreshes what the report changed: the group's results and votes, the group itself (its
+ * rounds-played count), the group list, and the submitter's own profile (a round with nobody
+ * else in it is paid at once).
  * Parameters: none - call sites pass `{ groupId, roundNumber, submittedBy, placements }`.
  * Returns: a React Query mutation object.
  * Edge cases: on failure nothing is invalidated, since nothing was recorded.
@@ -226,9 +246,37 @@ export const useSubmitGroupResultMutation = () => {
     }) => submitGroupResult(groupId, roundNumber, submittedBy, placements),
     onSuccess: (_data, { groupId, submittedBy }) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.results(groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.ballots(groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.list() });
       queryClient.invalidateQueries({ queryKey: ['profile', submittedBy] });
+    },
+  });
+};
+
+/**
+ * Casts the signed-in player's vote on a pending round - agreeing with the report, or contesting
+ * it with their own order - then refreshes the round's votes and results. If the vote was the
+ * last one needed the round is paid in the same step, so profiles are refreshed too.
+ * Parameters: none - call sites pass `{ groupId, resultId, placements }` (placements null to agree).
+ * Returns: a React Query mutation object; its result is 'recorded' or 'settled'.
+ * Edge cases: on failure nothing is invalidated, since nothing was recorded.
+ */
+export const useVoteGroupResultMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      resultId,
+      placements,
+    }: {
+      groupId: string;
+      resultId: string;
+      placements: PlacementInput[] | null;
+    }) => voteGroupResult(resultId, placements),
+    onSuccess: (outcome, { groupId }) => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.ballots(groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.results(groupId) });
+      if (outcome === 'settled') queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
   });
 };

@@ -22,6 +22,7 @@ interface ProfileRow {
   card_border?: string | null;
   created_at?: string;
   rival_ids: string[];
+  chosen_rival_id?: string | null;
   last_rival_refresh: string | null;
 }
 
@@ -72,6 +73,7 @@ export const mapRowToProfile = (row: ProfileRow): UserProfile => ({
   cardBorder: row.card_border ?? undefined,
   createdAt: row.created_at ? new Date(row.created_at).getTime() : undefined,
   rivalIds: row.rival_ids,
+  chosenRivalId: row.chosen_rival_id ?? undefined,
   lastRivalRefresh: row.last_rival_refresh ?? undefined,
 });
 
@@ -103,6 +105,7 @@ export const mapProfileToRow = (
   if ('points' in profile) row.points = profile.points;
   if ('monthlyPoints' in profile) row.monthly_points = profile.monthlyPoints;
   if ('rivalIds' in profile) row.rival_ids = profile.rivalIds;
+  if ('chosenRivalId' in profile) row.chosen_rival_id = profile.chosenRivalId ?? null;
   return row;
 };
 
@@ -218,6 +221,30 @@ export const fetchLeaderboard = async (
     .limit(limit);
   if (excludeUserId) query = query.neq('id', excludeUserId);
   const { data, error } = await query;
+  if (error) throw error;
+  return (data as ProfileRow[]).map(mapRowToProfile);
+};
+
+/**
+ * Fetches the players who have picked the given player as their Rival, so the app can tell
+ * that player about it - on the leaderboard, in a group's roster, and on Home - even when the
+ * player is not rivaling them back.
+ * A pick only counts while the picked player is still one of the picker's rivals: the daily
+ * refresh can drop them from the list without clearing the saved pick.
+ * Parameters: userId (the player being rivaled), limit (row cap, default 50).
+ * Returns: the profiles of the players rivaling them, highest Score first.
+ * Edge cases: returns an empty array when nobody has; throws on a Postgres/network error,
+ * including a server that does not have the chosen_rival_id column yet - callers treat a
+ * failure as "nobody" (see useRivaledByQuery).
+ */
+export const fetchRivaledBy = async (userId: string, limit: number = 50): Promise<UserProfile[]> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('chosen_rival_id', userId)
+    .contains('rival_ids', [userId])
+    .order('monthly_points', { ascending: false })
+    .limit(limit);
   if (error) throw error;
   return (data as ProfileRow[]).map(mapRowToProfile);
 };

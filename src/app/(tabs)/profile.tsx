@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { showDialog } from '../../components/AppDialog';
+import { KeyboardAvoidingScreen } from '../../components/KeyboardAvoidingScreen';
 import { RefreshableScrollView } from '../../components/RefreshableScrollView';
 import { usePullToRefresh } from '../../hooks/useRefresh';
 import { showToast } from '../../components/AppToast';
@@ -37,6 +38,7 @@ import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } f
 import { MIN_PASSWORD_LENGTH, updatePassword } from '../../lib/auth-api';
 import { playerErrorMessage } from '../../utils/error-utils';
 import { formatBrackets } from '../../utils/group-utils';
+import { chosenRivalFirst } from '../../utils/rival-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
 const ALL_GAMES: GameType[] = SELECTABLE_GAMES;
@@ -329,8 +331,9 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
     showToast('Commander settings saved');
   };
 
+  // The picked Rival is listed first, so choosing a new one moves them to the top.
   const allRivalsInSection = [
-    ...rivals,
+    ...chosenRivalFirst(rivals, chosenRivalId),
     ...(mostPlayedAgainst && !rivals.some((r) => r.id === mostPlayedAgainst.id) ? [mostPlayedAgainst] : []),
   ];
 
@@ -338,9 +341,11 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const { refreshing, onRefresh } = usePullToRefresh();
 
   return (
+    <KeyboardAvoidingScreen style={{ backgroundColor: bg }}>
     <RefreshableScrollView
       style={[styles.container, { backgroundColor: bg }]}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
@@ -841,6 +846,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
         </Pressable>
       </View>
     </RefreshableScrollView>
+    </KeyboardAvoidingScreen>
   );
 }
 

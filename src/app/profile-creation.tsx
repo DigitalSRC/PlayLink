@@ -34,6 +34,7 @@ import { useCreateProfileMutation } from "../hooks/useProfileQueries";
 import { fetchRivalCandidates, UsernameTakenError, updateProfile } from "../lib/profile-api";
 import { playerErrorMessage } from "../utils/error-utils";
 import { findRivals } from "../utils/rival-utils";
+import { KeyboardAvoidingScreen } from "../components/KeyboardAvoidingScreen";
 
 // Ordered labels for the four-step onboarding flow displayed in the progress indicator.
 // Index corresponds to the currentStep state value; length determines total step count for the progress bar.
@@ -367,8 +368,9 @@ export default function ProfileCreation() {
     </View>
   );
 
+  // A scroll view, so the keyboard can push the lower fields (location) into view on a small phone.
   const renderIdentity = () => (
-    <View>
+    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <Text style={styles.stepTitle}>Create Your Profile</Text>
       <Text style={styles.stepSubtitle}>Who are you at the table?</Text>
 
@@ -412,7 +414,7 @@ export default function ProfileCreation() {
         autoCorrect={false}
         maxLength={100}
       />
-    </View>
+    </ScrollView>
   );
 
   const renderGameSelection = () => (
@@ -636,7 +638,7 @@ export default function ProfileCreation() {
     );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingScreen style={styles.container}>
       {!!welcomeBackEmail && (
         <View style={styles.welcomeBackBanner}>
           <Text style={styles.welcomeBackText}>Welcome back, {welcomeBackEmail}!</Text>
@@ -719,7 +721,7 @@ export default function ProfileCreation() {
           </Pressable>
         )}
       </View>
-    </View>
+    </KeyboardAvoidingScreen>
   );
 }
 

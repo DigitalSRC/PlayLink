@@ -6,9 +6,11 @@ import { useRouter } from 'expo-router';
 import { useQueries } from '@tanstack/react-query';
 import PlayerName from '../../components/PlayerName';
 import { useApp } from '../../context/AppContext';
+import { useRivaledByQuery } from '../../hooks/useProfileQueries';
 import { COMMANDER_ONLY, GAME_COLOR, GAME_EMOJI, GAME_LABELS, GameType, UserProfile, visibleGames } from '../../data/types';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 import { fetchLeaderboard } from '../../lib/profile-api';
+import { rankByScore, rankLabel } from '../../utils/leaderboard-utils';
 
 const PAGE_WIDTH = Dimensions.get('window').width - 40;
 
@@ -66,6 +68,8 @@ const buildSelfRow = (user: UserProfile): LeaderRow => ({
 export default function StatsScreen() {
   const router = useRouter();
   const { currentUser } = useApp();
+  // Players who picked this player as their Rival; their rows are tagged so the player knows.
+  const { data: rivaledBy = [] } = useRivaledByQuery(currentUser?.id);
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
@@ -228,8 +232,11 @@ export default function StatsScreen() {
                 title: p.title,
                 nameColor: p.nameColor,
               }));
-              const rows = [selfRow, ...others].sort((a, b) => b.monthlyPoints - a.monthlyPoints);
-              const myRank = rows.findIndex((r) => r.isMe) + 1;
+              // Players level on Score share a place (see rankByScore).
+              const rows = rankByScore([selfRow, ...others]);
+              const myRow = rows.find((r) => r.isMe);
+              const myRank = myRow?.rank ?? 1;
+              const myPosition = rows.findIndex((r) => r.isMe) + 1;
               const isLoading = leaderboardQueries[i]?.isLoading;
 
               return (
@@ -237,7 +244,7 @@ export default function StatsScreen() {
                   <View style={styles.rankCard}>
                     <Text style={styles.rankLabel}>{GAME_LABELS[g].toUpperCase()} RANK</Text>
                     <Text style={styles.rankNum}>#{myRank}</Text>
-                    <Text style={styles.rankSub}>out of {rows.length} players</Text>
+                    <Text style={styles.rankSub}>{myRow?.tied ? 'tied · ' : ''}out of {rows.length} players</Text>
                     <View style={styles.monthlyPtsBadge}>
                       <Text style={styles.monthlyPtsLabel}>SCORE THIS MONTH</Text>
                       <Text style={styles.monthlyPtsVal}>{currentUser.monthlyPoints}</Text>
@@ -248,7 +255,7 @@ export default function StatsScreen() {
                     <Text style={[styles.sectionHint, { color: colors.textMuted }]}>Loading rankings…</Text>
                   )}
 
-                  {rows.slice(0, 10).map((p, idx) => (
+                  {rows.slice(0, 10).map((p) => (
                     <Pressable
                       key={p.username}
                       style={[styles.leaderRow, { backgroundColor: colors.card, borderColor: colors.border }, p.isMe && styles.leaderRowMe]}
@@ -258,8 +265,8 @@ export default function StatsScreen() {
                         }
                       }}
                     >
-                      <Text style={[styles.leaderRank, { color: colors.textSecondary }, idx < 3 && styles.leaderRankTop]}>
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                      <Text style={[styles.leaderRank, { color: colors.textSecondary }, p.rank <= 3 && styles.leaderRankTop]}>
+                        {rankLabel(p.rank)}
                       </Text>
                       <View style={styles.leaderNameCol}>
                         <View style={styles.leaderNameStack}>
@@ -270,12 +277,16 @@ export default function StatsScreen() {
                           />
                         </View>
                         {p.isMe && <Text style={styles.leaderYou}>YOU</Text>}
+                        {!p.isMe && rivaledBy.some((r) => r.id === p.id) && (
+                          <Text style={styles.leaderRivalsYou}>RIVALS YOU</Text>
+                        )}
+                        {p.tied && <Text style={[styles.leaderTied, { color: colors.textSecondary, borderColor: colors.border }]}>TIED</Text>}
                         <Text style={[styles.leaderRecord, { color: colors.textMuted }]}>{p.wins}-{p.losses}-{p.draws}</Text>
                       </View>
                       <Text style={[styles.leaderPts, { color: colors.textSecondary }, p.isMe && styles.leaderPtsMe]}>{p.monthlyPoints}</Text>
                     </Pressable>
                   ))}
-                  {myRank > 10 && (
+                  {myPosition > 10 && (
                     <View style={[styles.leaderRow, { backgroundColor: colors.card, borderColor: colors.border }, styles.leaderRowMe, { marginTop: 8 }]}>
                       <Text style={[styles.leaderRank, { color: colors.textSecondary }]}>#{myRank}</Text>
                       <View style={styles.leaderNameCol}>
@@ -287,6 +298,7 @@ export default function StatsScreen() {
                           />
                         </View>
                         <Text style={styles.leaderYou}>YOU</Text>
+                        {myRow?.tied && <Text style={[styles.leaderTied, { color: colors.textSecondary, borderColor: colors.border }]}>TIED</Text>}
                         <Text style={[styles.leaderRecord, { color: colors.textMuted }]}>
                           {currentUser.wins}-{currentUser.losses}-{currentUser.draws}
                         </Text>
@@ -387,6 +399,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   leaderName: { fontSize: 14, fontWeight: '700' },
   leaderNameMe: { color: '#007AFF' },
   leaderYou: { fontSize: 9, fontWeight: '800', color: '#007AFF', backgroundColor: c.accentBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  leaderRivalsYou: { fontSize: 9, fontWeight: '800', color: c.dangerOnBg, backgroundColor: c.dangerBg, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  leaderTied: { fontSize: 9, fontWeight: '800', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   leaderRecord: { fontSize: 10, fontWeight: '600' },
   leaderPts: { fontSize: 13, fontWeight: '700' },
   leaderPtsMe: { color: '#007AFF' },

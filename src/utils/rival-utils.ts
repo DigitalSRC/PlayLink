@@ -80,6 +80,64 @@ export const findRivals = (
   return ranked;
 };
 
+/** How many rivals a player can have: one Rival and two Contenders. */
+export const MAX_RIVALS = 3;
+
+/**
+ * Fills a player's empty rival slots without disturbing the rivals they already have.
+ * The rivals they have keep their places (so a chosen Rival stays chosen), and the best new
+ * matches from the pool (ranked by findRivals) are added after them, up to maxRivals in all.
+ * Before this, the app only looked for rivals when a player had none, so someone matched with
+ * one rival while few people had signed up kept just that one as more players joined.
+ * Parameters: currentUser (the player), keptIds (ids of the rivals they have now, in order),
+ * allProfiles (the pool to match against), maxRivals (cap, default MAX_RIVALS).
+ * Returns: the full new list of rival ids, or null when there is nothing to add.
+ * Edge cases: a full list, or a pool with no new match, returns null so the caller saves
+ * nothing; profiles already kept are never added twice; an id repeated in keptIds is kept once.
+ */
+export const topUpRivalIds = (
+  currentUser: UserProfile,
+  keptIds: string[],
+  allProfiles: UserProfile[],
+  maxRivals: number = MAX_RIVALS
+): string[] | null => {
+  const kept = [...new Set(keptIds)];
+  const open = maxRivals - kept.length;
+  if (open <= 0) return null;
+  const added = findRivals(currentUser, allProfiles.filter((p) => !kept.includes(p.id)), open);
+  return added.length > 0 ? [...kept, ...added.map((r) => r.id)] : null;
+};
+
+/**
+ * Decides which of a player's rivals is their Rival (the rest are Contenders).
+ * The first preference that is still one of their rivals wins; with none, the first rival
+ * stands in, so a player with rivals always has a Rival to chase.
+ * Parameters: rivals (the player's current rivals), preferences (rival ids to try, most
+ * trusted first - e.g. the pick in memory, the pick saved on the profile, the pick saved on
+ * this device; null and undefined entries are skipped).
+ * Returns: the Rival's id, or null when the player has no rivals.
+ * Edge cases: a preference for a player who is no longer a rival (the daily refresh dropped
+ * them, or their account was deleted) is ignored.
+ */
+export const pickChosenRival = (
+  rivals: UserProfile[],
+  preferences: (string | null | undefined)[]
+): string | null =>
+  preferences.find((id) => !!id && rivals.some((r) => r.id === id)) ?? rivals[0]?.id ?? null;
+
+/**
+ * Puts the player's picked Rival at the top of their rivals list, for display.
+ * The Contenders keep the order they were in.
+ * Parameters: rivals (the player's rivals), chosenRivalId (their picked Rival, if any).
+ * Returns: a new list with the Rival first.
+ * Edge cases: with no pick, or a pick who is not in the list, the order is unchanged; the
+ * input array is not changed.
+ */
+export const chosenRivalFirst = (rivals: UserProfile[], chosenRivalId: string | null): UserProfile[] => [
+  ...rivals.filter((r) => r.id === chosenRivalId),
+  ...rivals.filter((r) => r.id !== chosenRivalId),
+];
+
 /** How often the app looks again for rivals while the player has none (one minute). */
 export const RIVAL_SEARCH_INTERVAL_MS = 60_000;
 

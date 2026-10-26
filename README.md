@@ -19,7 +19,8 @@ Built with **Expo SDK 57**, **React Native**, and **TypeScript**, on a **Supabas
 - **Find a game.** Browse groups near you, join one by code, or post your own.
 - **See store events.** A monthly calendar of game-store events for your area, filled in
   automatically. Start a group from a listed event to earn a bonus for playing there.
-- **Report rounds.** The host drags players into finish order; everyone is paid points at once.
+- **Report rounds.** The host drags players into finish order. The other players get 15 minutes
+  to agree or contest, then everyone is paid.
 - **Climb and compete.** A monthly leaderboard, and up to three rivals matched to your score.
 - **Spend points.** A shop of titles, name colors, and card borders.
 
@@ -118,6 +119,7 @@ a group) can only be changed by a server function that checks who is asking.
 | `groups` | A posted game night: where, when, host, optional link to a store event | The host edits. Deleting and changing host go through server functions |
 | `group_players` | Who has a seat in which group | You can add yourself. Leaving goes through a server function |
 | `group_results` | Each reported round: finish order and points paid | Server only |
+| `group_result_ballots` | Each player's vote on a round still open for contest | Server only |
 | `event_areas` | Map areas players have asked for | Server only |
 | `local_events` | Game-store events shown on the Calendar tab | Server only |
 | `shop_items` | The catalog and its prices | Edited in Supabase Studio, no app release needed |
@@ -130,6 +132,7 @@ Jobs that run on a timer:
 | Daily | `refresh-rivals` | Re-matches rivals; resets every Score to 0 when the month rolls over |
 | Every 6 hours | `sync-local-events` | Pulls store events for recently requested areas |
 | Hourly | stale group cleanup | Deletes groups more than 12 hours past their start time |
+| Every minute | settle rounds | Counts the votes on rounds whose 15-minute window has ended and pays the players |
 
 ### Reporting a round
 
@@ -145,15 +148,18 @@ sequenceDiagram
     App->>Host: Read the order back and ask to confirm
     Host->>App: Confirm
     App->>Server: Report the round
-    Note over Server: One all-or-nothing step<br/>1. caller must be the host<br/>2. must be the next round<br/>3. score the finish order<br/>4. add the store-event bonus<br/>5. record it and pay every player
-    Server-->>App: Round recorded
-    App-->>Players: Standings and points appear
+    Note over Server: 1. caller must be the host<br/>2. must be the next round<br/>3. record it as pending, nobody paid yet
+    Server-->>App: Round recorded, 15-minute window opens
+    Players->>Server: Agree, or contest with their own order (vote_group_result)
+    Note over Server: When the window ends, or everyone has voted<br/>1. the order with the most votes wins (a tie keeps the host's)<br/>2. score it and add the store-event bonus<br/>3. pay every player, once
+    Server-->>Players: Standings and points appear
 ```
 
-A report is final. There is no dispute or edit afterwards, so the read-back is the only
-guard against a mis-dragged row. A retry or a double tap is refused by the server.
+The host cannot edit a report, so the read-back is their own guard against a mis-dragged row;
+after that only the other players' votes can replace it. A retry or a double tap is refused by
+the server, and a group cannot be deleted while one of its rounds is still open for contest.
 
-Each player has three numbers, all paid together when a round is reported:
+Each player has three numbers, all paid together when a round is settled:
 
 | Name | What it is |
 |---|---|
