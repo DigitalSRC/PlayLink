@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { UserProfile } from '../data/types';
 import { Group } from '../data/groups';
 import { registerSupabaseAutoRefresh, supabase } from '../lib/supabase';
+import { clearCachedPlayerData } from '../lib/query-client';
 import { fetchProfilesByIds, fetchRivalCandidates } from '../lib/profile-api';
 import { MAX_RIVALS, RIVAL_SEARCH_INTERVAL_MS, topUpRivalIds } from '../utils/rival-utils';
 import { useAuthSession } from '../hooks/useAuthSession';
@@ -74,6 +75,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const { session, authLoading } = useAuthSession();
   const queryClient = useQueryClient();
   const userId = session?.user.id;
+
+  // When the signed-in player goes away - Sign Out, an expired session, or another account
+  // signing in - nothing cached for them may be left for whoever uses the app next.
+  const lastUserIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const previous = lastUserIdRef.current;
+    lastUserIdRef.current = userId;
+    if (!previous || previous === userId) return;
+    if (userId) {
+      // Straight from one account to another: drop the old answers and fetch the new player's.
+      queryClient.resetQueries();
+    } else {
+      clearCachedPlayerData(queryClient);
+    }
+  }, [userId, queryClient]);
 
   const { data: currentUser, isLoading: profileLoading } = useProfileQuery(userId);
   const updateProfileMutation = useUpdateProfileMutation();

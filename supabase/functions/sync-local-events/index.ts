@@ -15,6 +15,7 @@
 // Deploy: npx supabase functions deploy sync-local-events --no-verify-jwt
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { secretsMatch } from '../_shared/secret.ts';
 import { EVENT_AREA_COLUMNS, type EventAreaRow } from './areas.ts';
 import { type AreaSyncResult, claimAndSyncArea } from './sync.ts';
 
@@ -27,8 +28,8 @@ const MAX_AREAS_PER_RUN = 50;
 const MIN_INTERVAL_MS = 60 * 60 * 1000;
 
 Deno.serve(async (req: Request) => {
-  const cronSecret = Deno.env.get('CRON_SECRET');
-  if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
+  // Refuses when no secret is configured at all, and compares in constant time (see secretsMatch).
+  if (!secretsMatch(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) {
     return new Response('Unauthorized', { status: 401 });
   }
 
