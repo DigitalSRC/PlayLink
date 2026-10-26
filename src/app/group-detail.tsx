@@ -417,11 +417,11 @@ export default function GroupDetail() {
 
   /**
    * The name to show for a player in a round, who may have left the group since it was played.
-   * Parameters: playerId.
+   * Parameters: playerId (null when the player has since deleted their account).
    * Returns: their display name, else their username, else "A player who left".
-   * Edge cases: none.
+   * Edge cases: a deleted account (null, or an id no longer in the group) gives "A player who left".
    */
-  const nameOf = (playerId: string): string => {
+  const nameOf = (playerId: string | null): string => {
     const player = group.players.find((x) => x.id === playerId);
     return player?.displayName ?? player?.username ?? 'A player who left';
   };
