@@ -8,6 +8,8 @@ PlayLink is an Expo Router app (v57) built with React Native and TypeScript, dev
 
 Everything in this file describes `development` unless it says otherwise. `main` is the `v0.1.0-mvp` release and predates the Supabase backend entirely (no `src/lib/`, no sign-in screen, rival data stubbed out) — don't infer how the app works from `main`.
 
+**Shipping:** [docs/release-guide.md](docs/release-guide.md) is the ordered list of what's left before the stores: accounts, dashboard settings, live SQL, the production project, EAS builds, the on-device checklist, and the listings. Builds use `eas.json` (`preview` for an installable APK, `production` for the stores); app ID `com.silvenari.playlink`.
+
 ## Commands
 
 - `npm install` — install dependencies. From npm 12 on, a dependency's install script only runs if it is approved under `allowScripts` in `package.json`; anything else is skipped with a warning. One is approved today: `unrs-resolver` (the native resolver ESLint's import rules use). If a newly added package warns that its script was blocked, review it with `npm install-scripts ls` and approve it with `npm install-scripts approve <pkg>` only if the package really needs it; the entry is pinned to a version, so a bump of that package needs re-approving.
