@@ -4,6 +4,12 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
 
+/** The shortest password a new account or a password change may use. The Supabase project's
+ * own minimum (Authentication settings, and supabase/config.toml for local runs) must be at
+ * least this; the server is what enforces it. Signing in is never checked against it, so an
+ * account made under the older, shorter minimum can still sign in. */
+export const MIN_PASSWORD_LENGTH = 10;
+
 /**
  * Signs the user in with Google via Supabase's hosted OAuth flow. Opens Google's consent
  * screen in an in-app browser, waits for the `playlink://` redirect back into the app, and
@@ -87,7 +93,7 @@ export const signInWithApple = async (): Promise<void> => {
  * confirmation disabled, so a successful call establishes a session immediately — there's no
  * "check your email" step.
  * Parameters: email (the new account's email), password (plain text; Supabase's minimum length
- * requirement is enforced server-side, currently 6 characters).
+ * requirement is enforced server-side; see MIN_PASSWORD_LENGTH).
  * Returns: a promise that resolves once the account is created and signed in; as with the OAuth
  * flows, the app's onAuthStateChange listener picks up the new session automatically.
  * Edge cases: throws if the email is already registered, if the password doesn't meet
@@ -112,17 +118,42 @@ export const signInWithEmail = async (email: string, password: string): Promise<
   if (error) throw error;
 };
 
+/** What updatePassword says when the current password is wrong. Exported so the screen and
+ * the tests name the same sentence. */
+export const WRONG_CURRENT_PASSWORD = 'Your current password is not right.';
+
 /**
- * Changes the password for the currently signed-in user. Supabase's updateUser call operates
- * on whichever session is already active, so this doesn't need the user's current password —
- * only a valid session, which the profile screen already requires to be reachable.
- * Parameters: newPassword (plain text; Supabase's minimum length requirement is enforced
- * server-side, currently 6 characters).
+ * Changes the password for the currently signed-in user, after checking they know the current
+ * one. Supabase's updateUser needs only a live session, so without this check anyone holding an
+ * unlocked phone (or a copied session) could set a new password and keep the account for good.
+ * The check is a fresh sign-in with the account's own email and the password typed.
+ * Parameters: currentPassword (what the player typed as their existing password), newPassword
+ * (plain text; Supabase's minimum length requirement is enforced server-side; see
+ * MIN_PASSWORD_LENGTH).
  * Returns: a promise that resolves once the password has been updated.
- * Edge cases: throws if the new password doesn't meet Supabase's minimum length requirement,
- * if the session has expired, or on any other Supabase/network error.
+ * Edge cases: throws WRONG_CURRENT_PASSWORD when the current password does not match, and
+ * changes nothing; throws "Please sign in again." when there is no session or the account has
+ * no email (an OAuth-only account has no password to check); any other failure of the check (no
+ * network, too many attempts) is rethrown as it is, never reported as a wrong password; throws
+ * if the new password doesn't meet Supabase's minimum length. The check signs the same account
+ * in again, so the session is replaced by a new one for the same player.
  */
-export const updatePassword = async (newPassword: string): Promise<void> => {
+export const updatePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  const { data, error: userError } = await supabase.auth.getUser();
+  const email = data?.user?.email;
+  if (userError || !email) throw new Error('Please sign in again.');
+
+  const { error: checkError } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  });
+  if (checkError) {
+    if (/invalid login credentials/i.test(checkError.message)) {
+      throw new Error(WRONG_CURRENT_PASSWORD);
+    }
+    throw checkError;
+  }
+
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw error;
 };
