@@ -1,5 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useMemo, useRef, useState } from "react";
 import { ThemeColors, useThemeColors } from "../utils/theme-utils";
 import {
@@ -14,8 +15,12 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { showDialog } from "../components/AppDialog";
+import { showToast } from "../components/AppToast";
+import { MIN_AGE, PRIVACY_URL, TERMS_URL } from "../data/legal";
 import {
   MIN_PASSWORD_LENGTH,
+  requestPasswordReset,
   signInWithApple,
   signInWithEmail,
   signInWithGoogle,
@@ -97,6 +102,9 @@ export default function SignIn() {
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [termsError, setTermsError] = useState("");
+  const [sendingReset, setSendingReset] = useState(false);
 
   const formAnim = useRef(new Animated.Value(0)).current;
 
@@ -134,6 +142,10 @@ export default function SignIn() {
       setPasswordError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       hasValidationError = true;
     }
+    if (mode === "signUp" && !acceptedTerms) {
+      setTermsError(`Please confirm you are ${MIN_AGE} or older and accept the Terms and Privacy Policy.`);
+      hasValidationError = true;
+    }
     if (hasValidationError) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
@@ -152,6 +164,43 @@ export default function SignIn() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  /**
+   * Sends a password-reset link to the email in the form, after the player confirms the address.
+   * Parameters: none; reads the typed email from state.
+   * Returns: void; the request runs only if the player confirms.
+   * Edge cases: with no valid email typed, says so under the email field instead; the same
+   * "if there's an account, a link is on its way" message shows whether or not the email has an
+   * account, so the form can't be used to find out who is registered; a refusal (too many
+   * requests, no network) is shown above the form; a second tap while sending is ignored.
+   */
+  const handleForgotPassword = () => {
+    if (sendingReset || isSubmitting) return;
+    setError("");
+    const trimmedEmail = email.trim();
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setEmailError("Type your email above, then tap “Forgot password?” again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    showDialog("Reset your password?", `We’ll email a link to ${trimmedEmail}. Open it on this device.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Send Link",
+        onPress: async () => {
+          setSendingReset(true);
+          try {
+            await requestPasswordReset(trimmedEmail);
+            showToast("Check your email", "If that email has an account, a reset link is on its way.");
+          } catch (err) {
+            setError(playerErrorMessage(err, "Could not send the link. Please try again in a minute."));
+          } finally {
+            setSendingReset(false);
+          }
+        },
+      },
+    ]);
   };
 
   const handleGoogle = async () => {
@@ -244,6 +293,47 @@ export default function SignIn() {
           </View>
           {!!passwordError && <Text style={styles.fieldErrorText}>{passwordError}</Text>}
 
+          {mode === "signIn" && (
+            <Pressable
+              testID="sign-in-forgot-password"
+              style={styles.forgotLink}
+              onPress={handleForgotPassword}
+              disabled={isBusy || sendingReset}
+              accessibilityRole="button"
+              hitSlop={8}
+            >
+              <Text style={styles.linkText}>{sendingReset ? "Sending…" : "Forgot password?"}</Text>
+            </Pressable>
+          )}
+
+          {mode === "signUp" && (
+            <>
+              <Pressable
+                testID="sign-in-terms-checkbox"
+                style={styles.termsRow}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAcceptedTerms((v) => !v);
+                  setTermsError("");
+                }}
+                disabled={isBusy}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acceptedTerms }}
+              >
+                <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked, !!termsError && styles.inputError]}>
+                  {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.termsText}>
+                  I am {MIN_AGE} or older and accept the{" "}
+                  <Text style={styles.linkText} onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)}>Terms</Text>
+                  {" "}and{" "}
+                  <Text style={styles.linkText} onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)}>Privacy Policy</Text>.
+                </Text>
+              </Pressable>
+              {!!termsError && <Text style={styles.fieldErrorText}>{termsError}</Text>}
+            </>
+          )}
+
           <Pressable
             testID="sign-in-submit-button"
             style={[styles.button, styles.submitButton, (!canSubmit || isBusy) && styles.buttonDisabled]}
@@ -266,6 +356,7 @@ export default function SignIn() {
               setError("");
               setEmailError("");
               setPasswordError("");
+              setTermsError("");
               Haptics.selectionAsync();
               animateModeSwitch();
               setMode(mode === "signUp" ? "signIn" : "signUp");
@@ -391,6 +482,44 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: "#FF3B30",
     fontWeight: "600",
     marginTop: -6,
+  },
+  forgotLink: {
+    alignSelf: "flex-end",
+    marginTop: -4,
+  },
+  linkText: {
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+  termsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: c.border,
+    backgroundColor: c.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: "#007AFF",
+    borderColor: "#007AFF",
+  },
+  checkmark: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: c.textBody,
+    lineHeight: 19,
   },
   pitch: {
     fontSize: 14,
