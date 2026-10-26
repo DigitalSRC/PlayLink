@@ -1,8 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -31,6 +33,7 @@ import {
   NoGoRule,
   UserProfile,
 } from '../../data/types';
+import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../data/legal';
 import { ShopItem } from '../../data/shop';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
@@ -796,6 +799,20 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
           )}
         </View>
 
+        <View style={styles.legalRow}>
+          <Pressable onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[styles.legalLink, { color: colors.accentText }]}>Privacy Policy</Text>
+          </Pressable>
+          <Text style={[styles.legalDot, { color: textSec }]}>·</Text>
+          <Pressable onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[styles.legalLink, { color: colors.accentText }]}>Terms</Text>
+          </Pressable>
+          <Text style={[styles.legalDot, { color: textSec }]}>·</Text>
+          <Pressable onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[styles.legalLink, { color: colors.accentText }]}>Contact Support</Text>
+          </Pressable>
+        </View>
+
         {/* Dev Tools entry point removed along with src/app/dev-tools.tsx — see
             DEV_TOOLS_ENABLED above and CLAUDE.md git workflow. */}
       </View>
@@ -1138,6 +1155,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: '#007AFF', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
   },
   passwordSubmitBtnDisabled: { opacity: 0.6 },
+  legalRow: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center',
+    gap: 8, marginTop: 4,
+  },
+  legalLink: { fontSize: 13, fontWeight: '600' },
+  legalDot: { fontSize: 13 },
   deleteAccountBtn: {
     backgroundColor: '#C0392B', borderRadius: 10, paddingVertical: 12, alignItems: 'center',
   },
