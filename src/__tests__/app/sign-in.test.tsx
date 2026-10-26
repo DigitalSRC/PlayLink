@@ -28,13 +28,35 @@ const mockSignUpWithEmail = jest.fn<(email: string, password: string) => Promise
 const mockSignInWithEmail = jest.fn<(email: string, password: string) => Promise<void>>(
   () => Promise.resolve()
 );
+const mockRequestPasswordReset = jest.fn<(email: string) => Promise<void>>(() => Promise.resolve());
 jest.mock("../../lib/auth-api", () => ({
   MIN_PASSWORD_LENGTH: 10,
   signUpWithEmail: (email: string, password: string) => mockSignUpWithEmail(email, password),
   signInWithEmail: (email: string, password: string) => mockSignInWithEmail(email, password),
+  requestPasswordReset: (email: string) => mockRequestPasswordReset(email),
   signInWithGoogle: jest.fn(),
   signInWithApple: jest.fn(),
 }));
+
+type DialogButton = { text: string; onPress?: () => void | Promise<void> };
+const mockShowDialog = jest.fn<(title: string, message?: string, buttons?: DialogButton[]) => void>();
+jest.mock("../../components/AppDialog", () => ({
+  showDialog: (title: string, message?: string, buttons?: DialogButton[]) => mockShowDialog(title, message, buttons),
+}));
+const mockShowToast = jest.fn();
+jest.mock("../../components/AppToast", () => ({
+  showToast: (...args: unknown[]) => mockShowToast(...args),
+}));
+const mockOpenBrowser = jest.fn();
+jest.mock("expo-web-browser", () => ({
+  openBrowserAsync: (...args: unknown[]) => mockOpenBrowser(...args),
+}));
+
+/** Presses the button with this label on the most recent pop-up. */
+const pressDialogButton = async (label: string) => {
+  const buttons = mockShowDialog.mock.calls.at(-1)?.[2] ?? [];
+  await buttons.find((b) => b.text === label)?.onPress?.();
+};
 
 describe("SignIn", () => {
   beforeEach(() => {
@@ -94,6 +116,7 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-mode-toggle"));
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
     await fireEvent.changeText(getByTestId("sign-in-password-input"), "abcdefgh90");
+    await fireEvent.press(getByTestId("sign-in-terms-checkbox"));
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => expect(mockSignUpWithEmail).toHaveBeenCalledWith("player@example.com", "abcdefgh90"));
@@ -145,6 +168,7 @@ describe("SignIn", () => {
 
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
     await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-terms-checkbox"));
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => {
@@ -191,6 +215,7 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-mode-toggle"));
     await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
     await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-terms-checkbox"));
     await fireEvent.press(getByTestId("sign-in-submit-button"));
 
     await waitFor(() => {
@@ -209,6 +234,88 @@ describe("SignIn", () => {
     await fireEvent.press(getByTestId("sign-in-mode-toggle"));
     expect(getByText("Welcome to PlayLink!")).toBeTruthy();
     expect(getByText("Already have an account? Sign in")).toBeTruthy();
+  });
+
+  it("refuses a new account until the player confirms they are 18 or older and accept the terms", async () => {
+    const { getByTestId, getByText, queryByText } = await render(<SignIn />);
+
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    expect(getByText(/confirm you are 18 or older/i)).toBeTruthy();
+    expect(mockNotificationAsync).toHaveBeenCalledWith("error");
+    expect(mockSignUpWithEmail).not.toHaveBeenCalled();
+
+    await fireEvent.press(getByTestId("sign-in-terms-checkbox"));
+    expect(queryByText(/confirm you are 18 or older/i)).toBeNull();
+    expect(getByTestId("sign-in-terms-checkbox").props.accessibilityState).toMatchObject({ checked: true });
+  });
+
+  it("never asks a returning player to tick the box", async () => {
+    const { getByTestId, queryByTestId } = await render(<SignIn />);
+
+    expect(queryByTestId("sign-in-terms-checkbox")).toBeNull();
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.changeText(getByTestId("sign-in-password-input"), "password123");
+    await fireEvent.press(getByTestId("sign-in-submit-button"));
+
+    await waitFor(() => expect(mockSignInWithEmail).toHaveBeenCalled());
+  });
+
+  it("asks for the email first when Forgot password is tapped with none typed", async () => {
+    const { getByTestId, getByText } = await render(<SignIn />);
+
+    await fireEvent.press(getByTestId("sign-in-forgot-password"));
+
+    expect(getByText(/type your email above/i)).toBeTruthy();
+    expect(mockShowDialog).not.toHaveBeenCalled();
+    expect(mockRequestPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it("sends a reset link after the player confirms, and says the same thing whether or not the account exists", async () => {
+    const { getByTestId } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "  player@example.com ");
+    await fireEvent.press(getByTestId("sign-in-forgot-password"));
+    expect(mockShowDialog).toHaveBeenCalledWith("Reset your password?", expect.stringContaining("player@example.com"), expect.any(Array));
+    expect(mockRequestPasswordReset).not.toHaveBeenCalled();
+
+    await pressDialogButton("Send Link");
+
+    await waitFor(() => expect(mockRequestPasswordReset).toHaveBeenCalledWith("player@example.com"));
+    expect(mockShowToast).toHaveBeenCalledWith("Check your email", expect.stringMatching(/if that email has an account/i));
+  });
+
+  it("sends nothing when the player cancels the reset", async () => {
+    const { getByTestId } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.press(getByTestId("sign-in-forgot-password"));
+    await pressDialogButton("Cancel");
+
+    expect(mockRequestPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it("shows a failed reset request above the form", async () => {
+    mockRequestPasswordReset.mockRejectedValueOnce(new Error("Email rate limit exceeded"));
+    const { getByTestId, getByText } = await render(<SignIn />);
+
+    await fireEvent.changeText(getByTestId("sign-in-email-input"), "player@example.com");
+    await fireEvent.press(getByTestId("sign-in-forgot-password"));
+    await pressDialogButton("Send Link");
+
+    await waitFor(() => expect(getByText("Email rate limit exceeded")).toBeTruthy());
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it("offers Forgot password only on the sign-in form", async () => {
+    const { getByTestId, queryByTestId } = await render(<SignIn />);
+
+    expect(getByTestId("sign-in-forgot-password")).toBeTruthy();
+    await fireEvent.press(getByTestId("sign-in-mode-toggle"));
+    expect(queryByTestId("sign-in-forgot-password")).toBeNull();
   });
 
   it("toggles password visibility when the eye icon is pressed", async () => {
