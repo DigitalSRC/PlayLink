@@ -34,7 +34,8 @@ import { ShopItem } from '../../data/shop';
 import { useUpdateProfileMutation } from '../../hooks/useProfileQueries';
 import { useClaimStarterReward } from '../../hooks/useRewardQueries';
 import { useEquipShopItemMutation, useOwnedShopItemsQuery, useShopItemsQuery } from '../../hooks/useShopQueries';
-import { updatePassword } from '../../lib/auth-api';
+import { MIN_PASSWORD_LENGTH, updatePassword } from '../../lib/auth-api';
+import { playerErrorMessage } from '../../utils/error-utils';
 import { formatBrackets } from '../../utils/group-utils';
 import { ThemeColors, useThemeColors } from '../../utils/theme-utils';
 
@@ -76,8 +77,9 @@ const DEV_TOOLS_ENABLED = false;
  * They save by themselves when the player finishes typing or leaves the tab (commitIdentity);
  * the Save Changes button is only for the game and format lists.
  * Edge cases: shows bracket section only for MTG Commander; dev tools button hidden for
- * non-developer profiles; the password form validates a 6-character minimum and that both
- * fields match before ever calling Supabase, and shows an inline error or success message; a
+ * non-developer profiles; the password form asks for the current password, validates the
+ * minimum length and that both new fields match before ever calling Supabase, and shows an
+ * inline error or success message (a wrong current password changes nothing); a
  * player who owns no titles sees only "No title" and a link to the Shop in the picker; a title
  * they own that has since been taken off sale is not listed, though they keep wearing it if it
  * is on; the Commander sheet won't save with no bracket picked.
@@ -129,7 +131,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
       );
     } catch (err) {
       setShowTitlePicker(false);
-      showDialog('Couldn’t change your title', err instanceof Error ? err.message : 'Please try again.');
+      showDialog('Couldn’t change your title', playerErrorMessage(err, 'Please try again.'));
     }
   };
 
@@ -167,6 +169,7 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const [modalGames, setModalGames] = useState<GameType[]>(currentUser.games);
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -256,8 +259,12 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
   const handleChangePassword = async () => {
     setPasswordError('');
     setPasswordSuccess(false);
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters.');
+    if (currentPassword.length === 0) {
+      setPasswordError('Enter your current password.');
+      return;
+    }
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setPasswordError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -266,13 +273,14 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
     }
     setIsChangingPassword(true);
     try {
-      await updatePassword(newPassword);
+      await updatePassword(currentPassword, newPassword);
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setPasswordSuccess(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : 'Could not change password. Please try again.');
+      setPasswordError(playerErrorMessage(err, 'Could not change password. Please try again.'));
     } finally {
       setIsChangingPassword(false);
     }
@@ -632,9 +640,20 @@ function ProfileContent({ currentUser }: { currentUser: UserProfile }) {
             <View style={styles.passwordForm}>
               <TextInput
                 style={[styles.passwordInput, { color: textPrimary, borderColor: border }]}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="Current password"
+                placeholderTextColor={textSec}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isChangingPassword}
+              />
+              <TextInput
+                style={[styles.passwordInput, { color: textPrimary, borderColor: border }]}
                 value={newPassword}
                 onChangeText={setNewPassword}
-                placeholder="New password (min. 6 characters)"
+                placeholder={`New password (min. ${MIN_PASSWORD_LENGTH} characters)`}
                 placeholderTextColor={textSec}
                 secureTextEntry
                 autoCapitalize="none"

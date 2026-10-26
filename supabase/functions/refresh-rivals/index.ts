@@ -8,6 +8,7 @@
 // Secret: npx supabase secrets set CRON_SECRET=<same value stored in the vault, see the migration>
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { secretsMatch } from '../_shared/secret.ts';
 
 const LA_TIME_ZONE = 'America/Los_Angeles';
 
@@ -58,8 +59,8 @@ const rankRivals = (
     .map((r) => r.id);
 
 Deno.serve(async (req: Request) => {
-  const cronSecret = Deno.env.get('CRON_SECRET');
-  if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
+  // Refuses when no secret is configured at all, and compares in constant time (see secretsMatch).
+  if (!secretsMatch(req.headers.get('x-cron-secret'), Deno.env.get('CRON_SECRET'))) {
     return new Response('Unauthorized', { status: 401 });
   }
 
