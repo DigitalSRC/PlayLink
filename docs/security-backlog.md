@@ -62,6 +62,37 @@ security checklist.
 
 ---
 
+## Status update — 2026-10-14 (second audit)
+
+A second pass over the same checklist, this time reading the live database as well as the code.
+No data exposure and no sign-in bypass. Fixed on branch `audit-round-two` (migrations
+`20261014120000` and `20261014120100`; see `CLAUDE.local.md` for whether they are live):
+
+- **The confirm wait is enforced by the server**, and a round is recorded only for a confirmed
+  game. Closes GitHub #18's second half: a script could post a group and be paid at once.
+- **Unused privileges taken back**: TRUNCATE and TRIGGER on every table, DELETE on `profiles`,
+  and everything a signed-out caller held. `rls_auto_enable()` and `set_updated_at()` are no
+  longer callable by clients, and the second has a pinned `search_path`.
+- **The shelved store-sync job is stopped** and `game_stores` is read-only to players. The
+  deployed `sync-store-events` function should be deleted too
+  (`npx supabase functions delete sync-store-events`); its source is kept on `store-events`.
+- `expo-image` removed (never imported); Expo's patch updates taken.
+- `supabase/config.toml` asks for a recent sign-in before a password change.
+
+Still open after the second audit:
+
+- **Dashboard, Authentication settings (nobody but the owner can change these):** turn on
+  "Secure password change" - until then the app's "current password" check can be skipped by
+  calling the API with a copied session; minimum password length 10; leaked-password protection.
+- **The landing page's signup function** still overwrites saved details until
+  `9-landing-...harden_signup_upsert.sql` is pasted. After that it still answers whether an
+  email is on the list (the page uses the answer), and a stranger can fill in the fields of a
+  row that are still empty.
+- **CAPTCHA** (below), **column-level profile reads** (below, needs a product decision), and
+  **rotating the tokens in `CLAUDE.local.md`** are unchanged.
+- The route guard in `_layout.tsx` lists the screens it protects, so a new root screen is open
+  until it is added. The data behind every screen is protected by the database regardless.
+
 ## Status update — 2026-10-13 (audit follow-ups)
 
 The audit's working list was worked through on branch `security-audit`. Done in code (not yet
